@@ -50,10 +50,27 @@ function buildTopbar() {
       ${Object.keys(ROUTES).map(p => `<a href="#${p}" data-route="${p}">${p.slice(1)}</a>`).join('')}
     </nav>
     <div class="spacer"></div>
+    <button class="pill pill-btn" id="refresh-btn" title="Rescan JSONL files now and re-render">↻ Refresh</button>
     <span class="pill" id="plan-pill">api</span>
     <span class="pill muted" title="Cmd/Ctrl+B blurs sensitive text">⌘B blur</span>
   `;
   document.body.prepend(wrap);
+
+  wrap.querySelector('#refresh-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (btn.dataset.busy === '1') return;
+    btn.dataset.busy = '1';
+    btn.classList.add('is-busy');
+    try {
+      await api('/api/scan');
+      await render();
+    } catch (err) {
+      console.warn('refresh failed', err);
+    } finally {
+      btn.dataset.busy = '';
+      btn.classList.remove('is-busy');
+    }
+  });
 }
 
 function setActiveTab(routeKey) {
