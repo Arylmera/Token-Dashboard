@@ -91,6 +91,45 @@ class OutlierTests(unittest.TestCase):
         self.assertTrue(all(t["project_slug"] is None for t in tips))
 
 
+class ProjectCwdTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db = os.path.join(self.tmp, "t.db")
+        init_db(self.db)
+        with connect(self.db) as c:
+            c.execute("""INSERT INTO messages (uuid, session_id, project_slug, cwd, type, timestamp,
+                model, input_tokens, output_tokens, cache_read_tokens,
+                cache_create_5m_tokens, cache_create_1h_tokens) VALUES
+                ('m1','s','projA','/Users/me/projA','assistant','2026-04-15T00:00:00Z',
+                 'claude-opus-4-7', 100, 100, 10, 1000000, 0)""")
+            c.execute("""INSERT INTO messages (uuid, session_id, project_slug, cwd, type, timestamp,
+                model, input_tokens, output_tokens, cache_read_tokens,
+                cache_create_5m_tokens, cache_create_1h_tokens) VALUES
+                ('m2','s','projA','/Users/me/projA-renamed','assistant','2026-04-18T00:00:00Z',
+                 'claude-opus-4-7', 100, 100, 10, 1000000, 0)""")
+            for i in range(10):
+                c.execute("""INSERT INTO messages (uuid, session_id, project_slug, type, timestamp,
+                    model, input_tokens, output_tokens, cache_read_tokens,
+                    cache_create_5m_tokens, cache_create_1h_tokens, is_sidechain) VALUES
+                    (?, 's','projA','assistant','2026-04-18T00:00:00Z',
+                     'claude-opus-4-7', 1000000, 200, 0, 0, 0, 0)""", (f"sa{i}",))
+            c.commit()
+
+    def test_project_tips_get_most_recent_cwd(self):
+        tips = all_tips(self.db, today_iso="2026-04-19T00:00:00")
+        proj_tips = [t for t in tips if t.get("project_slug") == "projA"]
+        self.assertTrue(proj_tips)
+        for t in proj_tips:
+            self.assertEqual(t["project_cwd"], "/Users/me/projA-renamed")
+
+    def test_global_tips_have_null_cwd(self):
+        tips = all_tips(self.db, today_iso="2026-04-19T00:00:00")
+        global_tips = [t for t in tips if t.get("project_slug") is None]
+        self.assertTrue(global_tips)
+        for t in global_tips:
+            self.assertIsNone(t["project_cwd"])
+
+
 class DismissTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

@@ -32,6 +32,14 @@ cd token-dashboard
 python3 cli.py dashboard
 ```
 
+**One-click launchers** (after cloning):
+
+| OS | Double-click |
+|---|---|
+| Windows | `run.bat` |
+| macOS | `run.command` (first time: `chmod +x run.command run.sh`) |
+| Linux | `run.sh` (first time: `chmod +x run.sh`) |
+
 > On Windows, if `python3` isn't on your PATH, substitute `py -3` for `python3` in every command below.
 
 The command:

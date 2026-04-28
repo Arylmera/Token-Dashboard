@@ -171,6 +171,18 @@ button.ghost { background: transparent; color: var(--muted); }
 .tip-head { display: flex; align-items: center; gap: 10px; }
 .tip-head strong { font-size: 13px; }
 .tip-body { margin: 8px 0 0; color: var(--muted); }
+.tip-list { margin: 8px 0 0; padding-left: 20px; color: var(--muted); }
+.tip-list li { margin: 2px 0; }
+.tip-group { margin: 18px 0 6px; }
+.tip-group-head-row { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; }
+.tip-group-head { margin: 0; font-size: 15px; }
+.tip-group-path { font-size: 11px; margin: 0 0 8px; font-family: var(--mono); }
+.tip-type { margin: 10px 0 14px; }
+.tip-type-head {
+  margin: 0 0 4px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+}
+.copy-prompt { font-size: 12px; }
 
 /* time-range tabs */
 .range-tabs { display: inline-flex; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 2px; }
