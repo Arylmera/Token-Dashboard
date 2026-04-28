@@ -2,17 +2,18 @@ import { api, fmt } from '/web/app.js';
 import { barChart } from '/web/charts.js';
 
 const RANGES = [
-  { key: '7d',  label: '7d',  days: 7 },
-  { key: '30d', label: '30d', days: 30 },
-  { key: '90d', label: '90d', days: 90 },
-  { key: 'all', label: 'All', days: null },
+  { key: 'today', label: 'Today', days: null, anchor: '4am' },
+  { key: '7d',    label: '7d',    days: 7 },
+  { key: '30d',   label: '30d',   days: 30 },
+  { key: '90d',   label: '90d',   days: 90 },
+  { key: 'all',   label: 'All',   days: null },
 ];
 
 function readRange() {
   const q = (location.hash.split('?')[1] || '');
   const m = /(?:^|&)range=([^&]+)/.exec(q);
   const k = m && decodeURIComponent(m[1]);
-  return RANGES.find(r => r.key === k) || RANGES[1];
+  return RANGES.find(r => r.key === k) || RANGES.find(r => r.key === '30d');
 }
 
 function writeRange(key) {
@@ -21,6 +22,13 @@ function writeRange(key) {
 }
 
 function sinceIso(range) {
+  if (range.anchor === '4am') {
+    const now = new Date();
+    const anchor = new Date(now);
+    anchor.setHours(4, 0, 0, 0);
+    if (anchor > now) anchor.setDate(anchor.getDate() - 1);
+    return anchor.toISOString();
+  }
   if (!range.days) return null;
   return new Date(Date.now() - range.days * 86400 * 1000).toISOString();
 }
