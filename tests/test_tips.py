@@ -28,6 +28,7 @@ class CacheTipTests(unittest.TestCase):
         self._ins("2026-04-15T00:00:00Z", "projX", 10, 1_000_000)
         tips = cache_discipline_tips(self.db, today_iso="2026-04-19T00:00:00")
         self.assertTrue(any(t["category"] == "cache" for t in tips))
+        self.assertTrue(all(t["project_slug"] == "projX" for t in tips if t["category"] == "cache"))
 
     def test_healthy_cache_no_tip(self):
         for i in range(10):
@@ -54,6 +55,7 @@ class RepeatTipTests(unittest.TestCase):
         cats = [t["category"] for t in tips]
         self.assertIn("repeat-file", cats)
         self.assertIn("repeat-bash", cats)
+        self.assertTrue(all(t["project_slug"] == "p" for t in tips))
 
 
 class RightSizeTests(unittest.TestCase):
@@ -69,6 +71,7 @@ class RightSizeTests(unittest.TestCase):
             c.commit()
         tips = right_size_tips(self.db, today_iso="2026-04-19T00:00:00")
         self.assertTrue(any(t["category"] == "right-size" for t in tips))
+        self.assertTrue(all(t["project_slug"] is None for t in tips))
 
 
 class OutlierTests(unittest.TestCase):
@@ -85,6 +88,7 @@ class OutlierTests(unittest.TestCase):
             c.commit()
         tips = outlier_tips(self.db, today_iso="2026-04-19T00:00:00")
         self.assertTrue(any(t["category"] == "tool-bloat" for t in tips))
+        self.assertTrue(all(t["project_slug"] is None for t in tips))
 
 
 class DismissTests(unittest.TestCase):
