@@ -61,6 +61,7 @@ def cache_discipline_tips(db_path, today_iso: Optional[str] = None) -> List[dict
                     "title": f"Low cache hit rate in {row['project_slug']}",
                     "body": f"Cache hit rate is {hit*100:.0f}% over the last 7 days. Sessions that restart context frequently rebuild cache. Consider longer-lived sessions or fewer context resets.",
                     "scope": row["project_slug"],
+                    "project_slug": row["project_slug"],
                 })
     return out
 
@@ -71,36 +72,47 @@ def repeated_target_tips(db_path, today_iso: Optional[str] = None) -> List[dict]
     out = []
     with connect(db_path) as c:
         for row in c.execute("""
-          SELECT target, COUNT(*) AS n, COUNT(DISTINCT session_id) AS sessions
+          SELECT project_slug, target, COUNT(*) AS n, COUNT(DISTINCT session_id) AS sessions
             FROM tool_calls
            WHERE tool_name IN ('Read','Edit','Write') AND timestamp >= ?
-           GROUP BY target HAVING n > 10
+           GROUP BY project_slug, target HAVING n > 10
            ORDER BY n DESC LIMIT 10
         """, (since,)):
-            key = _key("repeat-file", row["target"] or "?")
+            slug = row["project_slug"] or "?"
+            target = row["target"] or "?"
+            key = _key("repeat-file", f"{slug}:{target}")
             if _is_dismissed(db_path, key):
                 continue
             out.append({
                 "key": key, "category": "repeat-file",
-                "title": f"{row['target']} read {row['n']} times",
+                "title": f"{target} read {row['n']} times in {slug}",
                 "body": f"This file was opened {row['n']} times across {row['sessions']} sessions in the past 7 days. A summary in CLAUDE.md or one read per session would avoid repeats.",
-                "scope": row["target"],
+                "scope": target,
+                "project_slug": row["project_slug"],
+                "target": target,
+                "count": row["n"],
+                "sessions": row["sessions"],
             })
         for row in c.execute("""
-          SELECT target, COUNT(*) AS n
+          SELECT project_slug, target, COUNT(*) AS n
             FROM tool_calls
            WHERE tool_name='Bash' AND timestamp >= ?
-           GROUP BY target HAVING n > 15
+           GROUP BY project_slug, target HAVING n > 15
            ORDER BY n DESC LIMIT 10
         """, (since,)):
-            key = _key("repeat-bash", row["target"] or "?")
+            slug = row["project_slug"] or "?"
+            target = row["target"] or "?"
+            key = _key("repeat-bash", f"{slug}:{target}")
             if _is_dismissed(db_path, key):
                 continue
             out.append({
                 "key": key, "category": "repeat-bash",
-                "title": f"`{row['target']}` ran {row['n']} times",
+                "title": f"`{target}` ran {row['n']} times in {slug}",
                 "body": f"This bash command ran {row['n']} times in the past 7 days. Consider a watch flag or shell alias.",
-                "scope": row["target"],
+                "scope": target,
+                "project_slug": row["project_slug"],
+                "target": target,
+                "count": row["n"],
             })
     return out
 
@@ -134,6 +146,7 @@ def right_size_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
         "title": f"{row['n']} short Opus turns might fit on Sonnet",
         "body": f"Opus turns under 500 output tokens cost ~${api_opus:.2f} in the last 7 days. Sonnet would have cost ~${api_sonnet:.2f} (savings ~${savings:.2f}).",
         "scope": "opus-short-turns-7d",
+        "project_slug": None,
     }]
 
 
@@ -155,6 +168,7 @@ def outlier_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
                     "title": f"{big['n']} tool results over 50k tokens this week",
                     "body": f"Average size is {int(big['avg_t']):,} tokens. Pipe long Bash output to head/tail and ask for narrower file reads.",
                     "scope": "result-50k+",
+                    "project_slug": None,
                 })
         for row in c.execute("""
           SELECT agent_id, COUNT(*) AS n,
@@ -173,6 +187,7 @@ def outlier_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
                     "title": f"Subagent {row['agent_id']} has cost outliers",
                     "body": f"Largest invocation used {int(row['max_t']):,} tokens vs mean {int(row['mean_t']):,}. Worth checking what those did differently.",
                     "scope": row["agent_id"],
+                    "project_slug": None,
                 })
     return out
 
