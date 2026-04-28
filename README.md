@@ -39,7 +39,7 @@ The command:
 2. Starts a local server at http://127.0.0.1:8080.
 3. Opens your default browser to that URL.
 
-Leave it running; it re-scans every 30 seconds and pushes updates live. Stop with `Ctrl+C`.
+Leave it running; it re-scans every 5 seconds and pushes updates live (configurable via `TOKEN_DASHBOARD_SCAN_INTERVAL`). Stop with `Ctrl+C`.
 
 ## Where the data comes from
 
