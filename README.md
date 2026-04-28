@@ -47,7 +47,7 @@ The command:
 2. Starts a local server at http://127.0.0.1:8080.
 3. Opens your default browser to that URL.
 
-Leave it running; it re-scans every 30 seconds and pushes updates live. Stop with `Ctrl+C`.
+Leave it running; it re-scans every 5 seconds and pushes updates live (configurable via `TOKEN_DASHBOARD_SCAN_INTERVAL`). Stop with `Ctrl+C`.
 
 ## Where the data comes from
 
@@ -74,6 +74,7 @@ python3 cli.py dashboard --projects-dir /path/to/projects --db /path/to/cache.db
 | `HOST` | `127.0.0.1` | Bind address. Keep the default. Setting `0.0.0.0` exposes your entire prompt history to anyone on your local network — don't do this on any network you don't fully control (no coffee-shop Wi-Fi, no coworking spaces). |
 | `CLAUDE_PROJECTS_DIR` | `~/.claude/projects` | Where to scan for session JSONL files |
 | `TOKEN_DASHBOARD_DB` | `~/.claude/token-dashboard.db` | SQLite cache location |
+| `TOKEN_DASHBOARD_SCAN_INTERVAL` | `5` | Seconds between background rescans of the JSONL files. Lower = fresher dashboard, more disk reads. Floor is `0.5`. |
 
 Pricing lives in [`pricing.json`](pricing.json). Edit it directly if model prices change or to add a new plan.
 

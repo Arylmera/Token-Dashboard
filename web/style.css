@@ -62,6 +62,12 @@ header.topbar {
   background: var(--panel-2); border: 1px solid var(--border);
   color: var(--muted); font-size: 12px; font-family: var(--mono);
 }
+.topbar .pill-btn {
+  cursor: pointer; color: var(--text);
+  transition: background 120ms, color 120ms, opacity 120ms;
+}
+.topbar .pill-btn:hover { background: var(--border); }
+.topbar .pill-btn.is-busy { opacity: 0.55; cursor: progress; }
 
 /* main */
 main#app { padding: 24px 20px; max-width: 1400px; margin: 0 auto; }
