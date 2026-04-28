@@ -192,10 +192,26 @@ def outlier_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
     return out
 
 
+def _project_cwds(db_path) -> dict:
+    """Return {project_slug: most_recent_cwd} via SQLite's bare-column-with-MAX trick."""
+    sql = """
+      SELECT project_slug, MAX(timestamp) AS ts, cwd
+        FROM messages
+       WHERE cwd IS NOT NULL AND cwd != ''
+       GROUP BY project_slug
+    """
+    with connect(db_path) as c:
+        return {r["project_slug"]: r["cwd"] for r in c.execute(sql)}
+
+
 def all_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
-    return [
+    tips = [
         *cache_discipline_tips(db_path, today_iso),
         *repeated_target_tips(db_path, today_iso),
         *right_size_tips(db_path, today_iso),
         *outlier_tips(db_path, today_iso),
     ]
+    cwds = _project_cwds(db_path)
+    for t in tips:
+        t["project_cwd"] = cwds.get(t.get("project_slug")) if t.get("project_slug") else None
+    return tips
