@@ -64,7 +64,7 @@ async function renderSession(root, id) {
     <div class="card" style="margin-top:16px">
       <h3>Turn-by-turn</h3>
       <table>
-        <thead><tr><th>time</th><th>type</th><th>model</th><th class="blur-sensitive">prompt / tools</th><th class="num">in</th><th class="num">out</th><th class="num">cache rd</th></tr></thead>
+        <thead><tr><th>time</th><th>type</th><th>model</th><th>prompt / tools</th><th class="num">in</th><th class="num">out</th><th class="num">cache rd</th></tr></thead>
         <tbody>
           ${turns.map(t => {
             const tools = t.tool_calls_json ? JSON.parse(t.tool_calls_json) : [];
@@ -75,7 +75,7 @@ async function renderSession(root, id) {
               <td class="mono">${(t.timestamp || '').slice(11,19)}</td>
               <td>${t.type}${t.is_sidechain ? ' <span class="badge">side</span>' : ''}</td>
               <td>${t.model ? `<span class="badge ${fmt.modelClass(t.model)}">${fmt.htmlSafe(fmt.modelShort(t.model))}</span>` : ''}</td>
-              <td class="blur-sensitive">${fmt.htmlSafe(summary)}</td>
+              <td>${fmt.htmlSafe(summary)}</td>
               <td class="num">${fmt.int(t.input_tokens)}</td>
               <td class="num">${fmt.int(t.output_tokens)}</td>
               <td class="num">${fmt.int(t.cache_read_tokens)}</td>

@@ -34,11 +34,6 @@ export default async function (root) {
         </tbody>
       </table>
       <p class="muted" style="margin-top:8px;font-size:11px">Rates per 1M tokens, USD.</p>
-
-      <hr class="divider">
-
-      <h3>Privacy</h3>
-      <p class="muted">Press <code>Cmd/Ctrl + B</code> anywhere to blur prompt text and other sensitive content for screenshots.</p>
     </div>`;
 
   $('#save').addEventListener('click', async () => {
