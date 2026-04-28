@@ -16,6 +16,72 @@
   --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
+:root[data-theme="light"] {
+  --bg:        #F7F9FC;
+  --panel:     #FFFFFF;
+  --panel-2:   #F1F4F8;
+  --border:    #E2E7EE;
+  --border-2:  #CFD6DF;
+  --text:      #1A2330;
+  --muted:     #5A6573;
+  --muted-2:   #8B98A6;
+  --accent:    #2B7FE0;
+  --accent-2:  #5C3FE0;
+  --good:      #2E9870;
+  --warn:      #C8821E;
+  --bad:       #D43338;
+}
+
+:root[data-theme="forge"] {
+  --bg:        #14100C;
+  --panel:     #1A140E;
+  --panel-2:   #221A12;
+  --border:    #2E2218;
+  --border-2:  #3D2D1F;
+  --text:      #F5E8D8;
+  --muted:     #B89578;
+  --muted-2:   #7A5E45;
+  --accent:    #FF8A3D;
+  --accent-2:  #FF5C2E;
+  --good:      #C8A24A;
+  --warn:      #FFB347;
+  --bad:       #E5484D;
+}
+
+:root[data-theme="forest"] {
+  --bg:        #0C1410;
+  --panel:     #0F1A14;
+  --panel-2:   #13221A;
+  --border:    #1B2E24;
+  --border-2:  #264736;
+  --text:      #E0F0E5;
+  --muted:     #8FB39C;
+  --muted-2:   #5C7C68;
+  --accent:    #4FCB7A;
+  --accent-2:  #2EA66B;
+  --good:      #4FCB7A;
+  --warn:      #E8A23B;
+  --bad:       #E5484D;
+}
+
+/* theme dropdown menu */
+.menu { position: relative; display: inline-block; }
+.menu-panel {
+  position: absolute; right: 0; top: calc(100% + 4px);
+  background: var(--panel); border: 1px solid var(--border-2);
+  border-radius: 6px; padding: 4px; min-width: 140px;
+  z-index: 100; box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+}
+.menu-panel[hidden] { display: none; }
+.menu-item {
+  display: block; width: 100%; text-align: left;
+  background: transparent; border: 0; padding: 6px 10px;
+  color: var(--text); border-radius: 4px; cursor: pointer;
+  font: inherit;
+}
+.menu-item:hover { background: var(--panel-2); }
+.menu-item[aria-checked="true"]::before { content: "✓ "; color: var(--accent); }
+
 * { box-sizing: border-box; }
 html, body {
   background: var(--bg); color: var(--text);
@@ -245,3 +311,5 @@ hr.divider { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
   .glossary dl { grid-template-columns: 1fr; gap: 4px 0; }
   .glossary dt { margin-top: 10px; }
 }
+
+#app { transition: opacity 120ms ease; }

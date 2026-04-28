@@ -22,32 +22,44 @@ A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.cla
 - **Claude Code** — installed and with at least one session run. The dashboard reads those sessions. If you just installed Claude Code and haven't used it yet, run at least one prompt first.
 - **A web browser.** Any modern one.
 
-No `pip install`. No Node.js. No build step.
+The package itself has zero runtime dependencies (Python stdlib only). No Node.js. No build step.
 
 ## Quickstart
 
 ```bash
-git clone https://github.com/nateherkai/token-dashboard.git
-cd token-dashboard
-python3 cli.py dashboard
+git clone https://github.com/Arylmera/Token-Dashboard.git
+cd Token-Dashboard
+pip install .
+token-dashboard dashboard
 ```
-
-**One-click launchers** (after cloning):
-
-| OS | Double-click |
-|---|---|
-| Windows | `run.bat` |
-| macOS | `run.command` (first time: `chmod +x run.command run.sh`) |
-| Linux | `run.sh` (first time: `chmod +x run.sh`) |
-
-> On Windows, if `python3` isn't on your PATH, substitute `py -3` for `python3` in every command below.
 
 The command:
 1. Scans `~/.claude/projects/` (first run can take 20–60 seconds on a heavy user's machine).
 2. Starts a local server at http://127.0.0.1:8080.
 3. Opens your default browser to that URL.
 
-Leave it running; it re-scans every 5 seconds and pushes updates live (configurable via `TOKEN_DASHBOARD_SCAN_INTERVAL`). Stop with `Ctrl+C`.
+Leave it running; it re-scans every 5 seconds and pushes updates live over SSE. There's also a manual refresh button in the header for when you want to force one immediately. Stop with `Ctrl+C`.
+
+> On Windows, if `python` isn't on your PATH, use `py -3 -m pip install .` instead of `pip install .`.
+
+### Without installing (run from the source tree)
+
+If you'd rather not install the package — useful when hacking on the code:
+
+```bash
+python3 cli.py dashboard            # equivalent to `token-dashboard dashboard`
+python3 -m token_dashboard dashboard # also equivalent
+```
+
+Every `token-dashboard <subcmd>` example below works as `python3 cli.py <subcmd>` too.
+
+### One-click launchers
+
+| OS | Double-click |
+|---|---|
+| Windows | `run.bat` |
+| macOS | `run.command` (first time: `chmod +x run.command run.sh`) |
+| Linux | `run.sh` (first time: `chmod +x run.sh`) |
 
 ## Where the data comes from
 
@@ -63,7 +75,7 @@ The dashboard never modifies those files — it only reads them and keeps a loca
 To point at a different location:
 
 ```bash
-python3 cli.py dashboard --projects-dir /path/to/projects --db /path/to/cache.db
+token-dashboard dashboard --projects-dir /path/to/projects --db /path/to/cache.db
 ```
 
 ### Environment variables
@@ -76,23 +88,23 @@ python3 cli.py dashboard --projects-dir /path/to/projects --db /path/to/cache.db
 | `TOKEN_DASHBOARD_DB` | `~/.claude/token-dashboard.db` | SQLite cache location |
 | `TOKEN_DASHBOARD_SCAN_INTERVAL` | `5` | Seconds between background rescans of the JSONL files. Lower = fresher dashboard, more disk reads. Floor is `0.5`. |
 
-Pricing lives in [`pricing.json`](pricing.json). Edit it directly if model prices change or to add a new plan.
+Pricing lives in [`token_dashboard/pricing.json`](token_dashboard/pricing.json). Edit it directly if model prices change or to add a new plan.
 
 ## CLI reference
 
 ```bash
-python3 cli.py scan          # populate / refresh the local DB, then exit
-python3 cli.py today         # today's totals (terminal)
-python3 cli.py stats         # all-time totals (terminal)
-python3 cli.py tips          # active suggestions (terminal)
-python3 cli.py dashboard     # scan + serve the UI at http://localhost:8080
+token-dashboard scan          # populate / refresh the local DB, then exit
+token-dashboard today         # today's totals (terminal)
+token-dashboard stats         # all-time totals (terminal)
+token-dashboard tips          # active suggestions (terminal)
+token-dashboard dashboard     # scan + serve the UI at http://localhost:8080
 
 # dashboard flags
-python3 cli.py dashboard --no-open   # don't auto-open the browser
-python3 cli.py dashboard --no-scan   # skip the initial scan (use cached DB only)
+token-dashboard dashboard --no-open   # don't auto-open the browser
+token-dashboard dashboard --no-scan   # skip the initial scan (use cached DB only)
 ```
 
-Change the port: `PORT=9000 python3 cli.py dashboard`.
+Change the port: `PORT=9000 token-dashboard dashboard`.
 
 ## The 7 tabs
 
@@ -110,11 +122,11 @@ The Overview tab also has a built-in "What do these numbers mean?" panel that ex
 
 ## Troubleshooting
 
-**"No data" or empty charts.** Run `python3 cli.py scan` once to populate the DB, then reload.
+**"No data" or empty charts.** Run `token-dashboard scan` once to populate the DB, then reload.
 
-**Port 8080 already in use.** `PORT=9000 python3 cli.py dashboard`.
+**Port 8080 already in use.** `PORT=9000 token-dashboard dashboard`.
 
-**Numbers look wrong / stuck.** The DB lives at `~/.claude/token-dashboard.db`. Delete it and re-run `python3 cli.py scan` to rebuild from scratch.
+**Numbers look wrong / stuck.** The DB lives at `~/.claude/token-dashboard.db`. Delete it and re-run `token-dashboard scan` to rebuild from scratch.
 
 **Running the dashboard twice at the same time.** Don't — both processes will fight over the SQLite DB. Stop all instances before starting a new one.
 
@@ -124,13 +136,22 @@ Claude Code writes each assistant response 2–3 times to disk while it streams 
 
 ## Privacy
 
-Nothing leaves your machine. No telemetry. No remote calls for your data. The browser fetches its JSON from `127.0.0.1`, and all JS/CSS/fonts are served from that same local server — ECharts is vendored into `web/`, and the UI falls back to system fonts rather than pulling from a font CDN. If you want to verify: `grep -r "https://" token_dashboard/ web/` — you'll find nothing.
+Nothing leaves your machine. No telemetry. No remote calls for your data. The browser fetches its JSON from `127.0.0.1`, and all JS/CSS/fonts are served from that same local server — ECharts is vendored into `token_dashboard/web/`, and the UI falls back to system fonts rather than pulling from a font CDN. If you want to verify: `grep -r "https://" token_dashboard/` — you'll find nothing.
 
 ## Tech stack
 
 Python 3 (stdlib only) for the CLI, scanner, and HTTP server. SQLite for the local cache. Vanilla JS + ECharts for the UI, no build step. Dark theme, hash-based router, server-sent events for live refresh.
 
-Data flow: `cli.py` → `token_dashboard/scanner.py` → SQLite DB; `token_dashboard/server.py` exposes `/api/*` JSON routes and serves `web/`.
+Layout:
+
+- `cli.py` / `token_dashboard/__main__.py` — argparse entrypoint.
+- `token_dashboard/scanner.py` — incremental JSONL → SQLite ingest.
+- `token_dashboard/db/` — schema, queries, project helpers.
+- `token_dashboard/server/` — HTTP routes, SSE stream, background scan loop.
+- `token_dashboard/web/` — frontend, split into `core/` (router, API client, formatters), `charts/` (ECharts theme), and `routes/` (one file per tab).
+- `token_dashboard/pricing.json` — per-model and per-plan prices.
+
+Data flow: `token-dashboard` → `scanner.scan_dir` → SQLite at `~/.claude/token-dashboard.db`; `token_dashboard.server.run` exposes `/api/*` JSON routes and serves the static frontend.
 
 ## Further reading
 

@@ -1,44 +1,15 @@
-// app.js — router, state, fetch helpers
+// shell.js — topbar, first-run modal, SSE wiring, boot
 
-export const $  = (sel, root=document) => root.querySelector(sel);
-export const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+import { $ } from '/web/core/dom.js';
+import { api, state } from '/web/core/api.js';
+import { ROUTES, render } from '/web/core/router.js';
+import { getTheme, setTheme, THEMES } from '/web/core/settings.js';
 
-const COMPACT = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
-export const fmt = {
-  int:   n => (n ?? 0).toLocaleString(),
-  compact: n => COMPACT.format(n ?? 0),
-  usd:   n => n == null ? '—' : '$' + Number(n).toFixed(2),
-  usd4:  n => n == null ? '—' : '$' + Number(n).toFixed(4),
-  pct:   n => n == null ? '—' : (n * 100).toFixed(0) + '%',
-  short: (s, n=80) => s == null ? '' : (s.length > n ? s.slice(0, n - 1) + '…' : s),
-  htmlSafe: s => (s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
-  modelClass: m => {
-    const s = (m || '').toLowerCase();
-    if (s.includes('opus'))   return 'opus';
-    if (s.includes('sonnet')) return 'sonnet';
-    if (s.includes('haiku'))  return 'haiku';
-    return '';
-  },
-  modelShort: m => (m || '').replace('claude-', ''),
-  ts: t => (t || '').slice(0, 16).replace('T', ' '),
-};
-
-export async function api(path, opts) {
-  const r = await fetch(path, opts);
-  if (!r.ok) throw new Error(`${path} → ${r.status}`);
-  return r.json();
-}
-
-export const state = { plan: 'api', pricing: null };
-
-const ROUTES = {
-  '/overview': () => import('/web/routes/overview.js'),
-  '/prompts':  () => import('/web/routes/prompts.js'),
-  '/sessions': () => import('/web/routes/sessions.js'),
-  '/projects': () => import('/web/routes/projects.js'),
-  '/skills':   () => import('/web/routes/skills.js'),
-  '/tips':     () => import('/web/routes/tips.js'),
-  '/settings': () => import('/web/routes/settings.js'),
+const THEME_LABELS = {
+  dark:   '🌙 Dark',
+  light:  '☀️ Light',
+  forge:  '🔥 Forge',
+  forest: '🌲 Forest',
 };
 
 function buildTopbar() {
@@ -52,8 +23,51 @@ function buildTopbar() {
     <div class="spacer"></div>
     <button class="pill pill-btn" id="refresh-btn" title="Rescan JSONL files now and re-render">↻ Refresh</button>
     <span class="pill" id="plan-pill">api</span>
+    <div class="menu" id="theme-menu">
+      <button class="pill pill-btn" id="theme-btn" title="Theme" aria-haspopup="menu" aria-expanded="false">≡</button>
+      <div class="menu-panel" role="menu" hidden>
+        ${THEMES.map(id => `<button class="menu-item" role="menuitemradio" data-theme="${id}">${THEME_LABELS[id]}</button>`).join('')}
+      </div>
+    </div>
   `;
   document.body.prepend(wrap);
+
+  const themeMenu  = wrap.querySelector('#theme-menu');
+  const themeBtn   = themeMenu.querySelector('#theme-btn');
+  const themePanel = themeMenu.querySelector('.menu-panel');
+
+  const paintActive = () => {
+    const cur = getTheme();
+    themePanel.querySelectorAll('.menu-item').forEach(it => {
+      it.setAttribute('aria-checked', it.dataset.theme === cur ? 'true' : 'false');
+    });
+  };
+  const closeMenu = () => {
+    themePanel.hidden = true;
+    themeBtn.setAttribute('aria-expanded', 'false');
+  };
+  const openMenu = () => {
+    paintActive();
+    themePanel.hidden = false;
+    themeBtn.setAttribute('aria-expanded', 'true');
+  };
+  paintActive();
+
+  themeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (themePanel.hidden) openMenu(); else closeMenu();
+  });
+  themePanel.addEventListener('click', async (e) => {
+    const item = e.target.closest('.menu-item');
+    if (!item) return;
+    setTheme(item.dataset.theme);
+    paintActive();
+    closeMenu();
+    await render();
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (!themePanel.hidden && !themeMenu.contains(e.target)) closeMenu();
+  });
 
   wrap.querySelector('#refresh-btn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
@@ -70,26 +84,6 @@ function buildTopbar() {
       btn.classList.remove('is-busy');
     }
   });
-}
-
-function setActiveTab(routeKey) {
-  $$('header.topbar nav a').forEach(a => a.classList.toggle('active', a.dataset.route === routeKey));
-}
-
-async function render() {
-  const hash = location.hash.replace(/^#/, '') || '/overview';
-  const path = hash.split('?')[0];
-  let key = path;
-  if (path.startsWith('/sessions/')) key = '/sessions';
-  setActiveTab(key);
-  const loader = ROUTES[key] || ROUTES['/overview'];
-  const mod = await loader();
-  $('#app').innerHTML = '';
-  try {
-    await mod.default($('#app'));
-  } catch (e) {
-    $('#app').innerHTML = `<div class="card"><h2>Error</h2><pre>${fmt.htmlSafe(String(e.stack || e))}</pre></div>`;
-  }
 }
 
 async function firstRun() {
@@ -120,7 +114,8 @@ async function firstRun() {
   state.plan = (await api('/api/plan')).plan;
 }
 
-async function boot() {
+export async function boot() {
+  setTheme(getTheme());
   buildTopbar();
   const planResp = await api('/api/plan');
   state.plan = planResp.plan;
@@ -132,16 +127,23 @@ async function boot() {
   window.addEventListener('hashchange', render);
   await render();
 
-  // SSE diff stream
+  // SSE diff stream — coalesce bursts, keep at most one render in flight + one queued
+  let pending = false;
+  let inflight = null;
+  function scheduleRender() {
+    if (inflight) { pending = true; return; }
+    inflight = render().finally(() => {
+      inflight = null;
+      if (pending) { pending = false; scheduleRender(); }
+    });
+  }
   try {
     const es = new EventSource('/api/stream');
     es.onmessage = ev => {
       try {
         const evt = JSON.parse(ev.data);
-        if (evt.type === 'scan') render();
+        if (evt.type === 'scan') scheduleRender();
       } catch {}
     };
   } catch {}
 }
-
-boot();
