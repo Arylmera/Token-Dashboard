@@ -198,10 +198,6 @@ button.ghost { background: transparent; color: var(--muted); }
 }
 .range-tabs button.active { background: var(--bg); color: var(--text); }
 
-/* privacy blur */
-.blur-sensitive { transition: filter 120ms; }
-body.privacy-on .blur-sensitive { filter: blur(6px); }
-
 /* first-run modal */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(10,14,20,0.85);

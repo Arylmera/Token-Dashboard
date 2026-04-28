@@ -52,7 +52,7 @@ export default async function (root) {
           ${rows.map((r,i) => `
             <tr data-i="${i}" style="cursor:pointer">
               <td class="${sort.key === 'recent' ? 'mono' : 'num mono'}">${sort.key === 'recent' ? fmt.ts(r.timestamp) : fmt.usd4(r.estimated_cost_usd)}</td>
-              <td class="blur-sensitive">${fmt.htmlSafe(fmt.short(r.prompt_text, 110))}</td>
+              <td>${fmt.htmlSafe(fmt.short(r.prompt_text, 110))}</td>
               <td><span class="badge ${fmt.modelClass(r.model)}">${fmt.htmlSafe(fmt.modelShort(r.model))}</span></td>
               <td class="num">${fmt.int(r.billable_tokens)}</td>
               <td class="num">${fmt.int(r.cache_read_tokens)}</td>
@@ -79,7 +79,7 @@ export default async function (root) {
             <span class="spacer"></span>
             <span class="badge ${fmt.modelClass(r.model)}">${fmt.htmlSafe(fmt.modelShort(r.model))}</span>
           </h3>
-          <pre class="blur-sensitive">${fmt.htmlSafe(r.prompt_text || '')}</pre>
+          <pre>${fmt.htmlSafe(r.prompt_text || '')}</pre>
           <div class="flex" style="margin-top:12px;flex-wrap:wrap;gap:14px">
             <span class="muted">${fmt.ts(r.timestamp)}</span>
             <span class="muted">${fmt.int(r.billable_tokens)} billable · ${fmt.int(r.cache_read_tokens)} cache rd · ~${fmt.usd4(r.estimated_cost_usd)} cache cost</span>

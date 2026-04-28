@@ -52,7 +52,6 @@ function buildTopbar() {
     <div class="spacer"></div>
     <button class="pill pill-btn" id="refresh-btn" title="Rescan JSONL files now and re-render">↻ Refresh</button>
     <span class="pill" id="plan-pill">api</span>
-    <span class="pill muted" title="Cmd/Ctrl+B blurs sensitive text">⌘B blur</span>
   `;
   document.body.prepend(wrap);
 
@@ -132,14 +131,6 @@ async function boot() {
 
   window.addEventListener('hashchange', render);
   await render();
-
-  // Privacy blur (Cmd+B / Ctrl+B)
-  window.addEventListener('keydown', e => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
-      e.preventDefault();
-      document.body.classList.toggle('privacy-on');
-    }
-  });
 
   // SSE diff stream
   try {
