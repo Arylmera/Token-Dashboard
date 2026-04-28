@@ -1,40 +1,6 @@
 // charts.js — themed ECharts wrappers
 
-const PALETTE = ['#4A9EFF', '#7C5CFF', '#3FB68B', '#E8A23B', '#E5484D', '#5BCEDA', '#F472B6'];
-
-const BASE = {
-  textStyle: { color: '#E6EDF3', fontFamily: 'Inter' },
-  color: PALETTE,
-  grid: { left: 36, right: 12, top: 24, bottom: 24, containLabel: true },
-};
-
-const X_AXIS = {
-  axisLine:  { lineStyle: { color: '#1F2630' } },
-  axisLabel: { color: '#8B98A6' },
-  axisTick:  { show: false },
-};
-
-const Y_AXIS = {
-  axisLine:  { show: false },
-  axisTick:  { show: false },
-  splitLine: { lineStyle: { color: '#1F2630' } },
-  axisLabel: { color: '#8B98A6' },
-};
-
-const TOOLTIP = {
-  trigger: 'axis',
-  backgroundColor: '#0F1419',
-  borderColor: '#283040',
-  borderWidth: 1,
-  textStyle: { color: '#E6EDF3', fontFamily: 'Inter', fontSize: 12 },
-  padding: [8, 12],
-};
-
-function mount(el) {
-  const c = echarts.init(el, null, { renderer: 'svg' });
-  window.addEventListener('resize', () => c.resize());
-  return c;
-}
+import { PALETTE, BASE, X_AXIS, Y_AXIS, TOOLTIP, mount } from '/web/charts/theme.js';
 
 export function lineChart(el, { x, series }) {
   const c = mount(el);

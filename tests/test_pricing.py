@@ -3,7 +3,7 @@ import unittest
 
 from token_dashboard.pricing import load_pricing, cost_for, format_for_user
 
-PRICING = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pricing.json"))
+PRICING = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "token_dashboard", "pricing.json"))
 
 
 class CostTests(unittest.TestCase):
