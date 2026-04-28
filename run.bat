@@ -2,20 +2,15 @@
 setlocal
 cd /d "%~dp0"
 
-where py >nul 2>nul
-if %ERRORLEVEL% == 0 (
-    py -3 cli.py dashboard %*
-) else (
-    where python >nul 2>nul
-    if %ERRORLEVEL% == 0 (
-        python cli.py dashboard %*
-    ) else (
-        echo Python 3 was not found on PATH.
-        echo Install it from https://www.python.org/downloads/ and try again.
-        pause
-        exit /b 1
-    )
+where node >nul 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    echo Node.js was not found on PATH.
+    echo Install Node.js 22.5 or newer from https://nodejs.org/ and try again.
+    pause
+    exit /b 1
 )
+
+node --experimental-sqlite cli.js dashboard %*
 
 if %ERRORLEVEL% NEQ 0 pause
 endlocal

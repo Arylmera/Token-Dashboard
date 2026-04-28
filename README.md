@@ -18,19 +18,21 @@ A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.cla
 
 ## Prerequisites
 
-- **Python 3.8 or newer** — already installed on macOS and most Linux. On Windows: `winget install Python.Python.3.12` or download from python.org.
+- **Node.js 22.5 or newer** — install from https://nodejs.org/ (the LTS download is fine). On Windows: `winget install OpenJS.NodeJS`. On macOS: `brew install node`. The dashboard uses Node's built-in SQLite (`node:sqlite`), introduced in 22.5 and stable from 24.
 - **Claude Code** — installed and with at least one session run. The dashboard reads those sessions. If you just installed Claude Code and haven't used it yet, run at least one prompt first.
 - **A web browser.** Any modern one.
 
-No `pip install`. No Node.js. No build step.
+No `npm install`. No build step. Zero dependencies — only Node built-ins.
 
 ## Quickstart
 
 ```bash
 git clone https://github.com/nateherkai/token-dashboard.git
 cd token-dashboard
-python3 cli.py dashboard
+node --experimental-sqlite cli.js dashboard
 ```
+
+(The `--experimental-sqlite` flag is a no-op on Node 24+ where `node:sqlite` is stable; harmless to keep.)
 
 **One-click launchers** (after cloning):
 
@@ -39,8 +41,6 @@ python3 cli.py dashboard
 | Windows | `run.bat` |
 | macOS | `run.command` (first time: `chmod +x run.command run.sh`) |
 | Linux | `run.sh` (first time: `chmod +x run.sh`) |
-
-> On Windows, if `python3` isn't on your PATH, substitute `py -3` for `python3` in every command below.
 
 The command:
 1. Scans `~/.claude/projects/` (first run can take 20–60 seconds on a heavy user's machine).
@@ -63,7 +63,7 @@ The dashboard never modifies those files — it only reads them and keeps a loca
 To point at a different location:
 
 ```bash
-python3 cli.py dashboard --projects-dir /path/to/projects --db /path/to/cache.db
+node --experimental-sqlite cli.js dashboard --projects-dir /path/to/projects --db /path/to/cache.db
 ```
 
 ### Environment variables
@@ -81,18 +81,20 @@ Pricing lives in [`pricing.json`](pricing.json). Edit it directly if model price
 ## CLI reference
 
 ```bash
-python3 cli.py scan          # populate / refresh the local DB, then exit
-python3 cli.py today         # today's totals (terminal)
-python3 cli.py stats         # all-time totals (terminal)
-python3 cli.py tips          # active suggestions (terminal)
-python3 cli.py dashboard     # scan + serve the UI at http://localhost:8080
+node --experimental-sqlite cli.js scan        # populate / refresh the local DB, then exit
+node --experimental-sqlite cli.js today       # today's totals (terminal)
+node --experimental-sqlite cli.js stats       # all-time totals (terminal)
+node --experimental-sqlite cli.js tips        # active suggestions (terminal)
+node --experimental-sqlite cli.js dashboard   # scan + serve the UI at http://localhost:8080
 
 # dashboard flags
-python3 cli.py dashboard --no-open   # don't auto-open the browser
-python3 cli.py dashboard --no-scan   # skip the initial scan (use cached DB only)
+node --experimental-sqlite cli.js dashboard --no-open   # don't auto-open the browser
+node --experimental-sqlite cli.js dashboard --no-scan   # skip the initial scan (use cached DB only)
 ```
 
-Change the port: `PORT=9000 python3 cli.py dashboard`.
+Change the port: `PORT=9000 node --experimental-sqlite cli.js dashboard`.
+
+For convenience, `npm run start`, `npm run scan`, and `npm test` are wired up in `package.json`.
 
 ## The 7 tabs
 
@@ -110,11 +112,11 @@ The Overview tab also has a built-in "What do these numbers mean?" panel that ex
 
 ## Troubleshooting
 
-**"No data" or empty charts.** Run `python3 cli.py scan` once to populate the DB, then reload.
+**"No data" or empty charts.** Run `node --experimental-sqlite cli.js scan` once to populate the DB, then reload.
 
-**Port 8080 already in use.** `PORT=9000 python3 cli.py dashboard`.
+**Port 8080 already in use.** `PORT=9000 node --experimental-sqlite cli.js dashboard`.
 
-**Numbers look wrong / stuck.** The DB lives at `~/.claude/token-dashboard.db`. Delete it and re-run `python3 cli.py scan` to rebuild from scratch.
+**Numbers look wrong / stuck.** The DB lives at `~/.claude/token-dashboard.db`. Delete it and re-run `node --experimental-sqlite cli.js scan` to rebuild from scratch.
 
 **Running the dashboard twice at the same time.** Don't — both processes will fight over the SQLite DB. Stop all instances before starting a new one.
 
@@ -124,13 +126,13 @@ Claude Code writes each assistant response 2–3 times to disk while it streams 
 
 ## Privacy
 
-Nothing leaves your machine. No telemetry. No remote calls for your data. The browser fetches its JSON from `127.0.0.1`, and all JS/CSS/fonts are served from that same local server — ECharts is vendored into `web/`, and the UI falls back to system fonts rather than pulling from a font CDN. If you want to verify: `grep -r "https://" token_dashboard/ web/` — you'll find nothing.
+Nothing leaves your machine. No telemetry. No remote calls for your data. The browser fetches its JSON from `127.0.0.1`, and all JS/CSS/fonts are served from that same local server — ECharts is vendored into `web/`, and the UI falls back to system fonts rather than pulling from a font CDN. If you want to verify: `grep -r "https://" src/ web/` — you'll find nothing.
 
 ## Tech stack
 
-Python 3 (stdlib only) for the CLI, scanner, and HTTP server. SQLite for the local cache. Vanilla JS + ECharts for the UI, no build step. Dark theme, hash-based router, server-sent events for live refresh.
+Node.js 22.5+ (built-ins only — `node:sqlite`, `node:http`, `node:test`) for the CLI, scanner, and HTTP server. SQLite for the local cache. Vanilla JS + ECharts for the UI, no build step. Dark theme, hash-based router, server-sent events for live refresh.
 
-Data flow: `cli.py` → `token_dashboard/scanner.py` → SQLite DB; `token_dashboard/server.py` exposes `/api/*` JSON routes and serves `web/`.
+Data flow: `cli.js` → `src/scanner.js` → SQLite DB; `src/server.js` exposes `/api/*` JSON routes and serves `web/`.
 
 ## Further reading
 
@@ -141,7 +143,7 @@ Data flow: `cli.py` → `token_dashboard/scanner.py` → SQLite DB; `token_dashb
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). Short version: fork, `python3 -m unittest discover tests` before opening a PR, keep it stdlib-only.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Short version: fork, `npm test` before opening a PR, keep it dependency-free (Node built-ins only).
 
 ## License
 

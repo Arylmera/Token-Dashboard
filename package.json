@@ -1,0 +1,19 @@
+{
+  "name": "token-dashboard",
+  "version": "0.1.0",
+  "description": "Local dashboard for tracking Claude Code token usage, costs, and session history.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "bin": {
+    "token-dashboard": "./cli.js"
+  },
+  "scripts": {
+    "start": "node --experimental-sqlite cli.js dashboard",
+    "scan": "node --experimental-sqlite cli.js scan",
+    "test": "node --experimental-sqlite --test"
+  },
+  "license": "MIT"
+}

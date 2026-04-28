@@ -10,12 +10,12 @@ Inspired by [phuryn/claude-usage](https://github.com/phuryn/claude-usage) but di
 
 ## Status
 
-Working codebase. 68 Python unit tests (`python3 -m unittest discover tests`). Seven UI tabs wired up (Overview, Prompts, Sessions, Projects, Skills, Tips, Settings). Runs on macOS, Windows, and Linux.
+Working codebase. 75 Node.js unit tests (`npm test`). Seven UI tabs wired up (Overview, Prompts, Sessions, Projects, Skills, Tips, Settings). Runs on macOS, Windows, and Linux. Requires Node.js 22.5+ (uses built-in `node:sqlite`, stable from Node 24).
 
 ## Architecture
 
-- `cli.py` → `token_dashboard/scanner.py` → `~/.claude/token-dashboard.db` (SQLite)
-- `token_dashboard/server.py` exposes JSON APIs (`/api/*`) + SSE stream (`/api/stream`) + static frontend (`web/`)
+- `cli.js` → `src/scanner.js` → `~/.claude/token-dashboard.db` (SQLite via `node:sqlite`)
+- `src/server.js` exposes JSON APIs (`/api/*`) + SSE stream (`/api/stream`) + static frontend (`web/`)
 - `web/` is vanilla JS, no build step — hash router + ECharts
 
 ## Data source
@@ -25,14 +25,15 @@ Claude Code writes one JSONL file per session to `~/.claude/projects/<project-sl
 ## Conventions
 
 - **Fully local.** No telemetry, no remote calls for user data. Tests run offline.
-- **Stdlib only.** No `pip install`. If a new feature needs a third-party library, argue for it first — we're willing to pay ergonomics cost to keep install friction at zero.
-- **SQLite parameter binding always.** Any f-string in a SQL statement must interpolate only internal, caller-controlled values (column names, placeholder lists). User-reachable values go through `?`.
+- **Node built-ins only.** No `dependencies` in `package.json`. If a new feature needs a third-party library, argue for it first — we're willing to pay ergonomics cost to keep install friction at zero.
+- **SQLite parameter binding always.** Any template literal embedded in a SQL string must interpolate only internal, caller-controlled values (column names, placeholder counts). User-reachable values go through `?`.
 - **Small files with clear responsibilities.** If a file grows past ~400 lines or accretes three distinct concerns, split it.
-- **Streaming-snapshot dedup.** When adding scanner logic that joins the `messages` table, remember `(session_id, message_id)` is the dedup key, not `uuid`. See `scanner._evict_prior_snapshots` and the migration note in `db._migrate_add_message_id`.
+- **Streaming-snapshot dedup.** When adding scanner logic that joins the `messages` table, remember `(session_id, message_id)` is the dedup key, not `uuid`. See `scanner.evictPriorSnapshots` and the migration note in `db.migrateAddMessageId`.
+- **Plain JS + JSDoc, ES modules.** No TypeScript, no transpiler — `package.json` has `"type": "module"`.
 
 ## Customizing
 
-Env vars: `PORT` (default 8080), `HOST` (default 127.0.0.1), `CLAUDE_PROJECTS_DIR`, `TOKEN_DASHBOARD_DB`. Pricing lives in `pricing.json`. See README.md § Environment variables for details.
+Env vars: `PORT` (default 8080), `HOST` (default 127.0.0.1), `CLAUDE_PROJECTS_DIR`, `TOKEN_DASHBOARD_DB`, `TOKEN_DASHBOARD_SCAN_INTERVAL`. Pricing lives in `pricing.json`. See README.md § Environment variables for details.
 
 ## Known limitations
 
@@ -41,7 +42,7 @@ See `docs/KNOWN_LIMITATIONS.md`. Current summary: Skills `tokens_per_call` is po
 ## Verifying changes
 
 ```bash
-python3 -m unittest discover tests        # all tests
-python3 cli.py dashboard --no-open        # start the server
-curl http://127.0.0.1:8080/api/overview   # sanity-check an endpoint
+npm test                                            # all tests via node --test
+node --experimental-sqlite cli.js dashboard --no-open  # start the server
+curl http://127.0.0.1:8080/api/overview             # sanity-check an endpoint
 ```
