@@ -13,7 +13,7 @@ function readRange() {
   const q = (location.hash.split('?')[1] || '');
   const m = /(?:^|&)range=([^&]+)/.exec(q);
   const k = m && decodeURIComponent(m[1]);
-  return RANGES.find(r => r.key === k) || RANGES.find(r => r.key === '30d');
+  return RANGES.find(r => r.key === k) || RANGES.find(r => r.key === 'today');
 }
 
 function writeRange(key) {
@@ -54,42 +54,62 @@ export default async function (root) {
   const cacheCreate =
     (totals.cache_create_5m_tokens || 0) +
     (totals.cache_create_1h_tokens || 0);
-
-  const kpi = (label, compactVal, fullVal, cls = '') => `
-    <div class="card kpi ${cls}">
-      <div class="label">${label}</div>
-      <div class="value" title="${fullVal}">${compactVal}</div>
-    </div>`;
+  const billable =
+    (totals.input_tokens || 0) +
+    (totals.output_tokens || 0) +
+    cacheCreate;
 
   const rangeTabs = `
     <div class="range-tabs" role="tablist">
       ${RANGES.map(r => `<button data-range="${r.key}" class="${r.key === range.key ? 'active' : ''}">${r.label}</button>`).join('')}
     </div>`;
 
+  // Range subtitle: "today" gets the literal word, all others get the days label.
+  const rangeWord = range.key === 'today'
+    ? 'today'
+    : (range.days ? `last ${range.days} days` : 'all time');
+
   root.innerHTML = `
     <div class="flex" style="margin-bottom:14px">
       <h2 style="margin:0;font-size:16px;letter-spacing:-0.01em">Overview</h2>
-      <span class="muted" style="font-size:12px">${range.days ? `last ${range.days} days` : 'all time'}</span>
+      <span class="muted" style="font-size:12px">${rangeWord}</span>
       <div class="spacer"></div>
       ${rangeTabs}
     </div>
 
-    <div class="row cols-7">
-      ${kpi('Sessions',     fmt.int(totals.sessions),       fmt.int(totals.sessions))}
-      ${kpi('Turns',        fmt.int(totals.turns),          fmt.int(totals.turns))}
-      ${kpi('Input',        fmt.compact(totals.input_tokens),       fmt.int(totals.input_tokens) + ' tokens')}
-      ${kpi('Output',       fmt.compact(totals.output_tokens),      fmt.int(totals.output_tokens) + ' tokens')}
-      ${kpi('Cache read',   fmt.compact(totals.cache_read_tokens),  fmt.int(totals.cache_read_tokens) + ' tokens')}
-      ${kpi('Cache create', fmt.compact(cacheCreate),               fmt.int(cacheCreate) + ' tokens')}
+    <div class="row cols-3">
+      <div class="card kpi">
+        <div class="label">Sessions</div>
+        <div class="value" title="${fmt.int(totals.sessions)}">${fmt.int(totals.sessions)}</div>
+        <div class="sub">${fmt.int(totals.turns)} turns</div>
+      </div>
+      <div class="card kpi">
+        <div class="label">Billable tokens</div>
+        <div class="value big" title="${fmt.int(billable)} tokens">${fmt.compact(billable)}</div>
+        <div class="sub">input + output + cache create</div>
+      </div>
       <div class="card kpi cost">
         <div class="label">Est. cost</div>
-        <div class="value" title="${fmt.usd(totals.cost_usd)}">${fmt.usd(totals.cost_usd)}</div>
+        <div class="value big" title="${fmt.usd(totals.cost_usd)}">${fmt.usd(totals.cost_usd)}</div>
         ${planSubtitle()}
       </div>
     </div>
 
+    <div class="card token-mix" style="margin-top:16px">
+      <div class="token-mix-head">
+        <span class="label">Token mix</span>
+        <span class="muted" style="font-size:11px">cache reads billed separately, ~10× cheaper</span>
+      </div>
+      <dl class="token-mix-grid">
+        <div><dt>Input</dt><dd title="${fmt.int(totals.input_tokens)} tokens">${fmt.compact(totals.input_tokens)}</dd></div>
+        <div><dt>Output</dt><dd title="${fmt.int(totals.output_tokens)} tokens">${fmt.compact(totals.output_tokens)}</dd></div>
+        <div><dt>Cache create</dt><dd title="${fmt.int(cacheCreate)} tokens">${fmt.compact(cacheCreate)}</dd></div>
+        <div><dt>Cache read</dt><dd title="${fmt.int(totals.cache_read_tokens)} tokens">${fmt.compact(totals.cache_read_tokens)}</dd></div>
+      </dl>
+    </div>
+
     <details class="card glossary" style="margin-top:16px">
-      <summary><h3 style="display:inline-block;margin:0">What do these numbers mean?</h3><span class="muted" style="font-size:12px">— click to expand</span></summary>
+      <summary><h3 style="display:inline-block;margin:0">What do these numbers mean?</h3><span class="muted" style="font-size:12px">(click to expand)</span></summary>
       <dl>
         <dt>Session</dt><dd>One run of Claude Code (from <code>claude</code> to exit). Each session is a single <code>.jsonl</code> file.</dd>
         <dt>Turn</dt><dd>One message you sent to Claude. Each turn triggers a response (possibly with tool calls in between).</dd>
