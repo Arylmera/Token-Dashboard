@@ -1,7 +1,7 @@
 // router.js — hash-based route table and renderer
 
 import { $, $$ } from '/web/core/dom.js';
-import { fmt } from '/web/core/format.js';
+import { errorCard, mountRetry, skeleton } from '/web/core/states.js';
 
 export const ROUTES = {
   '/overview': () => import('/web/routes/overview.js'),
@@ -26,13 +26,29 @@ export async function render() {
   if (path.startsWith('/sessions/')) key = '/sessions';
   setActiveTab(key);
   const loader = ROUTES[key] || ROUTES['/overview'];
-  const mod = await loader();
   const app = $('#app');
-  if (key !== lastKey) app.innerHTML = '';
+
+  // Show a skeleton when navigating to a different route. Same-route
+  // re-renders (SSE refreshes) keep the previous content until the new
+  // render swaps in, to avoid flicker.
+  if (key !== lastKey) {
+    app.innerHTML = skeleton({ shape: key === '/prompts' || key === '/sessions' ? 'table' : 'cards' });
+  }
   lastKey = key;
+
+  let mod;
+  try {
+    mod = await loader();
+  } catch (e) {
+    app.innerHTML = errorCard(e);
+    mountRetry(app, () => render());
+    return;
+  }
+
   try {
     await mod.default(app);
   } catch (e) {
-    app.innerHTML = `<div class="card"><h2>Error</h2><pre>${fmt.htmlSafe(String(e.stack || e))}</pre></div>`;
+    app.innerHTML = errorCard(e);
+    mountRetry(app, () => render());
   }
 }

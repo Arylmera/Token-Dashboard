@@ -4,12 +4,13 @@ import { $ } from '/web/core/dom.js';
 import { api, state } from '/web/core/api.js';
 import { ROUTES, render } from '/web/core/router.js';
 import { getTheme, setTheme, THEMES } from '/web/core/settings.js';
+import { toast } from '/web/core/states.js';
 
 const THEME_LABELS = {
-  dark:   '🌙 Dark',
-  light:  '☀️ Light',
-  forge:  '🔥 Forge',
-  forest: '🌲 Forest',
+  dark:   'Dark',
+  light:  'Light',
+  forge:  'Forge',
+  forest: 'Forest',
 };
 
 function buildTopbar() {
@@ -24,7 +25,7 @@ function buildTopbar() {
     <button class="pill pill-btn" id="refresh-btn" title="Rescan JSONL files now and re-render">↻ Refresh</button>
     <span class="pill" id="plan-pill">api</span>
     <div class="menu" id="theme-menu">
-      <button class="pill pill-btn" id="theme-btn" title="Theme" aria-haspopup="menu" aria-expanded="false">≡</button>
+      <button class="pill pill-btn" id="theme-btn" title="Theme" aria-haspopup="menu" aria-expanded="false">Theme</button>
       <div class="menu-panel" role="menu" hidden>
         ${THEMES.map(id => `<button class="menu-item" role="menuitemradio" data-theme="${id}">${THEME_LABELS[id]}</button>`).join('')}
       </div>
@@ -79,6 +80,7 @@ function buildTopbar() {
       await render();
     } catch (err) {
       console.warn('refresh failed', err);
+      toast('Refresh failed: ' + (err && err.message ? err.message : err), { kind: 'error' });
     } finally {
       btn.dataset.busy = '';
       btn.classList.remove('is-busy');
@@ -86,32 +88,32 @@ function buildTopbar() {
   });
 }
 
-async function firstRun() {
+/**
+ * First-run nudge. Shows a dismissible banner above the app inviting the
+ * user to confirm their billing plan. Non-blocking: data renders
+ * immediately under the API-rate default, and the user can ignore the
+ * banner indefinitely. Dismissal is sticky via localStorage.
+ */
+function firstRunBanner() {
   if (localStorage.getItem('td.plan-set')) return;
-  const plans = Object.entries(state.pricing.plans);
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-    <div class="modal">
-      <h2>Welcome — pick your plan</h2>
-      <p>This sets how costs are displayed. Change it later in Settings.</p>
-      <select id="firstplan" style="width:100%">
-        ${plans.map(([k,v]) => `<option value="${k}">${v.label}${v.monthly ? ` — $${v.monthly}/mo` : ''}</option>`).join('')}
-      </select>
-      <div class="actions">
-        <div class="spacer"></div>
-        <button class="primary" id="firstsave">Continue</button>
-      </div>
+  const banner = document.createElement('div');
+  banner.className = 'banner';
+  banner.innerHTML = `
+    <div class="banner-body">
+      Showing costs at API rates. Set your billing plan for accurate numbers.
+    </div>
+    <div class="banner-actions">
+      <a href="#/settings" class="banner-link" data-banner-go>Go to Settings</a>
+      <button class="ghost" data-banner-dismiss aria-label="Dismiss">Dismiss</button>
     </div>`;
-  document.body.appendChild(overlay);
-  await new Promise(res => $('#firstsave', overlay).addEventListener('click', async () => {
-    const plan = $('#firstplan', overlay).value;
-    await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }) });
+  const main = document.querySelector('main#app');
+  if (main && main.parentNode) main.parentNode.insertBefore(banner, main);
+  const close = () => {
     localStorage.setItem('td.plan-set', '1');
-    overlay.remove();
-    res();
-  }));
-  state.plan = (await api('/api/plan')).plan;
+    banner.remove();
+  };
+  banner.querySelector('[data-banner-dismiss]').addEventListener('click', close);
+  banner.querySelector('[data-banner-go]').addEventListener('click', close);
 }
 
 export async function boot() {
@@ -122,7 +124,7 @@ export async function boot() {
   state.pricing = planResp.pricing;
   $('#plan-pill').textContent = state.plan;
 
-  await firstRun();
+  firstRunBanner();
 
   window.addEventListener('hashchange', render);
   await render();
@@ -139,11 +141,23 @@ export async function boot() {
   }
   try {
     const es = new EventSource('/api/stream');
+    let warned = false;
     es.onmessage = ev => {
       try {
         const evt = JSON.parse(ev.data);
         if (evt.type === 'scan') scheduleRender();
       } catch {}
     };
-  } catch {}
+    es.onerror = () => {
+      // EventSource auto-reconnects, so surface only the first failure
+      // per session: stale data during a long backend outage is the
+      // worst-case silent failure here.
+      if (!warned && es.readyState === EventSource.CLOSED) {
+        warned = true;
+        toast('Live updates stopped. Use Refresh.', { kind: 'warn', ms: 6000 });
+      }
+    };
+  } catch (err) {
+    toast('Live updates unavailable.', { kind: 'warn' });
+  }
 }
