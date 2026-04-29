@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-04-29T00:00:00Z",
+  "title": "Design System: Token Dashboard",
+  "extensions": {
+    "colorMeta": {
+      "ink-slate": {
+        "role": "neutral",
+        "displayName": "Ink Slate",
+        "canonical": "oklch(15% 0.012 250)",
+        "purpose": "Page background. Deeper than panels so cards float by contrast.",
+        "tonalRamp": ["oklch(8% 0.008 250)", "oklch(12% 0.010 250)", "oklch(15% 0.012 250)", "oklch(20% 0.014 250)", "oklch(28% 0.014 250)", "oklch(40% 0.012 250)", "oklch(60% 0.010 250)", "oklch(85% 0.005 250)"]
+      },
+      "carbon-panel": {
+        "role": "neutral",
+        "displayName": "Carbon Panel",
+        "canonical": "oklch(18% 0.012 250)",
+        "purpose": "Card and KPI surface.",
+        "tonalRamp": ["oklch(10% 0.008 250)", "oklch(14% 0.010 250)", "oklch(18% 0.012 250)", "oklch(24% 0.014 250)", "oklch(34% 0.014 250)", "oklch(50% 0.012 250)", "oklch(70% 0.010 250)", "oklch(90% 0.005 250)"]
+      },
+      "carbon-panel-2": {
+        "role": "neutral",
+        "displayName": "Carbon Panel 2",
+        "canonical": "oklch(21% 0.012 250)",
+        "purpose": "Hover/secondary tier — table-row hover, ghost buttons, pill background.",
+        "tonalRamp": ["oklch(12% 0.008 250)", "oklch(16% 0.010 250)", "oklch(21% 0.012 250)", "oklch(28% 0.014 250)", "oklch(38% 0.014 250)", "oklch(54% 0.012 250)", "oklch(74% 0.010 250)", "oklch(92% 0.005 250)"]
+      },
+      "iron-border": {
+        "role": "neutral",
+        "displayName": "Iron Border",
+        "canonical": "oklch(28% 0.012 250)",
+        "purpose": "Default 1px border for cards, tables, buttons.",
+        "tonalRamp": ["oklch(18% 0.008 250)", "oklch(22% 0.010 250)", "oklch(28% 0.012 250)", "oklch(36% 0.014 250)", "oklch(46% 0.014 250)", "oklch(60% 0.012 250)", "oklch(78% 0.010 250)", "oklch(94% 0.005 250)"]
+      },
+      "iron-border-2": {
+        "role": "neutral",
+        "displayName": "Iron Border 2",
+        "canonical": "oklch(34% 0.014 250)",
+        "purpose": "Heavier border for floating layers and active states."
+      },
+      "bone-text": {
+        "role": "neutral",
+        "displayName": "Bone Text",
+        "canonical": "oklch(94% 0.012 240)",
+        "purpose": "Primary text color."
+      },
+      "gull-gray": {
+        "role": "neutral",
+        "displayName": "Gull Gray",
+        "canonical": "oklch(67% 0.020 240)",
+        "purpose": "Muted text — captions, table headers, body of tips."
+      },
+      "gull-gray-2": {
+        "role": "neutral",
+        "displayName": "Gull Gray 2",
+        "canonical": "oklch(50% 0.018 240)",
+        "purpose": "Quietest text tier — placeholder, disabled."
+      },
+      "console-blue": {
+        "role": "primary",
+        "displayName": "Console Blue",
+        "canonical": "oklch(70% 0.15 250)",
+        "purpose": "Brand accent — brand dot, links, primary button, sonnet badge, active nav. ≤10% of any screen.",
+        "tonalRamp": ["oklch(20% 0.08 250)", "oklch(32% 0.12 250)", "oklch(45% 0.15 250)", "oklch(58% 0.16 250)", "oklch(70% 0.15 250)", "oklch(80% 0.12 250)", "oklch(88% 0.08 250)", "oklch(95% 0.04 250)"]
+      },
+      "signal-violet": {
+        "role": "secondary",
+        "displayName": "Signal Violet",
+        "canonical": "oklch(60% 0.22 280)",
+        "purpose": "Opus model identification + second chart series. Never on chrome or actions.",
+        "tonalRamp": ["oklch(20% 0.10 280)", "oklch(32% 0.16 280)", "oklch(45% 0.20 280)", "oklch(55% 0.22 280)", "oklch(60% 0.22 280)", "oklch(72% 0.18 280)", "oklch(85% 0.10 280)", "oklch(95% 0.04 280)"]
+      },
+      "receipt-green": {
+        "role": "tertiary",
+        "displayName": "Receipt Green",
+        "canonical": "oklch(70% 0.14 160)",
+        "purpose": "Cost values, positive deltas, Haiku badge. Cost is positive-coded — fact, not warning.",
+        "tonalRamp": ["oklch(20% 0.06 160)", "oklch(32% 0.10 160)", "oklch(45% 0.13 160)", "oklch(58% 0.14 160)", "oklch(70% 0.14 160)", "oklch(82% 0.10 160)", "oklch(90% 0.06 160)", "oklch(96% 0.03 160)"]
+      },
+      "caution-amber": {
+        "role": "tertiary",
+        "displayName": "Caution Amber",
+        "canonical": "oklch(75% 0.14 75)",
+        "purpose": "Tips-engine warnings, third chart series."
+      },
+      "fault-red": {
+        "role": "tertiary",
+        "displayName": "Fault Red",
+        "canonical": "oklch(60% 0.20 25)",
+        "purpose": "Errors and negative deltas only. Never decoration."
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Card titles. Largest sans tier." },
+      "title": { "displayName": "Title", "purpose": "Sub-section heads inside cards." },
+      "body": { "displayName": "Body", "purpose": "Paragraphs, table cells, tip body, captions." },
+      "mono": { "displayName": "Mono", "purpose": "Pills, badges, mono identifiers, code chips." },
+      "metric": { "displayName": "Metric", "purpose": "KPI values — visual anchor of the Overview tab." },
+      "label": { "displayName": "Micro-Label", "purpose": "10px uppercase 0.08em — instrument-panel signal for KPI captions and table headers." }
+    },
+    "shadows": [
+      { "name": "dropdown", "value": "0 6px 24px rgba(0,0,0,0.4)", "purpose": "Theme menu / popovers. Soft, low." },
+      { "name": "modal", "value": "0 20px 60px rgba(0,0,0,0.5)", "purpose": "Modal surfaces. Deeper — modal is a true scene change." },
+      { "name": "brand-glow", "value": "0 0 12px var(--accent)", "purpose": "8x8 brand dot in topbar. The only glow in the system." }
+    ],
+    "motion": [
+      { "name": "snap", "value": "120ms ease", "purpose": "Default transition for color and background on chrome." },
+      { "name": "row-hover", "value": "100ms ease", "purpose": "Table-row hover background shift — slightly faster than chrome." }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "1100px" },
+      { "name": "mobile", "value": "720px" }
+    ],
+    "themes": {
+      "dark": {
+        "displayName": "Dark (default)",
+        "tokens": { "bg": "#0A0E14", "panel": "#0F1419", "panel-2": "#131922", "border": "#1F2630", "border-2": "#283040", "text": "#E6EDF3", "muted": "#8B98A6", "muted-2": "#5A6573", "accent": "#4A9EFF", "accent-2": "#7C5CFF", "good": "#3FB68B", "warn": "#E8A23B", "bad": "#E5484D" },
+        "chartPalette": ["#4A9EFF", "#7C5CFF", "#3FB68B", "#E8A23B", "#E5484D", "#5BCEDA", "#F472B6"]
+      },
+      "light": {
+        "displayName": "Light",
+        "tokens": { "bg": "#F7F9FC", "panel": "#FFFFFF", "panel-2": "#F1F4F8", "border": "#E2E7EE", "border-2": "#CFD6DF", "text": "#1A2330", "muted": "#5A6573", "muted-2": "#8B98A6", "accent": "#2B7FE0", "accent-2": "#5C3FE0", "good": "#2E9870", "warn": "#C8821E", "bad": "#D43338" },
+        "chartPalette": ["#2B7FE0", "#5C3FE0", "#2E9870", "#C8821E", "#D43338", "#1F9AAA", "#D85FA0"]
+      },
+      "forge": {
+        "displayName": "Forge",
+        "tokens": { "bg": "#14100C", "panel": "#1A140E", "panel-2": "#221A12", "border": "#2E2218", "border-2": "#3D2D1F", "text": "#F5E8D8", "muted": "#B89578", "muted-2": "#7A5E45", "accent": "#FF8A3D", "accent-2": "#FF5C2E", "good": "#C8A24A", "warn": "#FFB347", "bad": "#E5484D" },
+        "chartPalette": ["#FF8A3D", "#FF5C2E", "#FFB347", "#C8A24A", "#E5484D", "#B86B3A", "#FFD27F"]
+      },
+      "forest": {
+        "displayName": "Forest",
+        "tokens": { "bg": "#0C1410", "panel": "#0F1A14", "panel-2": "#13221A", "border": "#1B2E24", "border-2": "#264736", "text": "#E0F0E5", "muted": "#8FB39C", "muted-2": "#5C7C68", "accent": "#4FCB7A", "accent-2": "#2EA66B", "good": "#4FCB7A", "warn": "#E8A23B", "bad": "#E5484D" },
+        "chartPalette": ["#4FCB7A", "#2EA66B", "#9CD66F", "#E8A23B", "#E5484D", "#5BCEDA", "#7C5CFF"]
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "KPI Tile (cost variant)",
+      "kind": "card",
+      "refersTo": "kpi",
+      "description": "The visual anchor of Overview. Caption + mono metric value, optional delta + sub. Cost variant tints the value receipt-green.",
+      "html": "<div class=\"ds-kpi ds-kpi-cost\"><div class=\"ds-kpi-label\">COST TODAY</div><div class=\"ds-kpi-value\">$4.21</div><div class=\"ds-kpi-delta ds-up\">+12% vs avg</div><div class=\"ds-kpi-sub\">3 sessions</div></div>",
+      "css": ".ds-kpi { background: #0F1419; border: 1px solid #1F2630; border-radius: 10px; padding: 16px; min-width: 180px; font-family: Inter, system-ui, sans-serif; } .ds-kpi-label { color: #8B98A6; text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; font-weight: 600; white-space: nowrap; } .ds-kpi-value { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; margin-top: 6px; line-height: 1.1; color: #E6EDF3; } .ds-kpi-cost .ds-kpi-value { color: #3FB68B; } .ds-kpi-delta { font-family: 'JetBrains Mono', monospace; font-size: 12px; margin-top: 4px; color: #8B98A6; } .ds-kpi-delta.ds-up { color: #3FB68B; } .ds-kpi-sub { color: #8B98A6; font-size: 11px; margin-top: 2px; }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single most-important action on a view. At most one per view.",
+      "html": "<button class=\"ds-btn-primary\">Refresh</button>",
+      "css": ".ds-btn-primary { background: #4A9EFF; color: #FFFFFF; border: 1px solid #4A9EFF; border-radius: 6px; padding: 6px 12px; font-family: Inter, system-ui, sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 120ms, border-color 120ms; } .ds-btn-primary:hover { background: #5BA8FF; border-color: #5BA8FF; } .ds-btn-primary:focus-visible { outline: 2px solid #4A9EFF; outline-offset: 2px; }"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button-default",
+      "description": "Everyday button. Border lifts on hover.",
+      "html": "<button class=\"ds-btn\">Export</button>",
+      "css": ".ds-btn { background: #131922; color: #E6EDF3; border: 1px solid #1F2630; border-radius: 6px; padding: 6px 12px; font-family: Inter, system-ui, sans-serif; font-size: 13px; cursor: pointer; transition: border-color 120ms; } .ds-btn:hover { border-color: #283040; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Standard container. Flat — border + background contrast does the work, never shadow.",
+      "html": "<section class=\"ds-card\"><h2 class=\"ds-card-title\">Recent Sessions</h2><p class=\"ds-card-body\">No data yet. Run a Claude Code session to see entries here.</p></section>",
+      "css": ".ds-card { background: #0F1419; border: 1px solid #1F2630; border-radius: 10px; padding: 18px; font-family: Inter, system-ui, sans-serif; max-width: 420px; } .ds-card-title { margin: 0 0 14px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: #E6EDF3; } .ds-card-body { margin: 0; font-size: 13px; line-height: 1.55; color: #8B98A6; }"
+    },
+    {
+      "name": "Model Badge (Sonnet)",
+      "kind": "chip",
+      "refersTo": "badge-sonnet",
+      "description": "Reserved pattern — colored bg + colored border + colored text — for model identification only. Three variants: Opus (violet), Sonnet (blue), Haiku (green).",
+      "html": "<span class=\"ds-badge ds-badge-sonnet\">sonnet-4-6</span>",
+      "css": ".ds-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: 11px; font-weight: 500; border: 1px solid; } .ds-badge-sonnet { color: #4A9EFF; border-color: rgba(74,158,255,0.3); background: rgba(74,158,255,0.08); }"
+    },
+    {
+      "name": "Pill (refresh-style)",
+      "kind": "chip",
+      "refersTo": "pill",
+      "description": "Topbar status/action pill. Mono text, soft background, lifts on hover when interactive.",
+      "html": "<button class=\"ds-pill ds-pill-btn\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 12a9 9 0 1 1-3.5-7.1\"/><path d=\"M21 4v5h-5\"/></svg> refresh</button>",
+      "css": ".ds-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; background: #131922; border: 1px solid #1F2630; color: #8B98A6; font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: 12px; cursor: default; } .ds-pill-btn { color: #E6EDF3; cursor: pointer; transition: background 120ms; } .ds-pill-btn:hover { background: #1F2630; }"
+    },
+    {
+      "name": "Time-range Tabs",
+      "kind": "nav",
+      "refersTo": "range-tab-active",
+      "description": "Segmented control for time windows. The darker-active treatment reads as 'punched in' — inverted from typical 'active is brighter'.",
+      "html": "<div class=\"ds-range-tabs\"><button>7d</button><button class=\"ds-active\">30d</button><button>90d</button><button>all</button></div>",
+      "css": ".ds-range-tabs { display: inline-flex; background: #131922; border: 1px solid #1F2630; border-radius: 6px; padding: 2px; } .ds-range-tabs button { background: transparent; border: 0; padding: 4px 10px; border-radius: 4px; color: #8B98A6; font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: 12px; cursor: pointer; transition: background 120ms, color 120ms; } .ds-range-tabs button:hover { color: #E6EDF3; } .ds-range-tabs button.ds-active { background: #0A0E14; color: #E6EDF3; }"
+    },
+    {
+      "name": "Tip Row",
+      "kind": "card",
+      "refersTo": "tip",
+      "description": "Rule-based suggestion entry in the Tips tab. Quiet, no semantic-color background, advice in muted tone.",
+      "html": "<div class=\"ds-tip\"><div class=\"ds-tip-head\"><strong>Same file read 18 times in one session</strong></div><p class=\"ds-tip-body\">Long-running session repeatedly re-reads <code>token_dashboard/scanner.py</code>. Consider caching its content in conversation, or splitting the work across sessions.</p></div>",
+      "css": ".ds-tip { background: #131922; border: 1px solid #1F2630; border-radius: 8px; padding: 14px; margin: 10px 0; font-family: Inter, system-ui, sans-serif; max-width: 520px; } .ds-tip-head strong { font-size: 13px; color: #E6EDF3; } .ds-tip-body { margin: 8px 0 0; color: #8B98A6; font-size: 13px; line-height: 1.55; } .ds-tip-body code { background: #131922; border: 1px solid #1F2630; padding: 1px 5px; border-radius: 3px; font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: 12px; color: #E6EDF3; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Telemetry Bench",
+    "overview": "A personal workbench with instruments laid out — readouts, gauges, a small ledger — sitting calmly on the desk. The user glances down, reads what they need, looks back up. Multi-theme like a real cockpit panel (dark by default, with light, forge, forest skins for the same instruments), but the layout, density, and rules never shift. Themes are instrument finishes, not redesigns. The system rejects the SaaS-dashboard impulse to dramatize and the corporate-observability impulse to feel clinical. Voice: a knowledgeable peer showing you their own dashboard, not an enterprise vendor pitching one.",
+    "keyCharacteristics": [
+      "Density-first, instrument-grade layout. 13px body, dense rows, mono numbers, tabular-nums everywhere costs appear.",
+      "Flat-by-default surfaces. 1px borders carry the structure; shadows are reserved for floating layers.",
+      "Four-theme color system on a single shared scale: dark, light, forge, forest. Same tokens, swapped values.",
+      "Uppercase micro-labels (10px, 0.08em) for KPI captions and table headers — the instrument-panel signal.",
+      "Status colors used quietly. Not as decoration."
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Primary accent is used on ≤10% of any given screen — brand dot, links, primary button, active nav, one chart series. Its rarity is the point.", "section": "colors" },
+      { "name": "The Quiet-Status Rule", "body": "good/warn/bad are signals, not decoration. Cost is reported as fact, not panic.", "section": "colors" },
+      { "name": "The No-Gradient Rule", "body": "Decorative gradients are forbidden. Only the topbar's vertical fade is permitted, to soften the edge between sticky chrome and content.", "section": "colors" },
+      { "name": "The Mono-for-Numbers Rule", "body": "Any number representing a quantity renders in JetBrains Mono with tabular-nums. Numbers in sans are wrong.", "section": "typography" },
+      { "name": "The Uppercase-Micro-Label Rule", "body": "10px tier uppercase with 0.08em letter-spacing. Do not use uppercase for body. Do not raise above 11px while keeping uppercase.", "section": "typography" },
+      { "name": "The No-Hero-Type Rule", "body": "No font size above 24px in any view. The 22px KPI value is the apex.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Cards, KPIs, tables, tips, drawers carry no shadow. Border + background contrast does the work.", "section": "elevation" },
+      { "name": "The Floating-Layer Exception", "body": "Shadows are reserved for surfaces that float above the document — modals and dropdown menus.", "section": "elevation" },
+      { "name": "The One-Glow Rule", "body": "Glow effects forbidden except for the brand dot.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do render every quantity in JetBrains Mono with font-variant-numeric: tabular-nums.",
+      "Do use the 10px uppercase 0.08em-letter-spacing label for every KPI caption and table header.",
+      "Do use receipt-green for cost values and positive deltas — cost is a fact reported, not a warning.",
+      "Do keep the primary accent at ≤10% of any screen.",
+      "Do use 1px borders + carbon-panel on ink-slate to differentiate cards.",
+      "Do keep the Opus/Sonnet/Haiku badge triple as the only place colored bg + border + text appear together.",
+      "Do transition color and background over 120ms (100ms on table rows). No layout-property animation.",
+      "Do treat the four themes as four complete identities sharing one token scale."
+    ],
+    "donts": [
+      "Don't use neon gradients, glowing AI sparkles, purple-on-black 'magical' treatment, gradient text, or animated mesh backgrounds.",
+      "Don't build the SaaS hero-metric template — giant centered total with gradient halo and three small supporting stats.",
+      "Don't add glassmorphism to cards, KPIs, drawers, or modal surfaces. The topbar backdrop-filter is the only acceptable use.",
+      "Don't use emoji, confetti, gamified language, or oversized red/green dollar figures.",
+      "Don't add shadows to at-rest content surfaces.",
+      "Don't use border-left or border-right >1px as a colored side-stripe accent.",
+      "Don't add a custom typeface above 24px.",
+      "Don't use uppercase on anything other than the 10px label tier.",
+      "Don't apply good/bad color tints to rows or backgrounds based on cost magnitude.",
+      "Don't introduce a fifth theme without owning it as a complete identity.",
+      "Don't use #000 or #fff directly. Tinted neutrals only."
+    ]
+  }
+}
