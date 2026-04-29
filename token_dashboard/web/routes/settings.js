@@ -10,7 +10,7 @@ export default async function (root) {
       <p class="muted" style="margin:0 0 12px">Sets how cost is displayed. API mode shows pay-per-token rates. Subscription modes show what you actually pay each month.</p>
       <div class="flex">
         <select id="plan">
-          ${plans.map(([k,v]) => `<option value="${k}" ${k===cur.plan?'selected':''}>${v.label}${v.monthly?` — $${v.monthly}/mo`:''}</option>`).join('')}
+          ${plans.map(([k,v]) => `<option value="${k}" ${k===cur.plan?'selected':''}>${v.label}${v.monthly?` ($${v.monthly}/mo)`:''}</option>`).join('')}
         </select>
         <button class="primary" id="save">Save</button>
         <span id="msg" class="muted"></span>
@@ -36,12 +36,33 @@ export default async function (root) {
       <p class="muted" style="margin-top:8px;font-size:11px">Rates per 1M tokens, USD.</p>
     </div>`;
 
+  let savedTimer = null;
   $('#save').addEventListener('click', async () => {
     const plan = $('#plan').value;
-    await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }) });
-    state.plan = plan;
-    document.getElementById('plan-pill').textContent = plan;
-    $('#msg').textContent = 'Saved.';
-    $('#msg').style.color = 'var(--good)';
+    const msg = $('#msg');
+    msg.textContent = 'Saving…';
+    msg.style.color = 'var(--muted)';
+    try {
+      const res = await fetch('/api/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      state.plan = plan;
+      document.getElementById('plan-pill').textContent = plan;
+      msg.textContent = 'Saved.';
+      msg.style.color = 'var(--good)';
+    } catch (err) {
+      msg.textContent = 'Save failed: ' + (err.message || err);
+      msg.style.color = 'var(--bad)';
+      return;
+    }
+    // Clear the message after a couple of seconds so it doesn't go stale.
+    if (savedTimer) clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => {
+      msg.textContent = '';
+      msg.style.color = '';
+    }, 2000);
   });
 }
