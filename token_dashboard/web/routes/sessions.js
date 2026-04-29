@@ -20,11 +20,33 @@ async function renderList(root) {
               <td title="${fmt.htmlSafe(s.project_slug)}">${fmt.htmlSafe(s.project_name || s.project_slug)}</td>
               <td class="num">${fmt.int(s.turns)}</td>
               <td class="num">${fmt.int(s.tokens)}</td>
-              <td><a href="#/sessions/${encodeURIComponent(s.session_id)}" class="mono">${fmt.htmlSafe(s.session_id.slice(0,8))}…</a></td>
+              <td>
+                <a href="#/sessions/${encodeURIComponent(s.session_id)}" class="mono">${fmt.htmlSafe(s.session_id.slice(0,8))}…</a>
+                <button class="copy-id" data-id="${fmt.htmlSafe(s.session_id)}" title="Copy session id" aria-label="Copy session id">copy</button>
+              </td>
             </tr>`).join('')}
         </tbody>
       </table>
     </div>`;
+
+  root.querySelectorAll('button.copy-id').forEach(b => {
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = b.dataset.id;
+      try {
+        await navigator.clipboard.writeText(id);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = id; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch {}
+        ta.remove();
+      }
+      const orig = b.textContent;
+      b.textContent = 'copied';
+      setTimeout(() => { b.textContent = orig; }, 1200);
+    });
+  });
 }
 
 async function renderSession(root, id) {
