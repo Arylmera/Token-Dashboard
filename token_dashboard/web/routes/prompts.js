@@ -41,7 +41,7 @@ export default async function (root) {
       <p class="muted" style="margin:0 0 14px">${subtitle}</p>
       <table id="prompts">
         <thead><tr>
-          <th>${sort.key === 'recent' ? 'when' : 'cache cost'}</th>
+          <th>${sort.key === 'recent' ? 'when' : 'est. cost'}</th>
           <th>prompt</th>
           <th>model</th>
           <th class="num">tokens</th>
@@ -82,7 +82,7 @@ export default async function (root) {
           <pre>${fmt.htmlSafe(r.prompt_text || '')}</pre>
           <div class="flex" style="margin-top:12px;flex-wrap:wrap;gap:14px">
             <span class="muted">${fmt.ts(r.timestamp)}</span>
-            <span class="muted">${fmt.int(r.billable_tokens)} billable · ${fmt.int(r.cache_read_tokens)} cache rd · ~${fmt.usd4(r.estimated_cost_usd)} cache cost</span>
+            <span class="muted">${fmt.int(r.billable_tokens)} billable · ${fmt.int(r.cache_read_tokens)} cache rd · ~${fmt.usd4(r.estimated_cost_usd)} est. cost</span>
             <span class="spacer"></span>
             <a href="#/sessions/${encodeURIComponent(r.session_id)}">Open session →</a>
           </div>

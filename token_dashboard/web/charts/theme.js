@@ -17,9 +17,10 @@ const LIGHT = {
   text:        '#1A2330',
   axis:        '#E2E7EE',
   label:       '#5A6573',
-  tooltipBg:   '#FFFFFF',
+  // Tint matches --panel in light theme: slight cool cast, not raw white.
+  tooltipBg:   '#FBFCFE',
   tooltipBd:   '#CFD6DF',
-  palette:     ['#2B7FE0', '#5C3FE0', '#2E9870', '#C8821E', '#D43338', '#1F9AAA', '#D85FA0'],
+  palette:     ['#1E6FCC', '#5C3FE0', '#2E9870', '#C8821E', '#D43338', '#1F9AAA', '#D85FA0'],
 };
 
 const FORGE = {

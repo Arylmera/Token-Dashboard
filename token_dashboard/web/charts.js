@@ -122,7 +122,10 @@ export function donutChart(el, data) {
       label: {
         show: true,
         position: 'inside',
-        color: '#fff',
+        // Slightly cool-tinted near-white. Reads cleanly over every palette
+        // wedge (saturated blue/violet/green/amber) without the harshness of
+        // pure #FFFFFF on dark wedges.
+        color: '#F4F8FF',
         fontSize: 12,
         fontWeight: 600,
         formatter: ({ percent }) => percent >= 6 ? percent.toFixed(0) + '%' : '',

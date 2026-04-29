@@ -25,13 +25,13 @@ const MERGE_META = {
     label: 'files',
     title: (n, slug) => `${n} files read repeatedly in ${slug}`,
     body: 'These files were re-opened many times over the past 7 days. A summary in CLAUDE.md or one read per session would avoid repeats.',
-    row: t => `${fmt.htmlSafe(t.target)} — ${t.count} reads${t.sessions ? ` across ${t.sessions} sessions` : ''}`,
+    row: t => `${fmt.htmlSafe(t.target)} · ${t.count} reads${t.sessions ? ` across ${t.sessions} sessions` : ''}`,
   },
   'repeat-bash': {
     label: 'commands',
     title: (n, slug) => `${n} bash commands re-run in ${slug}`,
     body: 'These bash commands ran many times over the past 7 days. Consider a watch flag or shell alias.',
-    row: t => `<code>${fmt.htmlSafe(t.target)}</code> — ${t.count} runs`,
+    row: t => `<code>${fmt.htmlSafe(t.target)}</code> · ${t.count} runs`,
   },
 };
 
@@ -126,16 +126,16 @@ function buildPrompt(projectKey, typeBuckets, projectCwd) {
       const tips = items.flatMap(t => t._sourceTips || [t]);
       for (const t of tips) {
         const sessions = t.sessions ? ` across ${t.sessions} sessions` : '';
-        lines.push(`- ${t.target} — ${t.count} reads${sessions}`);
+        lines.push(`- ${t.target} · ${t.count} reads${sessions}`);
       }
     } else if (cat === 'repeat-bash') {
       const tips = items.flatMap(t => t._sourceTips || [t]);
       for (const t of tips) {
-        lines.push(`- \`${t.target}\` — ${t.count} runs`);
+        lines.push(`- \`${t.target}\` · ${t.count} runs`);
       }
     } else {
       for (const t of items) {
-        lines.push(`- **${t.title}** — ${t.body}`);
+        lines.push(`- **${t.title}**: ${t.body}`);
       }
     }
     lines.push('');
