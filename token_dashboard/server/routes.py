@@ -78,6 +78,7 @@ def _api_sessions(handler, db_path, pricing, qs):
         limit=clamp_limit(qs.get("limit", ["20"])[0], 20),
         since=qs.get("since", [None])[0],
         until=qs.get("until", [None])[0],
+        pricing=pricing,
     ))
 
 

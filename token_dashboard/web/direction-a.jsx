@@ -49,51 +49,70 @@ const ModelBadge = ({ model }) => {
 
 // Area chart — hatched fill + optional peak/trough annotations
 const AreaChart = ({ data, height = 200, accent = "var(--accent)", annotate = false, format = (v) => `$${v.toFixed(2)}` }) => {
-  if (!data || data.length === 0) return <div className="a-chart" style={{ height }} />;
+  if (!data || data.length === 0) return <div className="a-chart-wrap" style={{ height }}><div className="a-chart" style={{ height }} /></div>;
   const max = Math.max(...data.map((d) => d.cost)) || 1;
   const w = 100;
-  const points = data.map((d, i) => `${(i / Math.max(1, data.length - 1)) * w},${height - (d.cost / max) * (height - 40) - 14}`);
-  const area = `M0,${height - 14} L${points.join(" L")} L${w},${height - 14} Z`;
+  const topPad = 22;
+  const botPad = 14;
+  const yOf = (v) => height - (v / max) * (height - topPad - botPad) - botPad;
+  const points = data.map((d, i) => `${(i / Math.max(1, data.length - 1)) * w},${yOf(d.cost)}`);
+  const area = `M0,${height - botPad} L${points.join(" L")} L${w},${height - botPad} Z`;
   const line = `M${points.join(" L")}`;
   const peakIdx = data.reduce((mi, d, i) => (d.cost > data[mi].cost ? i : mi), 0);
   const troughIdx = data.reduce((mi, d, i) => (d.cost < data[mi].cost ? i : mi), 0);
   const ptAt = (i) => {
     const x = (i / Math.max(1, data.length - 1)) * w;
-    const y = height - (data[i].cost / max) * (height - 40) - 14;
-    return { x, y };
+    const y = yOf(data[i].cost);
+    return { x, y, xPct: (x / w) * 100, yPct: (y / height) * 100 };
   };
   const gradId = `a-area-grad-${Math.random().toString(36).slice(2, 7)}`;
   const hatchId = `a-area-hatch-${Math.random().toString(36).slice(2, 7)}`;
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="a-chart">
-      <defs>
-        <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={accent} stopOpacity="0.22" />
-          <stop offset="100%" stopColor={accent} stopOpacity="0" />
-        </linearGradient>
-        <pattern id={hatchId} width="2" height="2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <line x1="0" y1="0" x2="0" y2="2" stroke={accent} strokeWidth="0.4" opacity="0.35" />
-        </pattern>
-      </defs>
-      <path d={area} fill={`url(#${gradId})`} />
-      <path d={area} fill={`url(#${hatchId})`} />
-      <path d={line} fill="none" stroke={accent} strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
+    <div className="a-chart-wrap" style={{ position: "relative", height }}>
+      <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="a-chart" style={{ height: "100%" }}>
+        <defs>
+          <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={accent} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={accent} stopOpacity="0" />
+          </linearGradient>
+          <pattern id={hatchId} width="2" height="2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="2" stroke={accent} strokeWidth="0.4" opacity="0.35" />
+          </pattern>
+        </defs>
+        <path d={area} fill={`url(#${gradId})`} />
+        <path d={area} fill={`url(#${hatchId})`} />
+        <path d={line} fill="none" stroke={accent} strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
+        {annotate && data.length > 2 && [peakIdx, troughIdx].map((i, k) => {
+          const p = ptAt(i);
+          const above = k === 0;
+          return (
+            <g key={k}>
+              <circle cx={p.x} cy={p.y} r="1.2" fill={accent} />
+              <line x1={p.x} y1={p.y} x2={p.x} y2={above ? p.y - 6 : p.y + 6} stroke={accent} strokeWidth="0.3" vectorEffect="non-scaling-stroke" />
+            </g>
+          );
+        })}
+      </svg>
       {annotate && data.length > 2 && [peakIdx, troughIdx].map((i, k) => {
         const p = ptAt(i);
         const above = k === 0;
+        const tx = p.xPct > 80 ? "translate(-100%, 0)" : p.xPct < 20 ? "translate(0, 0)" : "translate(-50%, 0)";
         return (
-          <g key={k}>
-            <circle cx={p.x} cy={p.y} r="1.2" fill={accent} />
-            <line x1={p.x} y1={p.y} x2={p.x} y2={above ? p.y - 6 : p.y + 6} stroke={accent} strokeWidth="0.3" />
-            <text x={p.x} y={above ? p.y - 7 : p.y + 10}
-              textAnchor={p.x > 80 ? "end" : p.x < 20 ? "start" : "middle"}
-              fontSize="3.2" fill="var(--gull)" fontFamily="JetBrains Mono">
-              {data[i].date} · {format(data[i].cost)}
-            </text>
-          </g>
+          <div key={k} className="a-chart-annot" style={{
+            position: "absolute",
+            left: `${p.xPct}%`,
+            top: above ? `calc(${p.yPct}% - 16px)` : `calc(${p.yPct}% + 8px)`,
+            transform: tx,
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+            font: '500 10px "JetBrains Mono"',
+            color: "var(--gull)",
+          }}>
+            {data[i].date} · {format(data[i].cost)}
+          </div>
         );
       })}
-    </svg>
+    </div>
   );
 };
 
@@ -158,7 +177,7 @@ const HBar = ({ value, max, accent = "var(--accent)" }) => (
 );
 
 // -------- topbar --------
-const Topbar = ({ tab, setTab, range, setRange, onRefresh }) => (
+const Topbar = ({ tab, setTab, range, setRange, onRefresh, themeLabel, onCycleTheme }) => (
   <header className="a-topbar">
     <div className="a-brand">
       <span className="a-brand-dot" />
@@ -188,6 +207,9 @@ const Topbar = ({ tab, setTab, range, setRange, onRefresh }) => (
           </button>
         ))}
       </div>
+      <button className="a-pill-btn" title="Cycle theme" onClick={onCycleTheme}>
+        <span style={{ marginRight: 6 }}>◐</span>{themeLabel}
+      </button>
       <button className="a-pill-btn" title="Refresh" onClick={onRefresh}>
         <span style={{ marginRight: 6 }}>↻</span>refresh
       </button>
@@ -440,15 +462,54 @@ const Heatmap = () => {
 const Sessions = () => {
   const sessions = D.sessions || [];
   const [selectedId, setSelectedId] = useState(sessions[0] ? sessions[0].id : null);
+  const [query, setQuery] = useState("");
   const selected = sessions.find((s) => s.id === selectedId) || sessions[0];
-  const turns = useMemo(() => {
-    if (!selected) return [];
-    return Array.from({ length: selected.turns || 0 }, (_, i) => ({
-      n: i + 1,
-      tokens: Math.floor((selected.tokens || 0) / Math.max(1, selected.turns) * (0.5 + Math.random() * 1.5)),
-      tools: Math.floor(Math.random() * 5),
-      cost: ((selected.cost || 0) / Math.max(1, selected.turns)) * (0.5 + Math.random() * 1.5),
-    }));
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sessions;
+    return sessions.filter((s) =>
+      (s.id || "").toLowerCase().includes(q) ||
+      (s.project || "").toLowerCase().includes(q) ||
+      (s.started || "").toLowerCase().includes(q)
+    );
+  }, [sessions, query]);
+  const [turns, setTurns] = useState([]);
+  useEffect(() => {
+    if (!selected || !selected.fullId) { setTurns([]); return; }
+    let cancelled = false;
+    fetch("/api/sessions/" + encodeURIComponent(selected.fullId))
+      .then((r) => r.ok ? r.json() : [])
+      .then((rows) => {
+        if (cancelled) return;
+        const out = [];
+        let cur = null;
+        let totalBillable = 0;
+        for (const m of rows || []) {
+          if (m.is_sidechain) continue;
+          if (m.type === "user") {
+            if (cur) out.push(cur);
+            cur = { n: out.length + 1, prompt: m.prompt_text || "", tokens: 0, tools: 0, billable: 0 };
+          } else if (cur && m.type === "assistant") {
+            const billable = (m.input_tokens || 0) + (m.output_tokens || 0)
+              + (m.cache_create_5m_tokens || 0) + (m.cache_create_1h_tokens || 0);
+            cur.tokens += billable + (m.cache_read_tokens || 0);
+            cur.billable += billable;
+            totalBillable += billable;
+            try {
+              const tc = m.tool_calls_json ? JSON.parse(m.tool_calls_json) : [];
+              if (Array.isArray(tc)) cur.tools += tc.length;
+            } catch (_) {}
+          }
+        }
+        if (cur) out.push(cur);
+        const sessCost = selected.cost || 0;
+        for (const t of out) {
+          t.cost = totalBillable > 0 ? sessCost * (t.billable / totalBillable) : 0;
+        }
+        setTurns(out);
+      })
+      .catch(() => { if (!cancelled) setTurns([]); });
+    return () => { cancelled = true; };
   }, [selectedId]);
   if (!selected) {
     return <div className="a-route"><section className="a-card"><div className="muted">No sessions yet.</div></section></div>;
@@ -462,25 +523,52 @@ const Sessions = () => {
         </div>
         <Heatmap />
       </section>
-      <div className="a-split">
-        <aside className="a-card a-side">
-          <div className="a-card-head"><h2>Sessions</h2></div>
-          <ul className="a-side-list">
-            {sessions.map((s) => (
-              <li key={s.id} className={selectedId === s.id ? "is-active" : ""} onClick={() => setSelectedId(s.id)}>
-                <div className="a-side-row1">
-                  <span className="mono">{s.id}</span>
-                  <span className="num tone-good">{fmtCost(s.cost)}</span>
-                </div>
-                <div className="a-side-row2">
-                  <span>{s.project}</span>
-                  <span>{s.started}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </aside>
-        <section className="a-card a-main">
+      <section className="a-card" style={{ marginBottom: 12 }}>
+        <div className="a-card-head">
+          <h2>Sessions</h2>
+          <span className="a-card-meta" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="search sessions…"
+              className="a-search"
+            />
+            <span>{filtered.length}/{sessions.length}</span>
+          </span>
+        </div>
+        <div className="a-scroll-5">
+          <table className="a-table a-sticky-head">
+            <thead>
+              <tr>
+                <th>session</th>
+                <th>project</th>
+                <th>started</th>
+                <th className="num">turns</th>
+                <th className="num">tokens</th>
+                <th className="num">cost</th>
+                <th style={{ paddingLeft: 16 }}>first prompt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((s) => (
+                <tr key={s.id} className={`clickable ${selectedId === s.id ? "is-active" : ""}`} onClick={() => setSelectedId(s.id)}>
+                  <td className="mono" style={{ color: "var(--bone)" }}>{s.id}</td>
+                  <td className="muted">{s.project}</td>
+                  <td className="muted">{s.started}</td>
+                  <td className="num">{s.turns}</td>
+                  <td className="num">{fmtTokens(s.tokens)}</td>
+                  <td className="num tone-good">{fmtCost(s.cost)}</td>
+                  <td className="muted" style={{ paddingLeft: 16, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.firstPrompt || ""}>
+                    {s.firstPrompt || "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="a-card">
           <div className="a-card-head">
             <h2>{selected.id}</h2>
             <span className="a-card-meta">
@@ -498,22 +586,24 @@ const Sessions = () => {
           <Label>turn-by-turn</Label>
           <table className="a-table" style={{ marginTop: 8 }}>
             <thead>
-              <tr><th className="num">#</th><th className="num">tokens</th><th className="num">tools</th><th className="num">cost</th><th>distribution</th></tr>
+              <tr><th className="num">#</th><th style={{ paddingLeft: 16 }}>prompt</th><th className="num">tokens</th><th className="num">tools</th><th className="num">cost</th><th style={{ paddingLeft: 16, width: 180 }}>distribution</th></tr>
             </thead>
             <tbody>
               {turns.map((t) => (
                 <tr key={t.n}>
                   <td className="num mono">{t.n}</td>
+                  <td style={{ paddingLeft: 16, maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t.prompt || ""}>
+                    {(t.prompt || "—").replace(/\s+/g, " ").trim()}
+                  </td>
                   <td className="num">{fmtTokens(t.tokens)}</td>
                   <td className="num">{t.tools}</td>
                   <td className="num tone-good">{fmtCost(t.cost)}</td>
-                  <td><HBar value={t.tokens} max={Math.max(1, ...turns.map(x => x.tokens))} /></td>
+                  <td style={{ width: 180, paddingLeft: 16 }}><HBar value={t.tokens} max={Math.max(1, ...turns.map(x => x.tokens))} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
-      </div>
     </div>
   );
 };
@@ -521,7 +611,8 @@ const Sessions = () => {
 // -------- Token Sink (merged Projects + Skills) --------
 const Work = () => {
   const [view, setView] = useState("projects");
-  const rows = view === "projects" ? (D.projects || []) : (D.skills || []);
+  const rawRows = view === "projects" ? (D.projects || []) : (D.skills || []);
+  const rows = [...rawRows].sort((a, b) => (b.tokens || 0) - (a.tokens || 0));
   const max = Math.max(1, ...rows.map((r) => r.cost || 0));
   const total = rows.reduce((a, b) => a + (b.cost || 0), 0);
   return (
@@ -575,22 +666,155 @@ const Work = () => {
 };
 
 // -------- Tips --------
-const Tips = () => (
-  <div className="a-route">
-    <section className="a-card">
-      <div className="a-card-head"><h2>Tips</h2><span className="a-card-meta">rule-based suggestions · no telemetry</span></div>
-      <div className="a-tips">
-        {(D.tips || []).map((t, i) => (
-          <div key={i} className={`a-tip a-tip-${t.type}`}>
-            <Label style={{ color: t.type === "warn" ? "var(--warn)" : t.type === "good" ? "var(--good)" : "var(--gull)" }}>{t.type}</Label>
-            <h3>{t.title}</h3>
-            <p>{t.body}</p>
-          </div>
-        ))}
+const TIP_CATEGORY_LABELS = {
+  "cache": "Cache discipline",
+  "repeat-file": "Repeated file reads",
+  "repeat-bash": "Repeated bash commands",
+  "right-size": "Right-sizing",
+  "tool-bloat": "Tool-result bloat",
+  "subagent-outlier": "Subagent outliers",
+};
+
+const TIP_MERGE_BODY = {
+  "repeat-file": "These files were re-opened many times in the past 7 days. A summary in CLAUDE.md or one read per session would avoid repeats.",
+  "repeat-bash": "These bash commands ran many times in the past 7 days. Consider a watch flag or shell alias.",
+};
+
+const buildTipPrompt = (t, projectKey) => {
+  const proj = projectKey === "__global__" ? "" : ` (project: ${projectKey})`;
+  switch (t.category) {
+    case "cache":
+      return `In ${projectKey}, our Claude Code cache hit rate is below 40% over the last 7 days, meaning we keep rebuilding context instead of reusing it. Investigate the project for patterns that thrash the prompt cache: frequent /clear, redundant CLAUDE.md edits, large rotating system blocks, or sessions that load big files near the start. Propose concrete changes (CLAUDE.md restructuring, hook adjustments, session habits) that would lift the hit rate. Ask before editing files.`;
+    case "right-size":
+      return `In ${projectKey}, many short Opus turns (output < 500 tokens) ran in the past 7 days and would have been much cheaper on Sonnet. Audit how Opus is invoked here — slash commands, agents, default model — and propose where to switch to Sonnet without hurting quality. List candidates explicitly. Ask before editing.`;
+    case "tool-bloat":
+      return `In ${projectKey}, several tool results exceeded 50k tokens in the past 7 days. Find which Bash/Read calls produce huge outputs and propose narrower alternatives (head/tail, ripgrep with file scope, targeted Read offsets, ctx_execute for analysis). Suggest hooks or CLAUDE.md guidance to prevent regressions. Ask before editing.`;
+    case "subagent-outlier":
+      return `Subagent ${t.title.match(/Subagent (\S+)/)?.[1] || ""}${proj} shows large outlier invocations vs its mean. Investigate what those outlier calls were doing (input size, prompts, tools used) and propose how to bound them — input trimming, tighter prompts, max-tokens, or splitting the work. Ask before editing.`;
+    case "repeat-file":
+      if (t._merged) {
+        const list = t.rows.map((r) => `  - ${r}`).join("\n");
+        return `In ${projectKey}, these files were re-opened many times in the past 7 days:\n${list}\n\nFor each, decide: (a) summarise in CLAUDE.md so Claude doesn't need to re-read, (b) split into smaller files, or (c) cache the relevant part inline. Propose a per-file plan, then wait for approval before editing.`;
+      }
+      return `In ${projectKey}, ${t.target || "this file"} was opened ${t.count} times in the past 7 days across ${t.sessions} sessions. Propose how to avoid the re-reads: a CLAUDE.md summary of the key facts, splitting the file, or caching its essence in a sibling note. Ask before editing.`;
+    case "repeat-bash":
+      if (t._merged) {
+        const list = t.rows.map((r) => `  - ${r}`).join("\n");
+        return `In ${projectKey}, these bash commands ran many times in the past 7 days:\n${list}\n\nFor each, propose a faster alternative: shell alias, npm/justfile script, --watch flag, or a hook that runs it automatically. Then suggest the smallest set of changes to set them up. Ask before editing.`;
+      }
+      return `In ${projectKey}, \`${t.target || ""}\` ran ${t.count} times in the past 7 days. Propose a faster way to invoke it (alias, watch flag, hook, or script) and the change required to set it up. Ask before editing.`;
+    default:
+      return `${t.title}\n\n${t.body}\n\nPropose a concrete fix${proj}. Ask before making changes.`;
+  }
+};
+
+const copyToClipboard = async (text) => {
+  try {
+    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return true; }
+  } catch (_) {}
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (_) {}
+  document.body.removeChild(ta);
+  return ok;
+};
+
+const TipCard = ({ t, projectKey }) => {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const prompt = buildTipPrompt(t, projectKey);
+  return (
+    <div className={`a-tip a-tip-${t.type}`}>
+      <Label style={{ color: t.type === "warn" ? "var(--warn)" : t.type === "good" ? "var(--good)" : "var(--gull)" }}>
+        {t.category ? (TIP_CATEGORY_LABELS[t.category] || t.type) : t.type}
+      </Label>
+      <h3>{t.title}</h3>
+      <p>{t.body}</p>
+      {t._merged && (
+        <ul className="a-tip-list">
+          {t.rows.map((r, j) => <li key={j}>{r}</li>)}
+        </ul>
+      )}
+      <div className="a-tip-actions">
+        <button className="a-tip-btn" onClick={() => setOpen(!open)}>{open ? "hide prompt" : "show prompt"}</button>
+        <button className="a-tip-btn" onClick={async () => {
+          const ok = await copyToClipboard(prompt);
+          setCopied(ok); setTimeout(() => setCopied(false), 1500);
+        }}>{copied ? "copied" : "copy prompt"}</button>
       </div>
-    </section>
-  </div>
-);
+      {open && <pre className="a-tip-prompt">{prompt}</pre>}
+    </div>
+  );
+};
+
+const mergeTipsByCategory = (tips, projectKey) => {
+  const out = [];
+  const buckets = {};
+  tips.forEach((t) => {
+    const cat = t.category;
+    if (cat === "repeat-file" || cat === "repeat-bash") {
+      (buckets[cat] = buckets[cat] || []).push(t);
+    } else {
+      out.push(t);
+    }
+  });
+  Object.entries(buckets).forEach(([cat, list]) => {
+    if (list.length === 1) { out.push(list[0]); return; }
+    const slug = projectKey === "__global__" ? "(unknown project)" : projectKey;
+    list.sort((a, b) => (b.count || 0) - (a.count || 0));
+    out.push({
+      _merged: true,
+      type: list[0].type || "info",
+      category: cat,
+      title: cat === "repeat-file"
+        ? `${list.length} files read repeatedly in ${slug}`
+        : `${list.length} bash commands re-run in ${slug}`,
+      body: TIP_MERGE_BODY[cat],
+      rows: list.map((t) =>
+        cat === "repeat-file"
+          ? `${t.target} · ${t.count} reads${t.sessions ? ` across ${t.sessions} sessions` : ""}`
+          : `${t.target} · ${t.count} runs`
+      ),
+    });
+  });
+  return out;
+};
+
+const Tips = () => {
+  const groups = {};
+  (D.tips || []).forEach((t) => {
+    const k = t.project_slug || "__global__";
+    (groups[k] = groups[k] || []).push(t);
+  });
+  const keys = Object.keys(groups).sort((a, b) => {
+    if (a === "__global__") return 1;
+    if (b === "__global__") return -1;
+    return a.localeCompare(b);
+  });
+  return (
+    <div className="a-route">
+      <section className="a-card">
+        <div className="a-card-head"><h2>Tips</h2><span className="a-card-meta">rule-based suggestions · no telemetry</span></div>
+        {keys.map((k) => {
+          const merged = mergeTipsByCategory(groups[k], k);
+          return (
+            <div key={k} className="a-tips-group">
+              <div className="a-tips-group-head">
+                <Label>{k === "__global__" ? "global" : k}</Label>
+                <span className="a-card-meta">{merged.length} tip{merged.length === 1 ? "" : "s"}</span>
+              </div>
+              <div className="a-tips">
+                {merged.map((t, i) => <TipCard key={i} t={t} projectKey={k} />)}
+              </div>
+            </div>
+          );
+        })}
+      </section>
+    </div>
+  );
+};
 
 // -------- Settings --------
 const Settings = () => {
@@ -674,6 +898,28 @@ const Settings = () => {
 // -------- App shell --------
 const ROUTES = { overview: Overview, prompts: Prompts, sessions: Sessions, "token sink": Work, tips: Tips, settings: Settings };
 
+const THEMES = [
+  { id: "bench",  label: "bench",  cls: "" },
+  { id: "forge",  label: "forge",  cls: "theme-forge" },
+  { id: "forest", label: "forest", cls: "theme-forest" },
+  { id: "paper",  label: "paper",  cls: "theme-light" },
+];
+const THEME_KEY = "td.theme.v2";
+const themeIndexFromStorage = () => {
+  try {
+    const id = localStorage.getItem(THEME_KEY);
+    const i = THEMES.findIndex(t => t.id === id);
+    return i >= 0 ? i : 0;
+  } catch (_) { return 0; }
+};
+const applyThemeClass = (idx) => {
+  const root = document.querySelector(".dir-a-root");
+  if (!root) return;
+  THEMES.forEach(t => { if (t.cls) root.classList.remove(t.cls); });
+  const cls = THEMES[idx].cls;
+  if (cls) root.classList.add(cls);
+};
+
 const tabFromHash = () => {
   const h = (window.location.hash || "").replace(/^#\/?/, "").toLowerCase();
   if (h === "tokensink" || h === "token-sink" || h === "work") return "token sink";
@@ -699,10 +945,21 @@ window.DirectionA = function DirectionA({ initialTab, lockTab = false }) {
   const onRefresh = async () => {
     if (window.RELOAD_DATA) { await window.RELOAD_DATA(); setNonce(n => n + 1); }
   };
+  const [themeIdx, setThemeIdx] = useState(themeIndexFromStorage);
+  useEffect(() => {
+    applyThemeClass(themeIdx);
+    try { localStorage.setItem(THEME_KEY, THEMES[themeIdx].id); } catch (_) {}
+  }, [themeIdx]);
+  const onCycleTheme = () => setThemeIdx(i => (i + 1) % THEMES.length);
   const Route = ROUTES[tab] || Overview;
   return (
     <React.Fragment>
-      <Topbar tab={tab} setTab={setTab} range={range} setRange={setRange} onRefresh={onRefresh} />
+      <Topbar
+        tab={tab} setTab={setTab} range={range} setRange={setRange}
+        onRefresh={onRefresh}
+        themeLabel={THEMES[themeIdx].label}
+        onCycleTheme={onCycleTheme}
+      />
       <main className="a-main-area">
         <Route />
       </main>

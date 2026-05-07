@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .projects import best_project_name
 from .schema import connect
+from ..pricing import cost_for
 
 
 def _range_clause(since, until, col: str = "timestamp"):
@@ -96,7 +97,7 @@ def tool_token_breakdown(db_path, since=None, until=None) -> list:
         return [dict(r) for r in c.execute(sql, args)]
 
 
-def recent_sessions(db_path, limit: int = 20, since=None, until=None) -> list:
+def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=None) -> list:
     rng, args = _range_clause(since, until)
     sql = f"""
       SELECT session_id, project_slug,
@@ -121,6 +122,63 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None) -> list:
                 )]
                 slug_cache[slug] = best_project_name(cwds, slug)
             r["project_name"] = slug_cache[slug]
+
+        if pricing and rows:
+            ids = [r["session_id"] for r in rows]
+            placeholders = ",".join("?" * len(ids))
+            cost_sql = f"""
+              SELECT session_id, model,
+                     COALESCE(SUM(input_tokens),0)           AS input_tokens,
+                     COALESCE(SUM(output_tokens),0)          AS output_tokens,
+                     COALESCE(SUM(cache_read_tokens),0)      AS cache_read_tokens,
+                     COALESCE(SUM(cache_create_5m_tokens),0) AS cache_create_5m_tokens,
+                     COALESCE(SUM(cache_create_1h_tokens),0) AS cache_create_1h_tokens
+                FROM messages
+               WHERE session_id IN ({placeholders}) AND model IS NOT NULL
+               GROUP BY session_id, model
+            """
+            costs = {sid: 0.0 for sid in ids}
+            estimated = {sid: False for sid in ids}
+            top_model = {sid: (None, -1) for sid in ids}  # (model, billable_tokens)
+            for cr in c.execute(cost_sql, ids):
+                cr = dict(cr)
+                c_res = cost_for(cr["model"], cr, pricing)
+                if c_res["usd"] is not None:
+                    costs[cr["session_id"]] += c_res["usd"]
+                if c_res["estimated"]:
+                    estimated[cr["session_id"]] = True
+                billable = (cr["input_tokens"] + cr["output_tokens"]
+                            + cr["cache_create_5m_tokens"] + cr["cache_create_1h_tokens"])
+                if billable > top_model[cr["session_id"]][1]:
+                    top_model[cr["session_id"]] = (cr["model"], billable)
+            for r in rows:
+                r["cost_usd"] = round(costs[r["session_id"]], 6)
+                r["cost_estimated"] = estimated[r["session_id"]]
+                r["model"] = top_model[r["session_id"]][0]
+
+        if rows:
+            ids = [r["session_id"] for r in rows]
+            placeholders = ",".join("?" * len(ids))
+            fp_sql = f"""
+              SELECT m.session_id, m.prompt_text
+                FROM messages m
+                JOIN (
+                  SELECT session_id, MIN(timestamp) AS t
+                    FROM messages
+                   WHERE type='user'
+                     AND prompt_text IS NOT NULL AND prompt_text != ''
+                     AND (is_sidechain IS NULL OR is_sidechain = 0)
+                     AND session_id IN ({placeholders})
+                   GROUP BY session_id
+                ) f ON f.session_id = m.session_id AND f.t = m.timestamp
+               WHERE m.type='user'
+            """
+            first_prompts = {}
+            for fr in c.execute(fp_sql, ids):
+                fr = dict(fr)
+                first_prompts.setdefault(fr["session_id"], fr["prompt_text"])
+            for r in rows:
+                r["first_prompt"] = first_prompts.get(r["session_id"])
     return rows
 
 

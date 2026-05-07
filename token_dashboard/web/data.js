@@ -173,12 +173,14 @@
     // sessions
     const sessionsMapped = sessionsRaw.map((s) => ({
       id: s.session_id ? s.session_id.slice(0, 8) : "—",
+      fullId: s.session_id || "",
       project: s.project_name || s.project_slug || "—",
       started: fmtTime(s.started),
       turns: s.turns || 0,
       tokens: s.tokens || 0,
-      cost: 0,
-      model: "Sonnet",
+      cost: s.cost_usd || 0,
+      model: shortModel(s.model),
+      firstPrompt: (s.first_prompt || "").replace(/\s+/g, " ").trim(),
       _raw: s,
     }));
 
@@ -207,6 +209,12 @@
       type: t.severity || t.type || "info",
       title: t.title || t.key || "Tip",
       body: t.body || t.message || "",
+      project_slug: t.project_slug || null,
+      project_cwd: t.project_cwd || null,
+      category: t.category || null,
+      target: t.target || null,
+      count: t.count || 0,
+      sessions: t.sessions || 0,
     }));
 
     // hourly — last 24h cost per hour, derived from sessions/prompts (no endpoint).

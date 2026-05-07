@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import webbrowser
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -71,6 +72,29 @@ def cmd_tips(args):
 
 
 def cmd_dashboard(args):
+    is_reload_child = os.environ.get("TOKEN_DASHBOARD_RELOAD_CHILD") == "1"
+
+    if getattr(args, "reload", False) and not is_reload_child:
+        from token_dashboard.reloader import run_with_reload
+
+        child_argv = [sys.executable, "-m", "token_dashboard", "dashboard", "--no-open"]
+        if args.no_scan:
+            child_argv.append("--no-scan")
+        if args.db:
+            child_argv += ["--db", args.db]
+        if args.projects_dir:
+            child_argv += ["--projects-dir", args.projects_dir]
+
+        host = os.environ.get("HOST", "127.0.0.1")
+        port = int(os.environ.get("PORT", "8080"))
+        url = f"http://{host}:{port}/"
+        if not args.no_open:
+            webbrowser.open(url)
+        print(f"Token Dashboard listening on {url} (reload mode)")
+
+        watch_root = Path(__file__).resolve().parent.parent
+        sys.exit(run_with_reload(child_argv, watch_root))
+
     db = _db_path(args)
     init_db(db)
     if not args.no_scan:
@@ -80,7 +104,7 @@ def cmd_dashboard(args):
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8080"))
     url = f"http://{host}:{port}/"
-    if not args.no_open:
+    if not args.no_open and not is_reload_child:
         webbrowser.open(url)
     print(f"Token Dashboard listening on {url}")
     run(host, port, db, _projects(args))
@@ -100,6 +124,7 @@ def main():
     d = sub.add_parser("dashboard", parents=[common])
     d.add_argument("--no-scan", action="store_true")
     d.add_argument("--no-open", action="store_true")
+    d.add_argument("--reload", action="store_true", help="Auto-restart server when *.py/*.json change")
     d.set_defaults(func=cmd_dashboard)
     args = p.parse_args()
     args.func(args)

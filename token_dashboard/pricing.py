@@ -2,10 +2,17 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Optional, Union
 
 from .db import connect
+
+_DATE_SUFFIX_RE = re.compile(r"-\d{8}$")
+
+
+def _strip_date_suffix(model: str) -> str:
+    return _DATE_SUFFIX_RE.sub("", model or "")
 
 
 def load_pricing(path: Union[str, Path]) -> dict:
@@ -24,6 +31,10 @@ def cost_for(model: str, usage: dict, pricing: dict) -> dict:
     """Return {usd, estimated, breakdown}. usd=None when no tier match."""
     rates = pricing["models"].get(model)
     estimated = False
+    if rates is None:
+        stripped = _strip_date_suffix(model or "")
+        if stripped != model:
+            rates = pricing["models"].get(stripped)
     if rates is None:
         tier = _tier_from_name(model or "")
         if tier and tier in pricing["tier_fallback"]:

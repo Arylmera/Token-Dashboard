@@ -1,7 +1,10 @@
 /* Token Dashboard — Direction A · Quiet Telemetry Bench
    Self-contained styles. Apply class "dir-a-root" to a wrapper element. */
 
-body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0A0E14; }
+html, body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0A0E14; }
+body:has(.dir-a-root.theme-light)  { background: #F7F9FC; }
+body:has(.dir-a-root.theme-forge)  { background: #14100C; }
+body:has(.dir-a-root.theme-forest) { background: #0C1410; }
 
 
 /* ============================================================
@@ -186,6 +189,18 @@ body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0A0E14
 .a-table td.mono { color: var(--gull); }
 .a-table tr.clickable { cursor: pointer; transition: background 100ms; }
 .a-table tr.clickable:hover { background: var(--panel-2); }
+.a-table tbody tr.is-active td { background: var(--panel-2); }
+
+.a-scroll-5 { max-height: 175px; overflow-y: auto; }
+.a-sticky-head thead th {
+  position: sticky; top: 0; background: var(--panel); z-index: 1;
+}
+.a-search {
+  background: var(--panel-2); border: 1px solid var(--iron-border);
+  color: var(--bone); padding: 4px 8px; font: 400 11px "JetBrains Mono";
+  border-radius: 3px; outline: none; min-width: 180px;
+}
+.a-search:focus { border-color: var(--accent); }
 
 .a-hbar { width: 100%; height: 4px; background: var(--panel-2); border-radius: 2px; overflow: hidden; }
 .a-hbar-fill { height: 100%; }
@@ -250,6 +265,22 @@ body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0A0E14
 .a-side-list li { padding: 12px; border-bottom: 1px solid var(--iron-border); cursor: pointer; transition: background 100ms; }
 .a-side-list li:hover { background: var(--panel-2); }
 .a-side-list li.is-active { background: var(--panel-2); border-left: 2px solid var(--accent); padding-left: 10px; }
+.a-side-table-wrap { max-height: 600px; overflow-y: auto; margin: 0 -16px; }
+.a-side-table { table-layout: auto; }
+.a-side-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--panel);
+  font: 500 10px "JetBrains Mono"; color: var(--gull);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 8px 10px; border-bottom: 1px solid var(--iron-border);
+}
+.a-side-table thead th:first-child { padding-left: 16px; }
+.a-side-table thead th:last-child  { padding-right: 16px; }
+.a-side-table tbody td { padding: 10px; border-bottom: 1px solid var(--iron-border); vertical-align: top; }
+.a-side-table tbody td:first-child { padding-left: 16px; }
+.a-side-table tbody td:last-child  { padding-right: 16px; }
+.a-side-table tbody tr.is-active td { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+.a-side-table tbody tr.is-active td:first-child { color: var(--bone); }
 .a-side-row1 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .a-side-row1 .mono { font: 500 12px "JetBrains Mono"; color: var(--bone); }
 .a-side-row1 .num { font: 500 12px "JetBrains Mono"; }
@@ -257,6 +288,15 @@ body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0A0E14
 
 /* tips */
 .a-tips { display: flex; flex-direction: column; gap: 10px; }
+.a-tips-group { margin-top: 14px; }
+.a-tips-group:first-of-type { margin-top: 8px; }
+.a-tips-group-head { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 0 8px; border-bottom: 1px solid var(--iron-border); margin-bottom: 10px; }
+.a-tip-list { margin: 8px 0 0; padding-left: 18px; color: var(--gull); font: 12px JetBrains Mono, monospace; }
+.a-tip-list li { margin: 2px 0; }
+.a-tip-actions { display: flex; gap: 8px; margin-top: 10px; }
+.a-tip-btn { background: var(--panel-1); border: 1px solid var(--iron-border); color: var(--bone); font: 11px JetBrains Mono, monospace; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+.a-tip-btn:hover { border-color: var(--bone); }
+.a-tip-prompt { margin: 10px 0 0; padding: 10px 12px; background: var(--panel-1); border: 1px solid var(--iron-border); border-radius: 6px; color: var(--bone); font: 12px/1.5 JetBrains Mono, monospace; white-space: pre-wrap; word-break: break-word; }
 .a-tip { background: var(--panel-2); border: 1px solid var(--iron-border); border-radius: 8px; padding: 14px; }
 .a-tip h3 { margin: 4px 0 6px; font: 600 13px Inter; color: var(--bone); }
 .a-tip p { margin: 0; color: var(--gull); }

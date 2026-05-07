@@ -121,33 +121,39 @@ def right_size_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
     today_iso = today_iso or datetime.utcnow().isoformat()
     since = _iso_days_ago(today_iso, 7)
     sql = """
-      SELECT COUNT(*) AS n,
+      SELECT project_slug,
+             COUNT(*) AS n,
              SUM(input_tokens+cache_create_5m_tokens+cache_create_1h_tokens) AS in_tok,
              SUM(output_tokens) AS out_tok
         FROM messages
        WHERE type='assistant' AND model LIKE '%opus%'
          AND output_tokens < 500 AND is_sidechain = 0
          AND timestamp >= ?
+       GROUP BY project_slug
     """
+    out = []
     with connect(db_path) as c:
-        row = c.execute(sql, (since,)).fetchone()
-    if not row or (row["n"] or 0) < 10:
-        return []
-    api_opus   = ((row["in_tok"] or 0) * 15 + (row["out_tok"] or 0) * 75) / 1_000_000
-    api_sonnet = ((row["in_tok"] or 0) *  3 + (row["out_tok"] or 0) * 15) / 1_000_000
-    savings = api_opus - api_sonnet
-    if savings < 1.0:
-        return []
-    key = _key("right-size", "opus-short-turns-7d")
-    if _is_dismissed(db_path, key):
-        return []
-    return [{
-        "key": key, "category": "right-size",
-        "title": f"{row['n']} short Opus turns might fit on Sonnet",
-        "body": f"Opus turns under 500 output tokens cost ~${api_opus:.2f} in the last 7 days. Sonnet would have cost ~${api_sonnet:.2f} (savings ~${savings:.2f}).",
-        "scope": "opus-short-turns-7d",
-        "project_slug": None,
-    }]
+        rows = c.execute(sql, (since,)).fetchall()
+    for row in rows:
+        if (row["n"] or 0) < 10:
+            continue
+        api_opus   = ((row["in_tok"] or 0) * 15 + (row["out_tok"] or 0) * 75) / 1_000_000
+        api_sonnet = ((row["in_tok"] or 0) *  3 + (row["out_tok"] or 0) * 15) / 1_000_000
+        savings = api_opus - api_sonnet
+        if savings < 1.0:
+            continue
+        slug = row["project_slug"] or "?"
+        key = _key("right-size", f"{slug}:opus-short-turns-7d")
+        if _is_dismissed(db_path, key):
+            continue
+        out.append({
+            "key": key, "category": "right-size",
+            "title": f"{row['n']} short Opus turns in {slug} might fit on Sonnet",
+            "body": f"Opus turns under 500 output tokens cost ~${api_opus:.2f} in the last 7 days. Sonnet would have cost ~${api_sonnet:.2f} (savings ~${savings:.2f}).",
+            "scope": f"{slug}:opus-short-turns-7d",
+            "project_slug": row["project_slug"],
+        })
+    return out
 
 
 def outlier_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
@@ -155,21 +161,25 @@ def outlier_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
     since = _iso_days_ago(today_iso, 7)
     out = []
     with connect(db_path) as c:
-        big = c.execute("""
-          SELECT COUNT(*) AS n, AVG(result_tokens) AS avg_t
+        for big in c.execute("""
+          SELECT project_slug, COUNT(*) AS n, AVG(result_tokens) AS avg_t
             FROM tool_calls
            WHERE tool_name='_tool_result' AND result_tokens > 50000 AND timestamp >= ?
-        """, (since,)).fetchone()
-        if big and (big["n"] or 0) >= 5:
-            key = _key("tool-bloat", "result-50k+")
-            if not _is_dismissed(db_path, key):
-                out.append({
-                    "key": key, "category": "tool-bloat",
-                    "title": f"{big['n']} tool results over 50k tokens this week",
-                    "body": f"Average size is {int(big['avg_t']):,} tokens. Pipe long Bash output to head/tail and ask for narrower file reads.",
-                    "scope": "result-50k+",
-                    "project_slug": None,
-                })
+           GROUP BY project_slug
+        """, (since,)):
+            if (big["n"] or 0) < 5:
+                continue
+            slug = big["project_slug"] or "?"
+            key = _key("tool-bloat", f"{slug}:result-50k+")
+            if _is_dismissed(db_path, key):
+                continue
+            out.append({
+                "key": key, "category": "tool-bloat",
+                "title": f"{big['n']} tool results over 50k tokens in {slug} this week",
+                "body": f"Average size is {int(big['avg_t']):,} tokens. Pipe long Bash output to head/tail and ask for narrower file reads.",
+                "scope": f"{slug}:result-50k+",
+                "project_slug": big["project_slug"],
+            })
         for row in c.execute("""
           SELECT agent_id, COUNT(*) AS n,
                  AVG(input_tokens+output_tokens) AS mean_t,

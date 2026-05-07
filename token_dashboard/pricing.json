@@ -1,12 +1,20 @@
 {
   "models": {
-    "claude-opus-4-7":     { "tier": "opus",   "input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_create_5m": 18.75, "cache_create_1h": 30.00 },
-    "claude-opus-4-6":     { "tier": "opus",   "input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_create_5m": 18.75, "cache_create_1h": 30.00 },
+    "claude-opus-4-7":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
+    "claude-opus-4-6":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
+    "claude-opus-4-5":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
+    "claude-opus-4-1":     { "tier": "opus",   "input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_create_5m": 18.75, "cache_create_1h": 30.00 },
+    "claude-opus-4":       { "tier": "opus",   "input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_create_5m": 18.75, "cache_create_1h": 30.00 },
     "claude-sonnet-4-6":   { "tier": "sonnet", "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
-    "claude-haiku-4-5":    { "tier": "haiku",  "input":  1.00, "output":  5.00, "cache_read": 0.10, "cache_create_5m":  1.25, "cache_create_1h":  2.00 }
+    "claude-sonnet-4-5":   { "tier": "sonnet", "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
+    "claude-sonnet-4":     { "tier": "sonnet", "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
+    "claude-sonnet-3-7":   { "tier": "sonnet", "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
+    "claude-haiku-4-5":    { "tier": "haiku",  "input":  1.00, "output":  5.00, "cache_read": 0.10, "cache_create_5m":  1.25, "cache_create_1h":  2.00 },
+    "claude-haiku-3-5":    { "tier": "haiku",  "input":  0.80, "output":  4.00, "cache_read": 0.08, "cache_create_5m":  1.00, "cache_create_1h":  1.60 },
+    "claude-haiku-3":      { "tier": "haiku",  "input":  0.25, "output":  1.25, "cache_read": 0.03, "cache_create_5m":  0.30, "cache_create_1h":  0.50 }
   },
   "tier_fallback": {
-    "opus":   { "input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_create_5m": 18.75, "cache_create_1h": 30.00 },
+    "opus":   { "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
     "sonnet": { "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
     "haiku":  { "input":  1.00, "output":  5.00, "cache_read": 0.10, "cache_create_5m":  1.25, "cache_create_1h":  2.00 }
   },

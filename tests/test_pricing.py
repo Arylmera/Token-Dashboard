@@ -20,7 +20,7 @@ class CostTests(unittest.TestCase):
 
     def test_known_opus_input_cost(self):
         c = cost_for("claude-opus-4-7", self._u(input_tokens=1_000_000), self.p)
-        self.assertAlmostEqual(c["usd"], 15.00, places=4)
+        self.assertAlmostEqual(c["usd"], 5.00, places=4)
         self.assertFalse(c["estimated"])
 
     def test_known_sonnet_output_cost(self):
@@ -29,7 +29,7 @@ class CostTests(unittest.TestCase):
 
     def test_unknown_opus_falls_back(self):
         c = cost_for("claude-opus-9-9-experimental", self._u(input_tokens=1_000_000), self.p)
-        self.assertAlmostEqual(c["usd"], 15.00, places=4)
+        self.assertAlmostEqual(c["usd"], 5.00, places=4)
         self.assertTrue(c["estimated"])
 
     def test_unknown_unparseable_returns_none(self):

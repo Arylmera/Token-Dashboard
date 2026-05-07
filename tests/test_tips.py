@@ -71,7 +71,7 @@ class RightSizeTests(unittest.TestCase):
             c.commit()
         tips = right_size_tips(self.db, today_iso="2026-04-19T00:00:00")
         self.assertTrue(any(t["category"] == "right-size" for t in tips))
-        self.assertTrue(all(t["project_slug"] is None for t in tips))
+        self.assertTrue(all(t["project_slug"] == "p" for t in tips))
 
 
 class OutlierTests(unittest.TestCase):
@@ -87,8 +87,9 @@ class OutlierTests(unittest.TestCase):
                 c.execute("INSERT INTO tool_calls (message_uuid, session_id, project_slug, tool_name, target, result_tokens, timestamp, is_error) VALUES (?, 's','p','_tool_result','tu',100000,'2026-04-18T00:00:00Z',0)", (f"u{i}",))
             c.commit()
         tips = outlier_tips(self.db, today_iso="2026-04-19T00:00:00")
-        self.assertTrue(any(t["category"] == "tool-bloat" for t in tips))
-        self.assertTrue(all(t["project_slug"] is None for t in tips))
+        bloat = [t for t in tips if t["category"] == "tool-bloat"]
+        self.assertTrue(bloat)
+        self.assertTrue(all(t["project_slug"] == "p" for t in bloat))
 
 
 class ProjectCwdTests(unittest.TestCase):
@@ -113,6 +114,13 @@ class ProjectCwdTests(unittest.TestCase):
                     cache_create_5m_tokens, cache_create_1h_tokens, is_sidechain) VALUES
                     (?, 's','projA','assistant','2026-04-18T00:00:00Z',
                      'claude-opus-4-7', 1000000, 200, 0, 0, 0, 0)""", (f"sa{i}",))
+            for i in range(10):
+                tok = 1_000_000 if i == 0 else 10_000
+                c.execute("""INSERT INTO messages (uuid, session_id, project_slug, type, timestamp,
+                    model, input_tokens, output_tokens, cache_read_tokens,
+                    cache_create_5m_tokens, cache_create_1h_tokens, is_sidechain, agent_id) VALUES
+                    (?, 's','projA','assistant','2026-04-18T00:00:00Z',
+                     'claude-opus-4-7', ?, 0, 0, 0, 0, 1, 'agentX')""", (f"sx{i}", tok))
             c.commit()
 
     def test_project_tips_get_most_recent_cwd(self):
