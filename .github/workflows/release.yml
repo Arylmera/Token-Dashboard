@@ -82,26 +82,6 @@ jobs:
           name: token-dashboard-${{ matrix.target }}
           path: dist/token-dashboard-*${{ matrix.target }}*
 
-  release:
-    name: Publish release
-    needs: [version, build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          name: ${{ needs.version.outputs.tag }}
-          files: dist/*
-          generate_release_notes: true
-
   release-tag:
     name: Publish tagged release
     needs: build
