@@ -3,8 +3,17 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
+import subprocess
 import sys
 import webbrowser
+
+if sys.stdout is None or sys.stderr is None:
+    _devnull = open(os.devnull, "w", encoding="utf-8")
+    if sys.stdout is None:
+        sys.stdout = _devnull
+    if sys.stderr is None:
+        sys.stderr = _devnull
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -23,6 +32,41 @@ def _projects(args) -> str:
         or os.environ.get("CLAUDE_PROJECTS_DIR")
         or str(Path.home() / ".claude" / "projects")
     )
+
+
+def _open_app_window(url: str) -> None:
+    candidates = []
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA", "")
+        pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+        pf86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+        candidates += [
+            os.path.join(local, r"Google\Chrome\Application\chrome.exe"),
+            os.path.join(pf, r"Google\Chrome\Application\chrome.exe"),
+            os.path.join(pf86, r"Google\Chrome\Application\chrome.exe"),
+            os.path.join(pf, r"Microsoft\Edge\Application\msedge.exe"),
+            os.path.join(pf86, r"Microsoft\Edge\Application\msedge.exe"),
+        ]
+    elif sys.platform == "darwin":
+        candidates += [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+        ]
+    else:
+        for name in ("google-chrome", "chromium", "chromium-browser", "microsoft-edge", "brave-browser"):
+            path = shutil.which(name)
+            if path:
+                candidates.append(path)
+
+    for exe in candidates:
+        if exe and os.path.exists(exe):
+            try:
+                subprocess.Popen([exe, f"--app={url}"], close_fds=True)
+                return
+            except OSError:
+                continue
+    webbrowser.open(url)
 
 
 def _today_range():
@@ -89,7 +133,7 @@ def cmd_dashboard(args):
         port = int(os.environ.get("PORT", "8080"))
         url = f"http://{host}:{port}/"
         if not args.no_open:
-            webbrowser.open(url)
+            _open_app_window(url)
         print(f"Token Dashboard listening on {url} (reload mode)")
 
         watch_root = Path(__file__).resolve().parent.parent
@@ -105,7 +149,7 @@ def cmd_dashboard(args):
     port = int(os.environ.get("PORT", "8080"))
     url = f"http://{host}:{port}/"
     if not args.no_open and not is_reload_child:
-        webbrowser.open(url)
+        _open_app_window(url)
     print(f"Token Dashboard listening on {url}")
     run(host, port, db, _projects(args))
 
