@@ -26,6 +26,33 @@ The package itself has zero runtime dependencies (Python stdlib only). No Node.j
 
 ## Quickstart
 
+### Option A — prebuilt binary (no Python needed)
+
+Grab the binary for your OS from the [latest release](https://github.com/Arylmera/Token-Dashboard/releases/latest):
+
+| OS | Asset pattern |
+|---|---|
+| Windows | `token-dashboard-<version>-windows-x64.exe` |
+| macOS (Apple Silicon) | `token-dashboard-<version>-macos-arm64` |
+| Linux x64 | `token-dashboard-<version>-linux-x64` |
+
+Then run it:
+
+```bash
+# macOS / Linux
+chmod +x token-dashboard-*
+./token-dashboard-* dashboard
+
+# Windows
+token-dashboard-<version>-windows-x64.exe dashboard
+```
+
+Each binary is a single self-contained PyInstaller bundle — no install, no Python on the host, no dependencies. Built in CI from the same source tree (see [`.github/workflows/release.yml`](.github/workflows/release.yml)).
+
+**Versioning.** Every push to `main` publishes a release tagged `v<major>.<minor>.<build>`, where `<major>.<minor>` is read from the [`VERSION`](VERSION) file at the repo root and `<build>` is the GitHub Actions run number (monotonic). To cut a major or minor bump, edit `VERSION` (e.g. `0.1` → `0.2` or `1.0`); the next merge to `main` produces a release on the new line. Pull requests and other branches build but do not publish.
+
+### Option B — from source
+
 ```bash
 git clone https://github.com/Arylmera/Token-Dashboard.git
 cd Token-Dashboard
@@ -146,10 +173,15 @@ Layout:
 
 - `cli.py` / `token_dashboard/__main__.py` — argparse entrypoint.
 - `token_dashboard/scanner.py` — incremental JSONL → SQLite ingest.
-- `token_dashboard/db/` — schema, queries, project helpers.
-- `token_dashboard/server/` — HTTP routes, SSE stream, background scan loop.
-- `token_dashboard/web/` — frontend, split into `core/` (router, API client, formatters), `charts/` (ECharts theme), and `routes/` (one file per tab).
-- `token_dashboard/pricing.json` — per-model and per-plan prices.
+- `token_dashboard/skills.py` — skill discovery + token measurement across `~/.claude/skills/`, `~/.claude/scheduled-tasks/`, `~/.claude/plugins/`.
+- `token_dashboard/tips.py` — rule-based suggestions engine.
+- `token_dashboard/pricing.py` / `pricing.json` — per-model and per-plan price tables.
+- `token_dashboard/reloader.py` — dev auto-reload helper.
+- `token_dashboard/db/` — `schema.py` (DDL + migrations), `queries.py` (read paths), `projects.py` (project-slug helpers).
+- `token_dashboard/server/` — `routes.py` (HTTP routes), `sse.py` (server-sent events), `scan_loop.py` (background rescan), `http_utils.py` (shared helpers).
+- `token_dashboard/web/` — frontend, split into `core/` (router, API client, formatters), `charts/` (ECharts theme), and `routes/` (one file per tab: `overview`, `prompts`, `sessions`, `projects`, `skills`, `tips`, `settings`).
+- `token-dashboard.spec` — PyInstaller spec for the prebuilt binaries.
+- `.github/workflows/release.yml` — CI builds Windows / macOS-arm64 / Linux-x64 executables on every push to `main` and publishes a GitHub Release on `v*` tags.
 
 Data flow: `token-dashboard` → `scanner.scan_dir` → SQLite at `~/.claude/token-dashboard.db`; `token_dashboard.server.run` exposes `/api/*` JSON routes and serves the static frontend.
 
