@@ -44,6 +44,14 @@ body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0A0E14
 .dir-a-root .tone-bad { color: var(--bad); }
 .dir-a-root .a-prose { font-family: Inter, system-ui, sans-serif; }
 
+/* themed scrollbars */
+.dir-a-root * { scrollbar-width: thin; scrollbar-color: var(--iron-border-2) transparent; }
+.dir-a-root *::-webkit-scrollbar { width: 8px; height: 8px; }
+.dir-a-root *::-webkit-scrollbar-track { background: transparent; }
+.dir-a-root *::-webkit-scrollbar-thumb { background: var(--iron-border-2); border-radius: 4px; border: 2px solid var(--panel); background-clip: padding-box; }
+.dir-a-root *::-webkit-scrollbar-thumb:hover { background: var(--gull-2); border: 2px solid var(--panel); background-clip: padding-box; }
+.dir-a-root *::-webkit-scrollbar-corner { background: transparent; }
+
 /* topbar */
 .a-topbar {
   display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px;
@@ -52,6 +60,7 @@ body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0A0E14
   border-bottom: 1px solid var(--iron-border);
   position: sticky; top: 0; z-index: 10;
   position: relative;
+  overflow: hidden;
 }
 .a-topbar::after {
   content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;

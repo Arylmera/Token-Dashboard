@@ -627,6 +627,34 @@ const Settings = () => {
       </section>
 
       <section className="a-card">
+        <div className="a-card-head"><h2>Pricing table</h2><span className="a-card-meta">USD per 1M tokens</span></div>
+        <table className="a-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th className="num">Input</th>
+              <th className="num">Output</th>
+              <th className="num">Cache read</th>
+              <th className="num">Cache 5m</th>
+              <th className="num">Cache 1h</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries((D.plan && D.plan.pricing && D.plan.pricing.models) || {}).map(([id, r]) => (
+              <tr key={id}>
+                <td><span className={`a-badge badge-${r.tier}`}>{id}</span></td>
+                <td className="num">${r.input.toFixed(2)}</td>
+                <td className="num">${r.output.toFixed(2)}</td>
+                <td className="num">${r.cache_read.toFixed(2)}</td>
+                <td className="num">${r.cache_create_5m.toFixed(2)}</td>
+                <td className="num">${r.cache_create_1h.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="a-card">
         <div className="a-card-head"><h2>Glossary</h2></div>
         <dl className="a-glossary">
           <dt>input tokens</dt>
