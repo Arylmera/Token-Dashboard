@@ -116,7 +116,7 @@ def main():
     common.add_argument("--projects-dir", help="JSONL root (default ~/.claude/projects)")
 
     p = argparse.ArgumentParser(prog="token-dashboard", description="Local Claude Code usage dashboard", parents=[common])
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd")
     sub.add_parser("scan",  parents=[common]).set_defaults(func=cmd_scan)
     sub.add_parser("today", parents=[common]).set_defaults(func=cmd_today)
     sub.add_parser("stats", parents=[common]).set_defaults(func=cmd_stats)
@@ -126,7 +126,10 @@ def main():
     d.add_argument("--no-open", action="store_true")
     d.add_argument("--reload", action="store_true", help="Auto-restart server when *.py/*.json change")
     d.set_defaults(func=cmd_dashboard)
-    args = p.parse_args()
+    argv = sys.argv[1:]
+    if not any(a in {"scan", "today", "stats", "tips", "dashboard"} for a in argv):
+        argv = argv + ["dashboard"]
+    args = p.parse_args(argv)
     args.func(args)
 
 
