@@ -3,10 +3,56 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
+import subprocess
 import sys
 import webbrowser
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+
+def _open_app_window(url: str) -> None:
+    """Launch URL in a Chromium app window (no tabs/address bar) if available."""
+    candidates: list[str] = []
+    if sys.platform == "win32":
+        pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+        pfx86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+        local = os.environ.get("LocalAppData", "")
+        candidates = [
+            rf"{pf}\Google\Chrome\Application\chrome.exe",
+            rf"{pfx86}\Google\Chrome\Application\chrome.exe",
+            rf"{local}\Google\Chrome\Application\chrome.exe",
+            rf"{pf}\Microsoft\Edge\Application\msedge.exe",
+            rf"{pfx86}\Microsoft\Edge\Application\msedge.exe",
+        ]
+    elif sys.platform == "darwin":
+        candidates = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+        ]
+    else:
+        for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "brave-browser"):
+            found = shutil.which(name)
+            if found:
+                candidates.append(found)
+
+    for exe in candidates:
+        if not exe or not os.path.exists(exe):
+            continue
+        try:
+            kwargs: dict = {}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = 0x00000008  # DETACHED_PROCESS
+            subprocess.Popen(
+                [exe, f"--app={url}", "--window-size=1400,900"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                **kwargs,
+            )
+            return
+        except OSError:
+            continue
+    webbrowser.open(url)
 
 from token_dashboard.db import init_db, default_db_path, overview_totals
 from token_dashboard.scanner import scan_dir
@@ -89,7 +135,7 @@ def cmd_dashboard(args):
         port = int(os.environ.get("PORT", "8080"))
         url = f"http://{host}:{port}/"
         if not args.no_open:
-            webbrowser.open(url)
+            _open_app_window(url)
         print(f"Token Dashboard listening on {url} (reload mode)")
 
         watch_root = Path(__file__).resolve().parent.parent
@@ -105,8 +151,14 @@ def cmd_dashboard(args):
     port = int(os.environ.get("PORT", "8080"))
     url = f"http://{host}:{port}/"
     if not args.no_open and not is_reload_child:
-        webbrowser.open(url)
+        _open_app_window(url)
     print(f"Token Dashboard listening on {url}")
+    if sys.platform == "win32" and not args.no_open and not is_reload_child and getattr(args, "hide_console", True):
+        try:
+            import ctypes
+            ctypes.windll.kernel32.FreeConsole()
+        except Exception:
+            pass
     run(host, port, db, _projects(args))
 
 
@@ -125,6 +177,7 @@ def main():
     d.add_argument("--no-scan", action="store_true")
     d.add_argument("--no-open", action="store_true")
     d.add_argument("--reload", action="store_true", help="Auto-restart server when *.py/*.json change")
+    d.add_argument("--keep-console", dest="hide_console", action="store_false", help="Keep console window open (Windows)")
     d.set_defaults(func=cmd_dashboard)
     argv = sys.argv[1:]
     if not any(a in {"scan", "today", "stats", "tips", "dashboard"} for a in argv):
