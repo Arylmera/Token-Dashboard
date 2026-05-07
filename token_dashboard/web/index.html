@@ -4,11 +4,37 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Token Dashboard</title>
-<link rel="stylesheet" href="/web/style.css">
-<script src="/web/echarts.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/web/a-styles.css">
 </head>
 <body>
-<main id="app"><p style="padding:40px;color:#8B98A6">Loading Token Dashboard…</p></main>
-<script type="module" src="/web/app.js"></script>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+<script src="/web/data.js"></script>
+<script type="text/babel" src="/web/direction-a.jsx" data-presets="env,react"></script>
+
+<script type="text/babel" data-presets="env,react">
+  (async () => {
+    await window.DATA_READY;
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    const render = () => root.render(
+      <div className="dir-a-root" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+        <DirectionA />
+      </div>
+    );
+    render();
+    // SSE refresh — re-fetch + re-render on scan events
+    try {
+      const es = new EventSource("/api/stream");
+      es.onmessage = async () => { await window.RELOAD_DATA(); render(); };
+    } catch (_) {}
+  })();
+</script>
 </body>
 </html>
