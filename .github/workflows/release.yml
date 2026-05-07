@@ -9,8 +9,30 @@ on:
   workflow_dispatch:
 
 jobs:
+  version:
+    name: Compute version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      tag: ${{ steps.compute.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: compute
+        shell: bash
+        run: |
+          base=$(tr -d '[:space:]' < VERSION)
+          if [ -z "$base" ]; then
+            echo "VERSION file is empty" >&2
+            exit 1
+          fi
+          version="${base}.${GITHUB_RUN_NUMBER}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          echo "Computed version: ${version}"
+
   build:
     name: Build ${{ matrix.target }}
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -44,21 +66,44 @@ jobs:
 
       - name: Rename artifact
         shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           cd dist
           if [ "${{ runner.os }}" = "Windows" ]; then
-            mv token-dashboard.exe token-dashboard-${{ matrix.target }}.exe
+            mv token-dashboard.exe token-dashboard-${VERSION}-${{ matrix.target }}.exe
           else
-            mv token-dashboard token-dashboard-${{ matrix.target }}
-            chmod +x token-dashboard-${{ matrix.target }}
+            mv token-dashboard token-dashboard-${VERSION}-${{ matrix.target }}
+            chmod +x token-dashboard-${VERSION}-${{ matrix.target }}
           fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: token-dashboard-${{ matrix.target }}
-          path: dist/token-dashboard-${{ matrix.target }}*
+          path: dist/token-dashboard-*${{ matrix.target }}*
 
   release:
+    name: Publish release
+    needs: [version, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          files: dist/*
+          generate_release_notes: true
+
+  release-tag:
+    name: Publish tagged release
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
