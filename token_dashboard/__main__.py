@@ -159,7 +159,10 @@ def cmd_dashboard(args):
             ctypes.windll.kernel32.FreeConsole()
         except Exception:
             pass
-    run(host, port, db, _projects(args))
+    auto_exit = getattr(args, "auto_exit", None)
+    if auto_exit is None:
+        auto_exit = (not args.no_open) and (not is_reload_child)
+    run(host, port, db, _projects(args), auto_exit=auto_exit)
 
 
 def main():
@@ -178,6 +181,9 @@ def main():
     d.add_argument("--no-open", action="store_true")
     d.add_argument("--reload", action="store_true", help="Auto-restart server when *.py/*.json change")
     d.add_argument("--keep-console", dest="hide_console", action="store_false", help="Keep console window open (Windows)")
+    ae = d.add_mutually_exclusive_group()
+    ae.add_argument("--auto-exit", dest="auto_exit", action="store_true", default=None, help="Stop server after all browser clients disconnect")
+    ae.add_argument("--no-auto-exit", dest="auto_exit", action="store_false", help="Keep server running after browser closes")
     d.set_defaults(func=cmd_dashboard)
     argv = sys.argv[1:]
     if not any(a in {"scan", "today", "stats", "tips", "dashboard"} for a in argv):
