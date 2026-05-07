@@ -4,9 +4,13 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import sys
 from pathlib import Path
 
-_PKG_ROOT = Path(__file__).resolve().parent.parent
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    _PKG_ROOT = Path(sys._MEIPASS) / "token_dashboard"
+else:
+    _PKG_ROOT = Path(__file__).resolve().parent.parent
 WEB_ROOT = _PKG_ROOT / "web"
 PACKAGED_PRICING_JSON = _PKG_ROOT / "pricing.json"
 
