@@ -2,7 +2,10 @@ name: Build executables
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -16,9 +19,6 @@ jobs:
           - os: windows-latest
             target: windows-x64
             artifact: token-dashboard.exe
-          - os: macos-13
-            target: macos-x64
-            artifact: token-dashboard
           - os: macos-latest
             target: macos-arm64
             artifact: token-dashboard
