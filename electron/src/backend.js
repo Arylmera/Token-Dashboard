@@ -4,7 +4,7 @@
 // it prints the ready token (or /api/health responds), and tear it down on
 // shutdown. Pure functions — no module-level state.
 
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const http = require("http");
 const net = require("net");
 const path = require("path");
@@ -129,6 +129,12 @@ function waitForReady(child, port, timeoutMs = 15000) {
 
 function killBackend(child) {
   if (!child) return;
+  if (process.platform === "win32" && child.pid) {
+    try {
+      spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+      return;
+    } catch (_) {}
+  }
   try { child.kill(); } catch (_) {}
 }
 
