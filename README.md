@@ -54,13 +54,22 @@ token-dashboard-<version>-windows-x64.exe dashboard
 
 The Electron installer drops a regular desktop app — launch it from Start Menu / Launchpad / your app launcher.
 
-> **macOS:** the DMG isn't code-signed (no Apple Developer ID), so on first launch the app crashes immediately with a `Library not loaded` / *"different Team IDs"* error (the outer bundle is unsigned, but the embedded `Electron Framework` carries Electron's Team ID, and macOS refuses to load the mismatch). Neither right-click → Open nor System Settings → "Open Anyway" fixes this. Run this once after installing:
+> **macOS quick install (copy-paste):**
 >
 > ```bash
-> codesign --force --deep --sign - "/Applications/Token Dashboard.app"
+> # Homebrew cask
+> brew install --cask arylmera/token-dashboard/token-dashboard \
+>   && codesign --force --deep --sign - "/Applications/Token Dashboard.app" \
+>   && open -a "Token Dashboard"
 > ```
 >
-> This re-signs the whole bundle (outer binary + every embedded framework) with a single ad-hoc identity so the Team IDs match. The app opens normally afterward, and the command only needs to be run once per install.
+> ```bash
+> # DMG download — after dragging Token Dashboard.app to /Applications
+> codesign --force --deep --sign - "/Applications/Token Dashboard.app" \
+>   && open -a "Token Dashboard"
+> ```
+>
+> **Why the extra `codesign` step:** the DMG isn't code-signed (no Apple Developer ID), so on first launch the app crashes with a `Library not loaded` / *"different Team IDs"* error — the outer bundle is unsigned, but the embedded `Electron Framework` carries Electron's Team ID, and macOS refuses to load the mismatch. Neither right-click → Open nor System Settings → "Open Anyway" fixes this. The `codesign --force --deep --sign -` command re-signs the whole bundle (outer binary + every embedded framework) with a single ad-hoc identity so the Team IDs match. It only needs to be run once per install.
 >
 > On older macOS (≤ 13) the issue was tied to the quarantine flag and `xattr -dr com.apple.quarantine "/Applications/Token Dashboard.app"` was sufficient. On macOS 14+ — and confirmed required on macOS 26 — the Team-ID check fires regardless of quarantine, so you need the `codesign` command above.
 
