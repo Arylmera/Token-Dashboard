@@ -41,13 +41,22 @@ token-dashboard = "token_dashboard.__main__:main"
 [tool.hatch.build.targets.wheel]
 packages = ["token_dashboard"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"frontend" = "token_dashboard/_frontend"
+"shared" = "token_dashboard/_shared"
+"VERSION" = "token_dashboard/_VERSION"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "token_dashboard",
+    "frontend",
+    "shared",
+    "electron",
     "tests",
     "cli.py",
     "run.sh",
     "run.bat",
+    "VERSION",
     "README.md",
     "CLAUDE.md",
     "CONTRIBUTING.md",

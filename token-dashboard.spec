@@ -3,8 +3,10 @@
 from PyInstaller.utils.hooks import collect_data_files
 
 datas = [
-    ('token_dashboard/web', 'token_dashboard/web'),
+    ('frontend', 'frontend'),
     ('token_dashboard/pricing.json', 'token_dashboard'),
+    ('VERSION', '.'),
+    ('shared', 'shared'),
 ]
 
 a = Analysis(

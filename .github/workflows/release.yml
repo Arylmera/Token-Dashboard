@@ -40,13 +40,13 @@ jobs:
         include:
           - os: windows-latest
             target: windows-x64
-            artifact: token-dashboard.exe
+            py_artifact: token-dashboard.exe
           - os: macos-latest
             target: macos-arm64
-            artifact: token-dashboard
+            py_artifact: token-dashboard
           - os: ubuntu-22.04
             target: linux-x64
-            artifact: token-dashboard
+            py_artifact: token-dashboard
 
     steps:
       - uses: actions/checkout@v4
@@ -55,16 +55,35 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install PyInstaller
         run: python -m pip install --upgrade pip pyinstaller
 
       - name: Run unit tests
         run: python -m unittest discover tests
 
-      - name: Build executable
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend bundle
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build Python executable
         run: pyinstaller --clean --noconfirm token-dashboard.spec
 
-      - name: Rename artifact
+      - name: Stage Python build for electron-builder
+        shell: bash
+        run: |
+          rm -rf dist-py
+          mkdir -p dist-py
+          cp -R dist/token-dashboard* dist-py/
+
+      - name: Rename standalone Python artifact
         shell: bash
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -77,30 +96,39 @@ jobs:
             chmod +x token-dashboard-${VERSION}-${{ matrix.target }}
           fi
 
+      - name: Install electron deps
+        working-directory: electron
+        run: npm ci
+
+      - name: Build Electron installer
+        working-directory: electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --publish never
+
+      - name: Collect Electron installers
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p out
+          shopt -s nullglob
+          for f in electron/dist/*.exe electron/dist/*.dmg electron/dist/*.AppImage electron/dist/*.zip electron/dist/*.deb; do
+            base=$(basename "$f")
+            cp "$f" "out/token-dashboard-${VERSION}-${{ matrix.target }}-${base}"
+          done
+
       - uses: actions/upload-artifact@v4
         with:
-          name: token-dashboard-${{ matrix.target }}
+          name: token-dashboard-py-${{ matrix.target }}
           path: dist/token-dashboard-*${{ matrix.target }}*
 
-  release:
-    name: Publish release
-    needs: [version, build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          path: dist
-          merge-multiple: true
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          name: ${{ needs.version.outputs.tag }}
-          files: dist/*
-          generate_release_notes: true
+          name: token-dashboard-electron-${{ matrix.target }}
+          path: out/*
+          if-no-files-found: warn
 
   release-tag:
     name: Publish tagged release

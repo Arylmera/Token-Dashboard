@@ -12,6 +12,7 @@ from .projects import (
 from .queries import (
     daily_token_breakdown,
     expensive_prompts,
+    hourly_breakdown,
     model_breakdown,
     overview_totals,
     project_summary,
@@ -28,6 +29,7 @@ __all__ = [
     "daily_token_breakdown",
     "default_db_path",
     "expensive_prompts",
+    "hourly_breakdown",
     "init_db",
     "model_breakdown",
     "overview_totals",

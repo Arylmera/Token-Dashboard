@@ -1,0 +1,61 @@
+{
+  "name": "token-dashboard-electron",
+  "version": "1.0.0",
+  "description": "Electron desktop shell for Token Dashboard.",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "dev:devtools": "electron . --dev",
+    "frontend:build": "npm --prefix ../frontend run build",
+    "icon:gen": "python scripts/gen-icon.py",
+    "py:prepare": "python scripts/prepare-py.py",
+    "prebuild": "npm run frontend:build && npm run py:prepare",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.arylmera.token-dashboard",
+    "productName": "Token Dashboard",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "src/**/*",
+      "../frontend/**/*",
+      "../shared/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist-py",
+        "to": "py",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build-resources/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "build-resources/icon.icns",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build-resources/icon.png",
+      "category": "Development"
+    }
+  }
+}
