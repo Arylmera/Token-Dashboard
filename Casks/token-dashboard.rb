@@ -17,6 +17,16 @@ cask "token-dashboard" do
 
   app "Token Dashboard.app"
 
+  # The DMG isn't signed with an Apple Developer ID (only ad-hoc), so even
+  # though Homebrew Cask normally strips quarantine on install, recent
+  # macOS releases re-attach it. Strip explicitly so first launch doesn't
+  # hit the "damaged and can't be opened" Gatekeeper dialog.
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Token Dashboard.app"],
+                   sudo: false
+  end
+
   zap trash: [
     "~/.claude/token-dashboard.db",
     "~/Library/Application Support/Token Dashboard",

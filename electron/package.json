@@ -31,6 +31,7 @@
       "output": "dist",
       "buildResources": "build-resources"
     },
+    "afterPack": "scripts/ad-hoc-sign.js",
     "files": [
       "main.js",
       "preload.js",
