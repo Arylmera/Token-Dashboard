@@ -14,7 +14,7 @@ export const Prompts = () => {
         </div>
         <table className="a-table">
           <thead>
-            <tr><th>preview</th><th>project</th><th>session</th><th>model</th><th className="num">tokens</th><th className="num">cost</th><th>when</th></tr>
+            <tr><th>preview</th><th>project</th><th>session</th><th>model</th><th className="num">tokens</th><th className="num">cost</th><th className="num">when</th></tr>
           </thead>
           <tbody>
             {(D.prompts || []).map((p) => (
@@ -29,7 +29,7 @@ export const Prompts = () => {
                   <td><ModelBadge model={p.model} /></td>
                   <td className="num">{fmtTokens(p.tokens)}</td>
                   <td className="num tone-good">{fmtCost(p.cost)}</td>
-                  <td>{p.time}</td>
+                  <td className="num" style={{ whiteSpace: "nowrap" }}>{p.time}</td>
                 </tr>
                 {openId === p.id && (
                   <tr className="a-drawer-row">

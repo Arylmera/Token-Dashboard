@@ -214,12 +214,90 @@ def _project_cwds(db_path) -> dict:
         return {r["project_slug"]: r["cwd"] for r in c.execute(sql)}
 
 
+def waste_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
+    """Heuristic detection of likely-wasted spend.
+
+    Two signals today:
+      1. Retry storms — same user prompt in the same session within 10 minutes.
+         Almost always means the first attempt was interrupted or unsatisfactory.
+      2. High-cost short turns — assistant turns with <100 output tokens but
+         large billable input (>5k). Signature of an interrupted Stop, a
+         refused tool call, or a slash command that bailed early.
+    """
+    today_iso = today_iso or datetime.utcnow().isoformat()
+    since = _iso_days_ago(today_iso, 7)
+    out: List[dict] = []
+    with connect(db_path) as c:
+        retry_sql = """
+          SELECT a.session_id, a.project_slug,
+                 COUNT(*) AS n,
+                 SUM(LENGTH(COALESCE(a.prompt_text, ''))) AS chars
+            FROM messages a
+            JOIN messages b
+              ON b.session_id = a.session_id
+             AND b.type = 'user'
+             AND b.uuid != a.uuid
+             AND b.prompt_text = a.prompt_text
+             AND b.timestamp > a.timestamp
+             AND (julianday(b.timestamp) - julianday(a.timestamp)) * 86400.0 <= 600
+           WHERE a.type = 'user'
+             AND a.prompt_text IS NOT NULL
+             AND LENGTH(a.prompt_text) >= 8
+             AND a.is_sidechain = 0
+             AND a.timestamp >= ?
+           GROUP BY a.session_id
+           HAVING n >= 2
+        """
+        for row in c.execute(retry_sql, (since,)):
+            slug = row["project_slug"] or "?"
+            sid = row["session_id"]
+            key = _key("waste-retry", f"{slug}:{sid}")
+            if _is_dismissed(db_path, key):
+                continue
+            out.append({
+                "key": key, "category": "waste-retry",
+                "title": f"Retry storm in session {sid[:8]} ({slug})",
+                "body": f"{row['n']} duplicate prompts sent within 10 minutes — usually means the first attempts were interrupted or unsatisfactory. Each repeat re-pays for context.",
+                "scope": sid,
+                "project_slug": row["project_slug"],
+                "count": row["n"],
+            })
+
+        short_sql = """
+          SELECT project_slug, COUNT(*) AS n,
+                 SUM(input_tokens + cache_create_5m_tokens + cache_create_1h_tokens) AS in_tok,
+                 SUM(output_tokens) AS out_tok
+            FROM messages
+           WHERE type='assistant' AND is_sidechain=0
+             AND output_tokens < 100
+             AND (input_tokens + cache_create_5m_tokens + cache_create_1h_tokens) > 5000
+             AND timestamp >= ?
+           GROUP BY project_slug
+           HAVING n >= 5
+        """
+        for row in c.execute(short_sql, (since,)):
+            slug = row["project_slug"] or "?"
+            key = _key("waste-aborted", slug)
+            if _is_dismissed(db_path, key):
+                continue
+            out.append({
+                "key": key, "category": "waste-aborted",
+                "title": f"{row['n']} high-cost short turns in {slug}",
+                "body": f"{row['n']} assistant turns this week paid for {int(row['in_tok'] or 0):,} input tokens but produced under 100 output tokens each. Usually a Stop key, a tool refusal, or a misfired slash command — context cost without any useful reply.",
+                "scope": f"{slug}:short-turns-7d",
+                "project_slug": row["project_slug"],
+                "count": row["n"],
+            })
+    return out
+
+
 def all_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
     tips = [
         *cache_discipline_tips(db_path, today_iso),
         *repeated_target_tips(db_path, today_iso),
         *right_size_tips(db_path, today_iso),
         *outlier_tips(db_path, today_iso),
+        *waste_tips(db_path, today_iso),
     ]
     cwds = _project_cwds(db_path)
     for t in tips:

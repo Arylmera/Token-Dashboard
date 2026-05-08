@@ -1,14 +1,29 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 
 const TABS = ["overview", "prompts", "sessions", "token sink", "tips", "settings"];
 const RANGES = ["1d", "7d", "30d", "90d", "all"];
 
-export const Topbar = ({ tab, setTab, range, setRange }) => (
+const useVersion = () => {
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled && d && d.version) setVersion(String(d.version)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  return version;
+};
+
+export const Topbar = ({ tab, setTab, range, setRange }) => {
+  const version = useVersion();
+  return (
   <header className="a-topbar">
     <div className="a-brand">
       <span className="a-brand-dot" />
       <span className="a-brand-text">token-dashboard</span>
-      <span className="a-brand-sub">v0.4.2</span>
+      {version && <span className="a-brand-sub">v{version}</span>}
     </div>
     <nav className="a-nav">
       {TABS.map((t) => (
@@ -36,4 +51,5 @@ export const Topbar = ({ tab, setTab, range, setRange }) => (
       </div>
     </div>
   </header>
-);
+  );
+};

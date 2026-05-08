@@ -11,5 +11,6 @@ contextBridge.exposeInMainWorld("td", {
   backendUrl: () => ipcRenderer.invoke("td:backend-url"),
   readyPayload: () => ipcRenderer.invoke("td:ready-payload"),
   toggleDevTools: () => ipcRenderer.invoke("td:toggle-devtools"),
+  setGlass: (enabled) => ipcRenderer.invoke("td:set-glass", !!enabled),
   platform: process.platform,
 });

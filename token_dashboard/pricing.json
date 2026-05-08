@@ -18,10 +18,26 @@
     "sonnet": { "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
     "haiku":  { "input":  1.00, "output":  5.00, "cache_read": 0.10, "cache_create_5m":  1.25, "cache_create_1h":  2.00 }
   },
+  "tier_weight": {
+    "opus":   5.0,
+    "sonnet": 1.0,
+    "haiku":  0.33
+  },
   "plans": {
     "api":     { "monthly": 0,   "label": "API (pay-per-token)" },
     "pro":     { "monthly": 20,  "label": "Pro" },
     "max":     { "monthly": 100, "label": "Max" },
     "max-20x": { "monthly": 200, "label": "Max 20x" }
+  },
+  "limits": {
+    "api":     { "five_hour": null,   "weekly": null       },
+    "pro":     { "five_hour":  88000, "weekly":   2500000  },
+    "max":     { "five_hour": 176000, "weekly":  10000000  },
+    "max-20x": { "five_hour": 440000, "weekly":  15000000  }
+  },
+  "limits_meta": {
+    "last_verified": "2026-05-08",
+    "unit": "sonnet-equivalent billable tokens (input + output + cache writes), with opus weighted 5x and haiku 0.33x",
+    "source_note": "Anthropic does not publish exact token caps. 5h values reflect community estimates after the May 6 2026 5h-cap doubling. Weekly values are derived from Anthropic's published 'Sonnet/Opus hours per week' bands, assuming ~30k Sonnet-eq tokens per active hour. Treat as ±50% rough."
   }
 }
