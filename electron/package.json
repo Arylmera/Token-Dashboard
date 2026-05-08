@@ -51,6 +51,12 @@
       "icon": "build-resources/icon.ico",
       "artifactName": "token-dashboard-${version}-windows-x64-Setup.${ext}"
     },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "guid": "b8a9c3d2-1e7f-4d5b-9c6a-3f8e2d1b7c4a"
+    },
     "mac": {
       "target": "dmg",
       "icon": "build-resources/icon.icns",
