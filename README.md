@@ -52,13 +52,29 @@ token-dashboard-<version>-windows-x64.exe dashboard
 
 The Electron installer drops a regular desktop app — launch it from Start Menu / Launchpad / your app launcher.
 
-> **macOS:** the DMG isn't code-signed (no Apple Developer ID), so on first launch macOS Gatekeeper will say *"Token Dashboard is damaged and can't be opened. You should move it to the Trash."* It isn't damaged — it's the standard quarantine warning for unsigned apps. After dragging to Applications, run this once in Terminal to clear the quarantine flag:
+> **macOS:** the DMG isn't code-signed (no Apple Developer ID), so on first launch macOS Gatekeeper will say *"Token Dashboard is damaged and can't be opened. You should move it to the Trash."* It isn't damaged — it's the standard quarantine warning for unsigned apps. On macOS 14+ the quarantine also triggers a stricter dyld check that fails with a *"different Team IDs"* crash, so neither right-click → Open nor System Settings → "Open Anyway" works. Pick one of the workarounds below.
+>
+> **Workaround A — clear the quarantine flag** (after dragging to Applications):
 >
 > ```bash
 > xattr -dr com.apple.quarantine "/Applications/Token Dashboard.app"
 > ```
 >
-> The app opens normally afterward. (Right-click → Open does not work for this case on recent macOS.)
+> **Workaround B — install via Homebrew without quarantine** (skips the flag in the first place, no follow-up step needed):
+>
+> ```bash
+> brew install --cask --no-quarantine arylmera/token-dashboard/token-dashboard
+> ```
+>
+> If you already have the cask installed, reinstall with the same flag: `brew reinstall --cask --no-quarantine arylmera/token-dashboard/token-dashboard`.
+>
+> **Workaround C — ad-hoc re-sign the bundle** (use if A still fails on some macOS 26 builds):
+>
+> ```bash
+> codesign --force --deep --sign - "/Applications/Token Dashboard.app"
+> ```
+>
+> The app opens normally after any of these.
 
 > **Windows:** SmartScreen may warn about an unrecognized publisher. Click *More info* → *Run anyway*.
 
