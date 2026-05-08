@@ -49,7 +49,7 @@
     "win": {
       "target": "nsis",
       "icon": "build-resources/icon.ico",
-      "artifactName": "token-dashboard-${version}-windows-x64.${ext}"
+      "artifactName": "token-dashboard-${version}-windows-x64-Setup.${ext}"
     },
     "mac": {
       "target": "dmg",
