@@ -9,9 +9,12 @@
     "dev": "electron .",
     "dev:devtools": "electron . --dev",
     "frontend:build": "npm --prefix ../frontend run build",
-    "icon:gen": "python scripts/gen-icon.py",
-    "py:prepare": "python scripts/prepare-py.py",
+    "icon:gen": "python3 scripts/gen-icon.py",
+    "py:prepare": "python3 scripts/prepare-py.py",
     "prebuild": "npm run frontend:build && npm run py:prepare",
+    "prebuild:win": "npm run prebuild",
+    "prebuild:mac": "npm run prebuild",
+    "prebuild:linux": "npm run prebuild",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
@@ -33,9 +36,7 @@
       "main.js",
       "preload.js",
       "package.json",
-      "src/**/*",
-      "../frontend/**/*",
-      "../shared/**/*"
+      "src/**/*"
     ],
     "extraResources": [
       {

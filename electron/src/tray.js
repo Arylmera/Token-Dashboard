@@ -6,14 +6,26 @@
 const { Tray, Menu, app, nativeImage } = require("electron");
 const http = require("http");
 
-// Path differs between dev (electron/src → repo/shared, two-up) and packaged
-// asar (electron-builder re-roots `../shared/**/*` so it lives one level up
-// from src/ inside the bundle).
-const { formatTokens, formatCostUSD } = app.isPackaged
-  ? require("../shared/format")
-  : require("../../shared/format");
-
 const DISPLAY_THROTTLE_MS = 1000;
+
+function stripTrailingZero(v) {
+  return v.toFixed(1).replace(/\.0$/, "");
+}
+
+function formatTokens(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return stripTrailingZero(n / 1_000_000) + "M";
+  if (abs >= 1_000) return stripTrailingZero(n / 1_000) + "k";
+  return String(Math.round(n));
+}
+
+function formatCostUSD(usd) {
+  if (usd == null || Number.isNaN(usd)) return "—";
+  if (usd >= 100) return `$${Math.round(usd)}`;
+  if (usd >= 10) return `$${usd.toFixed(1)}`;
+  return `$${usd.toFixed(2)}`;
+}
 
 function billableTokens(o) {
   if (!o) return 0;
