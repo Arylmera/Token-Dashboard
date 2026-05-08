@@ -120,6 +120,24 @@ To upgrade:
 brew upgrade --cask token-dashboard
 ```
 
+### Option A.2 — winget (Windows)
+
+If you're on Windows 10/11 with the Windows Package Manager, the cleanest install is:
+
+```powershell
+winget install Arylmera.TokenDashboard
+```
+
+This pulls the signed NSIS Setup installer from the latest GitHub release and installs it to `%LOCALAPPDATA%\Programs\Token Dashboard\` with Start Menu and desktop shortcuts. No SmartScreen prompt to click through.
+
+To upgrade:
+
+```powershell
+winget upgrade Arylmera.TokenDashboard
+```
+
+Each release is auto-submitted to the [winget-pkgs](https://github.com/microsoft/winget-pkgs) repo by CI, so `winget upgrade` tracks new versions within a day or two of publish.
+
 ### Option B — from source
 
 ```bash
