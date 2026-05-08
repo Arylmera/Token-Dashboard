@@ -128,21 +128,20 @@ jobs:
 
       - name: Build Electron installer
         working-directory: electron
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --publish never
+          VERSION: ${{ needs.version.outputs.version }}
+        run: npx electron-builder --publish never --config.extraMetadata.version=${VERSION}
 
       - name: Collect Electron installers
         shell: bash
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
         run: |
           mkdir -p out
           shopt -s nullglob
           for f in electron/dist/*.exe electron/dist/*.dmg electron/dist/*.AppImage electron/dist/*.zip electron/dist/*.deb; do
-            base=$(basename "$f")
-            cp "$f" "out/token-dashboard-${VERSION}-${{ matrix.target }}-${base}"
+            cp "$f" "out/$(basename "$f")"
           done
 
       - uses: actions/upload-artifact@v4
@@ -194,3 +193,48 @@ jobs:
           name: ${{ needs.version.outputs.tag }}
           files: dist/*
           generate_release_notes: true
+
+      - name: Update Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAP_REPO: Arylmera/homebrew-token-dashboard
+        run: |
+          set -euo pipefail
+          if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_TOKEN secret not set — skipping tap update."
+            exit 0
+          fi
+          dmg="dist/token-dashboard-${VERSION}-macos-arm64.dmg"
+          if [ ! -f "$dmg" ]; then
+            echo "DMG not found at $dmg — skipping tap update." >&2
+            exit 0
+          fi
+          sha=$(shasum -a 256 "$dmg" | awk '{print $1}')
+          echo "DMG sha256: $sha"
+
+          tmp=$(mktemp -d)
+          git clone --depth=1 \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git" \
+            "$tmp/tap"
+          mkdir -p "$tmp/tap/Casks"
+          cp Casks/token-dashboard.rb "$tmp/tap/Casks/token-dashboard.rb"
+          # Substitute the placeholder version + sha256 with the real values.
+          sed -i.bak -E \
+            -e "s/^  version \".*\"$/  version \"${VERSION}\"/" \
+            -e "s/^  sha256 \".*\"$/  sha256 \"${sha}\"/" \
+            "$tmp/tap/Casks/token-dashboard.rb"
+          rm -f "$tmp/tap/Casks/token-dashboard.rb.bak"
+
+          cd "$tmp/tap"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/token-dashboard.rb
+          if git diff --cached --quiet; then
+            echo "Cask already up to date."
+          else
+            git commit -m "token-dashboard ${VERSION}"
+            # Empty repos have no default branch yet; push to main explicitly.
+            git branch -M main
+            git push -u origin main
+          fi

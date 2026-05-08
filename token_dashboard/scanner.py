@@ -24,8 +24,8 @@ INSERT OR REPLACE INTO messages (
 """
 
 INSERT_TOOL = """
-INSERT INTO tool_calls (message_uuid, session_id, project_slug, tool_name, target, result_tokens, is_error, timestamp)
-VALUES (:message_uuid, :session_id, :project_slug, :tool_name, :target, :result_tokens, :is_error, :timestamp)
+INSERT INTO tool_calls (message_uuid, session_id, project_slug, tool_name, target, use_id, result_tokens, is_error, timestamp)
+VALUES (:message_uuid, :session_id, :project_slug, :tool_name, :target, :use_id, :result_tokens, :is_error, :timestamp)
 """
 
 
@@ -90,6 +90,7 @@ def _extract_tools(rec: dict) -> List[dict]:
         out.append({
             "tool_name":     name,
             "target":        target,
+            "use_id":        block.get("id"),
             "result_tokens": None,
             "is_error":      0,
             "timestamp":     rec.get("timestamp"),
@@ -115,6 +116,7 @@ def _extract_results(rec: dict) -> List[dict]:
         out.append({
             "tool_name":     "_tool_result",
             "target":        block.get("tool_use_id"),
+            "use_id":        block.get("tool_use_id"),
             "result_tokens": chars // 4,
             "is_error":      1 if block.get("is_error") else 0,
             "timestamp":     rec.get("timestamp"),

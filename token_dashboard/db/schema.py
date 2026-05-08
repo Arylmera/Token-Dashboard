@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   project_slug  TEXT    NOT NULL,
   tool_name     TEXT    NOT NULL,
   target        TEXT,
+  use_id        TEXT,
   result_tokens INTEGER,
   is_error      INTEGER NOT NULL DEFAULT 0,
   timestamp     TEXT    NOT NULL
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 CREATE INDEX IF NOT EXISTS idx_tools_session ON tool_calls(session_id);
 CREATE INDEX IF NOT EXISTS idx_tools_name    ON tool_calls(tool_name);
 CREATE INDEX IF NOT EXISTS idx_tools_target  ON tool_calls(target);
+CREATE INDEX IF NOT EXISTS idx_tools_use_id  ON tool_calls(session_id, use_id);
 
 CREATE TABLE IF NOT EXISTS plan (
   k TEXT PRIMARY KEY,
@@ -70,6 +72,14 @@ CREATE TABLE IF NOT EXISTS dismissed_tips (
   tip_key       TEXT PRIMARY KEY,
   dismissed_at  REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS session_tags (
+  session_id  TEXT NOT NULL,
+  tag         TEXT NOT NULL,
+  created_at  REAL NOT NULL,
+  PRIMARY KEY (session_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_session_tags_tag ON session_tags(tag);
 """
 
 
@@ -82,6 +92,7 @@ def init_db(path: Union[str, Path]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as c:
         _migrate_add_message_id(c)
+        _migrate_add_tool_use_id(c)
         c.executescript(SCHEMA)
 
 
@@ -103,6 +114,29 @@ def _migrate_add_message_id(conn) -> None:
         return
     conn.execute("ALTER TABLE messages ADD COLUMN message_id TEXT")
     conn.execute("DELETE FROM messages")
+    conn.execute("DELETE FROM tool_calls")
+    conn.execute("DELETE FROM files")
+    conn.commit()
+
+
+def _migrate_add_tool_use_id(conn) -> None:
+    """Add tool_calls.use_id so result_tokens can be joined back to the tool_use.
+
+    Why: pre-migration tool_use rows had no link to their matching _tool_result
+    row (the result rows hold result_tokens but live on a separate message),
+    making per-tool token attribution impossible.
+    How to apply: if the old table exists without the column, add it and clear
+    tool_calls + files so the next scan replays JSONLs and populates use_id.
+    """
+    has_table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tool_calls'"
+    ).fetchone()
+    if not has_table:
+        return
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(tool_calls)")}
+    if "use_id" in cols:
+        return
+    conn.execute("ALTER TABLE tool_calls ADD COLUMN use_id TEXT")
     conn.execute("DELETE FROM tool_calls")
     conn.execute("DELETE FROM files")
     conn.commit()

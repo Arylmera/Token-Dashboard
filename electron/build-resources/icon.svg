@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2d2d30" />
+      <stop offset="100%" stop-color="#18181b" />
+    </linearGradient>
+    <linearGradient id="claude-orange" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#E28669" />
+      <stop offset="100%" stop-color="#C65D3B" />
+    </linearGradient>
+  </defs>
+
+  <!-- App Icon Base (Squircle) -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bg)" />
+  
+  <!-- Subtle inner border -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="none" stroke="#404045" stroke-width="4" />
+
+  <!-- The "C" Arc representing Claude and a gauge -->
+  <path d="M 380 150 A 160 160 0 1 0 380 362" fill="none" stroke="url(#claude-orange)" stroke-width="44" stroke-linecap="round" />
+
+  <!-- Dashboard Bar Chart (Token Consumption) -->
+  <!-- Bar 1 -->
+  <rect x="170" y="260" width="36" height="100" rx="10" fill="#E28669" opacity="0.6" />
+  <!-- Bar 2 -->
+  <rect x="240" y="180" width="36" height="180" rx="10" fill="#E28669" opacity="0.85" />
+  <!-- Bar 3 -->
+  <rect x="310" y="220" width="36" height="140" rx="10" fill="#E28669" />
+  
+  <!-- Subtle grid dots for a "data" feel -->
+  <circle cx="188" cy="190" r="4" fill="#666" />
+  <circle cx="328" cy="150" r="4" fill="#666" />
+  <circle cx="258" cy="130" r="4" fill="#666" />
+</svg>

@@ -4,38 +4,42 @@ import { fmtCost, fmtTokens } from "../format.js";
 import { HBar } from "../components/atoms.jsx";
 
 const ProjectsTable = ({ rows, max }) => (
-  <table className="a-table">
-    <thead><tr><th>project</th><th>last active</th><th className="num">sessions</th><th className="num">tokens</th><th className="num">cost</th><th>distribution</th></tr></thead>
-    <tbody>
-      {rows.map((p) => (
-        <tr key={p.slug} className="clickable">
-          <td className="mono" style={{ color: "var(--bone)" }}>{p.name}</td>
-          <td className="muted">{p.lastActive}</td>
-          <td className="num">{p.sessions}</td>
-          <td className="num">{fmtTokens(p.tokens)}</td>
-          <td className="num tone-good">{fmtCost(p.cost)}</td>
-          <td style={{ width: 240 }}><HBar value={p.cost} max={max} /></td>
-        </tr>
-      ))}
-    </tbody>
-  </table>
+  <div className="a-table-scroll">
+    <table className="a-table a-sink-table">
+      <thead><tr><th>project</th><th>last active</th><th className="num">sessions</th><th className="num">tokens</th><th className="num">cost</th><th>distribution</th></tr></thead>
+      <tbody>
+        {rows.map((p) => (
+          <tr key={p.slug} className="clickable">
+            <td className="mono" style={{ color: "var(--bone)" }}>{p.name}</td>
+            <td className="muted">{p.lastActive}</td>
+            <td className="num">{p.sessions}</td>
+            <td className="num">{fmtTokens(p.tokens)}</td>
+            <td className="num tone-good">{fmtCost(p.cost)}</td>
+            <td style={{ width: 240 }}><HBar value={p.cost} max={max} /></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
 );
 
 const SkillsTable = ({ rows, max }) => (
-  <table className="a-table">
-    <thead><tr><th>skill</th><th className="num">invocations</th><th className="num">tokens</th><th className="num">cost</th><th>distribution</th></tr></thead>
-    <tbody>
-      {rows.map((s) => (
-        <tr key={s.name}>
-          <td className="mono" style={{ color: "var(--bone)" }}>{s.name}</td>
-          <td className="num">{s.invocations}</td>
-          <td className="num">{fmtTokens(s.tokens)}</td>
-          <td className="num tone-good">{fmtCost(s.cost)}</td>
-          <td style={{ width: 240 }}><HBar value={s.cost} max={max} /></td>
-        </tr>
-      ))}
-    </tbody>
-  </table>
+  <div className="a-table-scroll">
+    <table className="a-table a-sink-table">
+      <thead><tr><th>skill</th><th className="num">invocations</th><th className="num">tokens</th><th className="num">cost</th><th>distribution</th></tr></thead>
+      <tbody>
+        {rows.map((s) => (
+          <tr key={s.name}>
+            <td className="mono" style={{ color: "var(--bone)" }}>{s.name}</td>
+            <td className="num">{s.invocations}</td>
+            <td className="num">{fmtTokens(s.tokens)}</td>
+            <td className="num tone-good">{fmtCost(s.cost)}</td>
+            <td style={{ width: 240 }}><HBar value={s.cost} max={max} /></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
 );
 
 export const Work = () => {

@@ -4,7 +4,7 @@ import { DirectionA } from "./src/app.jsx";
 import "./src/api-client.js";
 
 const Shell = () => (
-  <div className="dir-a-root" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+  <div className="dir-a-root" style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
     <DirectionA />
   </div>
 );

@@ -42,6 +42,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 MAX_POST_BYTES = _env_int("TOKEN_DASHBOARD_MAX_POST_BYTES", 1_000_000)  # JSON-only POSTs
+MAX_IMPORT_BYTES = _env_int("TOKEN_DASHBOARD_MAX_IMPORT_BYTES", 500_000_000)  # SQLite uploads
 MAX_LIMIT = _env_int("TOKEN_DASHBOARD_MAX_LIMIT", 1000)
 
 

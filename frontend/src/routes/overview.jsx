@@ -58,6 +58,163 @@ const ChartAxis = ({ data }) => {
   );
 };
 
+const toneFor = (pctUsed) => {
+  if (pctUsed == null) return "";
+  if (pctUsed >= 0.9) return "tone-bad";
+  if (pctUsed >= 0.7) return "tone-warn";
+  return "tone-good";
+};
+
+const fmtResetIn = (resetsAt) => {
+  if (!resetsAt) return null;
+  const ms = new Date(resetsAt).getTime() - Date.now();
+  if (!isFinite(ms) || ms <= 0) return null;
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `resets in ${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `resets in ${h}h` : `resets in ${h}h ${m}m`;
+};
+
+const LimitWindow = ({ label, sub, win, plan }) => {
+  if (!win || win.cap == null) {
+    const hint = plan === "api"
+      ? "no cap on API plan"
+      : `no cap configured for "${plan}" — pick a Claude plan in Settings`;
+    return (
+      <div className="a-limit">
+        <div className="a-label">{label}</div>
+        <div className="a-limit-num">—</div>
+        <div className="a-strip-sub">{sub} · {hint}</div>
+      </div>
+    );
+  }
+  const pctRem = (win.pct_remaining || 0) * 100;
+  const pctUsed = (win.pct_used || 0) * 100;
+  const tone = toneFor(win.pct_used);
+  const resetIn = fmtResetIn(win.resets_at);
+  const idle = "anchor" in win && win.anchor == null;
+  const subText = idle
+    ? `${sub} · idle — no active session`
+    : resetIn
+      ? `${fmtTokens(win.used)} / ${fmtTokens(win.cap)} tok · ${resetIn}`
+      : `${fmtTokens(win.used)} / ${fmtTokens(win.cap)} tok · ${sub}`;
+  return (
+    <div className="a-limit">
+      <div className="a-label">{label}</div>
+      <div className={`a-limit-num ${tone}`}>≈{pctRem.toFixed(0)}%<span className="a-strip-unit">left</span></div>
+      <div className="a-gauge">
+        <div className="a-gauge-track">
+          <div className={`a-gauge-fill ${tone}`} style={{ width: `${Math.min(pctUsed, 100)}%` }} />
+        </div>
+      </div>
+      <div className="a-strip-sub">{subText}</div>
+    </div>
+  );
+};
+
+const BUDGET_LABEL = { daily: "today", weekly: "this week", monthly: "this month" };
+
+const BudgetBanner = ({ budget }) => {
+  if (!budget) return null;
+  const flagged = ["monthly", "weekly", "daily"]
+    .map((k) => ({ key: k, ...(budget[k] || {}) }))
+    .filter((w) => w.cap_usd != null && (w.status === "warn" || w.status === "over"));
+  if (flagged.length === 0) return null;
+  return (
+    <section className="a-card" style={{ marginBottom: 12 }}>
+      <div className="a-card-head">
+        <h2>Budget alert</h2>
+        <span className="a-card-meta">{flagged.length} window{flagged.length === 1 ? "" : "s"} flagged</span>
+      </div>
+      <div className="a-budget-banner-list">
+        {flagged.map((w) => {
+          const tone = w.status === "over" ? "tone-bad" : "tone-warn";
+          const verb = w.status === "over" ? "over" : "trending over";
+          return (
+            <div key={w.key} className="a-budget-banner-row">
+              <div className={`a-budget-banner-amt ${tone}`}>
+                {fmtCost(w.used_usd)}<span className="a-strip-unit"> / {fmtCost(w.cap_usd)} {BUDGET_LABEL[w.key]}</span>
+              </div>
+              <div className="a-strip-sub">
+                {verb} cap · projected {fmtCost(w.projected_usd)} by end of period
+                · set caps in Settings
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
+
+const PHASE_COLORS = {
+  plan:    "var(--gull)",
+  execute: "var(--accent)",
+  other:   "var(--iron-border-2)",
+};
+
+const PhaseSplitCard = ({ phase }) => {
+  if (!phase) return null;
+  const total = (phase.plan?.billable_tokens || 0)
+    + (phase.execute?.billable_tokens || 0)
+    + (phase.other?.billable_tokens || 0);
+  if (total === 0) return null;
+  const seg = (k) => ({
+    key: k,
+    label: k,
+    tokens: phase[k]?.billable_tokens || 0,
+    cost: phase[k]?.cost_usd || 0,
+    turns: phase[k]?.turns || 0,
+    share: (phase[k]?.billable_tokens || 0) / total,
+  });
+  const segs = ["plan", "execute", "other"].map(seg);
+  return (
+    <div className="a-card">
+      <div className="a-card-head">
+        <h2>Plan vs execute</h2>
+        <span className="a-card-meta">billable tokens by phase</span>
+      </div>
+      <div className="a-model-block">
+        <Donut size={130} thickness={14} segments={segs.map((s) => ({
+          value: s.share, color: PHASE_COLORS[s.key],
+        }))} />
+        <div className="a-model-stack">
+          {segs.map((s) => (
+            <div key={s.key} className="a-model-legend">
+              <span className="a-model-swatch" style={{ background: PHASE_COLORS[s.key] }} />
+              <span className="a-model-name">{s.label}</span>
+              <span className="a-model-pct">{fmtPct(s.share)}</span>
+              <span className="a-model-cost">{fmtCost(s.cost)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const LimitsCard = ({ limits, enabled }) => {
+  if (enabled === false) return null;
+  if (!limits || limits.plan === "api") return null;
+  const meta = limits.meta || {};
+  const verifiedSuffix = meta.last_verified ? ` · verified ${meta.last_verified}` : "";
+  const note = meta.source_note || "Anthropic doesn't publish exact token caps; treat as ±50% rough.";
+  return (
+    <section className="a-card a-limits">
+      <div className="a-card-head">
+        <h2>Plan limits remaining</h2>
+        <span className="a-card-meta">{limits.plan} plan · sonnet-equiv tokens{verifiedSuffix}</span>
+      </div>
+      <div className="a-limits-grid">
+        <LimitWindow label="5h session" sub="anchored" win={limits.five_hour} plan={limits.plan} />
+        <LimitWindow label="weekly window" sub="last 7 days" win={limits.weekly} plan={limits.plan} />
+      </div>
+      <div className="a-limits-note">⚠ {note}</div>
+    </section>
+  );
+};
+
 const TopStrip = ({ totals, burn }) => (
   <section className="a-strip">
     <div className="a-strip-left">
@@ -173,7 +330,7 @@ const ModelsAndTools = () => (
 );
 
 const RecentSessions = () => (
-  <section className="a-card">
+  <section className="a-card a-recent-sessions">
     <div className="a-card-head">
       <h2>Recent sessions</h2>
       <span className="a-card-meta">click a row to drill in</span>
@@ -184,7 +341,7 @@ const RecentSessions = () => (
       </thead>
       <tbody>
         {(D.sessions || []).map((s) => (
-          <tr key={s.id} className="clickable">
+          <tr key={s.id} className="clickable" onClick={() => { window.location.hash = `/sessions/${encodeURIComponent(s.id)}`; }}>
             <td className="mono">{s.id}</td>
             <td className="mono">{s.project}</td>
             <td>{s.started}</td>
@@ -205,11 +362,16 @@ export const Overview = () => {
   return (
     <div className="a-route">
       <TopStrip totals={totals} burn={burn} />
+      <BudgetBanner budget={D.budget} />
+      <LimitsCard limits={D.limits} enabled={!!(D.prefs && D.prefs.limits_enabled)} />
       <KpiRow totals={totals} />
       <DailyCharts totals={totals} />
       <section className="a-card-row">
         <ProjectsTable totals={totals} />
         <ModelsAndTools />
+      </section>
+      <section className="a-card-row">
+        <PhaseSplitCard phase={D.phase} />
       </section>
       <RecentSessions />
     </div>

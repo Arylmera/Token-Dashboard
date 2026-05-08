@@ -4,9 +4,7 @@ A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.cla
 
 **Everything runs locally.** No data leaves your machine — no telemetry, no API calls for your data, no login.
 
-![Overview tab — totals and daily charts](docs/images/dashboard-overview-top.jpg)
-
-![Overview tab — per-project, per-model, top tools, recent sessions](docs/images/dashboard-overview-bottom.jpg)
+![Token Dashboard overview](docs/images/dashboard-wide.png)
 
 ## What this is useful for
 
@@ -101,7 +99,24 @@ The standalone binary is a self-contained PyInstaller bundle (no Python on the h
 
 **Versioning.** [`VERSION`](VERSION) at the repo root holds `MAJOR.MINOR` (manual bump). Every merge to `main` reads it, computes the next free patch by counting existing `v<major>.<minor>.*` tags, builds, then tags + publishes a release as `v<major>.<minor>.<patch>`. Pushing a `v*` tag manually publishes that exact version. Pull requests and other branches build but do not publish.
 
-### Option C — from source
+### Option A.1 — Homebrew (macOS, Apple Silicon)
+
+If you're on an Apple Silicon Mac and use Homebrew, the cleanest install is:
+
+```bash
+brew tap arylmera/token-dashboard
+brew install --cask token-dashboard
+```
+
+Homebrew strips the macOS quarantine attribute on install, so the "damaged" Gatekeeper warning above doesn't apply — the app opens normally on first launch.
+
+To upgrade:
+
+```bash
+brew upgrade --cask token-dashboard
+```
+
+### Option B — from source
 
 ```bash
 git clone https://github.com/Arylmera/Token-Dashboard.git
@@ -168,9 +183,6 @@ each get their own event stream.
 ### Production build
 
 ```bash
-# Optional: regenerate the placeholder app icon
-python electron/scripts/gen-icon.py
-
 # Stage the PyInstaller exe under dist-py/ for electron-builder
 python electron/scripts/prepare-py.py
 

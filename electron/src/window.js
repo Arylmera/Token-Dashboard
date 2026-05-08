@@ -3,7 +3,7 @@
 const { BrowserWindow, shell } = require("electron");
 const path = require("path");
 
-function createMainWindow({ url, preloadPath, isMac, isWin, devMode }) {
+function createMainWindow({ url, preloadPath, iconPath, isMac, isWin, devMode, glass = false }) {
   const opts = {
     width: 1280,
     height: 800,
@@ -12,7 +12,7 @@ function createMainWindow({ url, preloadPath, isMac, isWin, devMode }) {
     // a single-column layout below 380px.
     minWidth: 280,
     minHeight: 200,
-    backgroundColor: "#0a0a0a",
+    backgroundColor: glass ? "#00000000" : "#0a0a0a",
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -22,6 +22,13 @@ function createMainWindow({ url, preloadPath, isMac, isWin, devMode }) {
       sandbox: true,
     },
   };
+  if (iconPath) opts.icon = iconPath;
+  if (glass && isMac) {
+    opts.vibrancy = "under-window";
+    opts.visualEffectState = "active";
+  } else if (glass && isWin) {
+    opts.backgroundMaterial = "acrylic";
+  }
   if (isMac) {
     // Keeps the macOS traffic-light buttons; frees the rest of the title bar.
     opts.titleBarStyle = "hiddenInset";
@@ -29,7 +36,11 @@ function createMainWindow({ url, preloadPath, isMac, isWin, devMode }) {
     // Native min/max/close buttons rendered by the OS; the rest of the title
     // strip is paintable by the app via -webkit-app-region: drag.
     opts.titleBarStyle = "hidden";
-    opts.titleBarOverlay = { color: "#0a0a0a", symbolColor: "#ffffff", height: 32 };
+    opts.titleBarOverlay = {
+      color: glass ? "#00000000" : "#0a0a0a",
+      symbolColor: "#ffffff",
+      height: 32,
+    };
   }
   const win = new BrowserWindow(opts);
   win.once("ready-to-show", () => win.show());
@@ -59,4 +70,22 @@ function focusMain(win) {
   win.focus();
 }
 
-module.exports = { createMainWindow, focusMain };
+// Apply glass at runtime (without restart). On macOS uses vibrancy; on Win11
+// uses acrylic backgroundMaterial. Linux: no-op (CSS-only fallback).
+function applyGlass(win, enabled, { isMac, isWin }) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    if (isMac) {
+      win.setVibrancy(enabled ? "under-window" : null);
+    } else if (isWin && typeof win.setBackgroundMaterial === "function") {
+      win.setBackgroundMaterial(enabled ? "acrylic" : "none");
+    }
+    if (typeof win.setBackgroundColor === "function") {
+      win.setBackgroundColor(enabled ? "#00000000" : "#0a0a0a");
+    }
+  } catch (err) {
+    console.error("[glass] apply failed:", err && err.message);
+  }
+}
+
+module.exports = { createMainWindow, focusMain, applyGlass };
