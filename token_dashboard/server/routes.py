@@ -56,6 +56,12 @@ from ..preferences import (
     set_glass_opacity,
     set_limits_enabled,
 )
+from ..db.sources import (
+    add_source,
+    list_sources,
+    remove_source,
+    set_source_enabled,
+)
 from ..pricing import cost_for, get_plan, load_pricing, set_plan
 from ..scanner import scan_dir
 from ..skills import cached_catalog
@@ -484,6 +490,61 @@ def _api_import_db(handler, db_path) -> None:
             pass
 
 
+def _api_sources_list(handler, db_path, pricing, qs):
+    send_json(handler, list_sources(db_path))
+
+
+def _api_sources_add(handler, db_path) -> None:
+    """Upload a .db file and register it as a toggleable source.
+
+    Wire format mirrors /api/import.db: raw bytes in body, optional
+    X-Source-Filename header to name it (falls back to a timestamped
+    default). On success returns the registry row.
+    """
+    try:
+        length = int(handler.headers.get("Content-Length") or 0)
+    except ValueError:
+        return send_error_json(handler, 400, "invalid Content-Length")
+    if length <= 0:
+        return send_error_json(handler, 400, "empty body")
+    if length > MAX_IMPORT_BYTES:
+        return send_error_json(
+            handler, 413, f"upload too large (max {MAX_IMPORT_BYTES} bytes)")
+
+    body = bytearray()
+    remaining = length
+    while remaining > 0:
+        chunk = handler.rfile.read(min(remaining, 1 << 20))
+        if not chunk:
+            break
+        body.extend(chunk)
+        remaining -= len(chunk)
+    if remaining != 0:
+        return send_error_json(handler, 400, "truncated upload")
+
+    filename = handler.headers.get("X-Source-Filename") or f"source-{int(time.time())}.db"
+    try:
+        row = add_source(db_path, filename, bytes(body))
+    except ValueError as e:
+        return send_error_json(handler, 400, str(e))
+    EVENTS.publish({"type": "sources"})
+    send_json(handler, row)
+
+
+def _api_sources_toggle(handler, db_path, name: str, body: dict) -> None:
+    if not set_source_enabled(db_path, name, bool(body.get("enabled"))):
+        return send_error_json(handler, 404, "source not found")
+    EVENTS.publish({"type": "sources"})
+    send_json(handler, {"ok": True, "name": name, "enabled": bool(body.get("enabled"))})
+
+
+def _api_sources_delete(handler, db_path, name: str) -> None:
+    if not remove_source(db_path, name):
+        return send_error_json(handler, 404, "source not found")
+    EVENTS.publish({"type": "sources"})
+    send_json(handler, {"ok": True, "name": name})
+
+
 def _api_daily(handler, db_path, pricing, qs):
     send_json(handler, daily_token_breakdown(
         db_path, qs.get("since", [None])[0], qs.get("until", [None])[0]))
@@ -644,6 +705,7 @@ GET_ROUTES = {
     "/api/phase-split": _api_phase_split,
     "/api/export.csv": _api_export_csv,
     "/api/export.db":  _api_export_db,
+    "/api/sources":   _api_sources_list,
 }
 
 
@@ -704,6 +766,8 @@ def build_handler(db_path: str, projects_dir: str):
             # otherwise be read into memory and re-parsed as JSON, failing).
             if url.path == "/api/import.db":
                 return _api_import_db(self, db_path)
+            if url.path == "/api/sources/add":
+                return _api_sources_add(self, db_path)
             try:
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
@@ -754,6 +818,18 @@ def build_handler(db_path: str, projects_dir: str):
             if url.path == "/api/tips/dismiss":
                 dismiss_tip(db_path, body.get("key", ""))
                 return send_json(self, {"ok": True})
+            if url.path.startswith("/api/sources/"):
+                rest = url.path[len("/api/sources/"):]
+                if rest.endswith("/toggle"):
+                    name = rest[:-len("/toggle")]
+                    if not name:
+                        return send_error_json(self, 400, "missing source name")
+                    return _api_sources_toggle(self, db_path, name, body)
+                if rest.endswith("/delete"):
+                    name = rest[:-len("/delete")]
+                    if not name:
+                        return send_error_json(self, 400, "missing source name")
+                    return _api_sources_delete(self, db_path, name)
             if url.path == "/api/budget":
                 resp: dict = {"ok": True}
                 key_map = {

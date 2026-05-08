@@ -35,7 +35,7 @@ def overview_totals(db_path, since=None, until=None) -> dict:
              COALESCE(SUM(cache_read_tokens),0)       AS cache_read_tokens,
              COALESCE(SUM(cache_create_5m_tokens),0)  AS cache_create_5m_tokens,
              COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens
-        FROM messages WHERE 1=1 {rng}
+        FROM messages_all WHERE 1=1 {rng}
     """
     with connect(db_path) as c:
         return dict(c.execute(sql, args).fetchone())
@@ -55,8 +55,8 @@ def expensive_prompts(db_path, limit: int = 50, sort: str = "tokens") -> list:
              COALESCE(a.input_tokens,0)+COALESCE(a.output_tokens,0)
                +COALESCE(a.cache_create_5m_tokens,0)+COALESCE(a.cache_create_1h_tokens,0) AS billable_tokens,
              COALESCE(a.cache_read_tokens,0) AS cache_read_tokens
-        FROM messages u
-        JOIN messages a ON a.parent_uuid = u.uuid AND a.type='assistant'
+        FROM messages_all u
+        JOIN messages_all a ON a.parent_uuid = u.uuid AND a.type='assistant'
        WHERE u.type='user' AND u.prompt_text IS NOT NULL
        ORDER BY {order}
        LIMIT ?
@@ -76,7 +76,7 @@ def project_summary(db_path, since=None, until=None) -> list:
              SUM(input_tokens)+SUM(output_tokens)
                +SUM(cache_create_5m_tokens)+SUM(cache_create_1h_tokens) AS billable_tokens,
              SUM(cache_read_tokens) AS cache_read_tokens
-        FROM messages m
+        FROM messages_all m
        WHERE 1=1 {rng}
        GROUP BY project_slug
        ORDER BY billable_tokens DESC
@@ -85,7 +85,7 @@ def project_summary(db_path, since=None, until=None) -> list:
         rows = [dict(r) for r in c.execute(sql, args)]
         for r in rows:
             cwds = [row["cwd"] for row in c.execute(
-                "SELECT DISTINCT cwd FROM messages WHERE project_slug=? AND cwd IS NOT NULL",
+                "SELECT DISTINCT cwd FROM messages_all WHERE project_slug=? AND cwd IS NOT NULL",
                 (r["project_slug"],),
             )]
             r["project_name"] = best_project_name(cwds, r["project_slug"])
@@ -98,8 +98,8 @@ def tool_token_breakdown(db_path, since=None, until=None) -> list:
       SELECT tc.tool_name AS tool_name,
              COUNT(*) AS calls,
              COALESCE(SUM(tr.result_tokens),0) AS result_tokens
-        FROM tool_calls tc
-        LEFT JOIN tool_calls tr
+        FROM tool_calls_all tc
+        LEFT JOIN tool_calls_all tr
                ON tr.tool_name = '_tool_result'
               AND tr.session_id = tc.session_id
               AND tr.use_id = tc.use_id
@@ -115,7 +115,7 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=No
     rng, args = _range_clause(since, until)
     tag_join, tag_filter, tag_args = "", "", []
     if tag:
-        tag_join = "JOIN session_tags st ON st.session_id = m.session_id"
+        tag_join = "JOIN session_tags_all st ON st.session_id = m.session_id"
         tag_filter = "AND st.tag = ?"
         tag_args = [tag]
     sql = f"""
@@ -123,7 +123,7 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=No
              MIN(m.timestamp) AS started, MAX(m.timestamp) AS ended,
              SUM(CASE WHEN m.type='user' THEN 1 ELSE 0 END) AS turns,
              SUM(m.input_tokens)+SUM(m.output_tokens) AS tokens
-        FROM messages m
+        FROM messages_all m
         {tag_join}
        WHERE 1=1 {rng} {tag_filter}
        GROUP BY m.session_id
@@ -137,7 +137,7 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=No
             slug = r["project_slug"]
             if slug not in slug_cache:
                 cwds = [row["cwd"] for row in c.execute(
-                    "SELECT DISTINCT cwd FROM messages WHERE project_slug=? AND cwd IS NOT NULL",
+                    "SELECT DISTINCT cwd FROM messages_all WHERE project_slug=? AND cwd IS NOT NULL",
                     (slug,),
                 )]
                 slug_cache[slug] = best_project_name(cwds, slug)
@@ -153,7 +153,7 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=No
                      COALESCE(SUM(cache_read_tokens),0)      AS cache_read_tokens,
                      COALESCE(SUM(cache_create_5m_tokens),0) AS cache_create_5m_tokens,
                      COALESCE(SUM(cache_create_1h_tokens),0) AS cache_create_1h_tokens
-                FROM messages
+                FROM messages_all
                WHERE session_id IN ({placeholders}) AND model IS NOT NULL
                GROUP BY session_id, model
             """
@@ -181,10 +181,10 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=No
             placeholders = ",".join("?" * len(ids))
             fp_sql = f"""
               SELECT m.session_id, m.prompt_text
-                FROM messages m
+                FROM messages_all m
                 JOIN (
                   SELECT session_id, MIN(timestamp) AS t
-                    FROM messages
+                    FROM messages_all
                    WHERE type='user'
                      AND prompt_text IS NOT NULL AND prompt_text != ''
                      AND (is_sidechain IS NULL OR is_sidechain = 0)
@@ -213,7 +213,7 @@ def session_turns(db_path, session_id: str) -> list:
              input_tokens, output_tokens, cache_read_tokens,
              cache_create_5m_tokens, cache_create_1h_tokens,
              prompt_text, prompt_chars, tool_calls_json, project_slug, cwd
-        FROM messages
+        FROM messages_all
        WHERE session_id = ?
        ORDER BY timestamp ASC
     """
@@ -231,7 +231,7 @@ def daily_token_breakdown(db_path, since=None, until=None) -> list:
              COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens,
              COALESCE(SUM(cache_create_5m_tokens),0)
                + COALESCE(SUM(cache_create_1h_tokens),0) AS cache_create_tokens
-        FROM messages
+        FROM messages_all
        WHERE timestamp IS NOT NULL {rng}
        GROUP BY day
        ORDER BY day ASC
@@ -254,7 +254,7 @@ def hourly_breakdown(db_path, hours: int = 24) -> list:
              COALESCE(SUM(cache_read_tokens),0)       AS cache_read_tokens,
              COALESCE(SUM(cache_create_5m_tokens),0)  AS cache_create_5m_tokens,
              COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens
-        FROM messages
+        FROM messages_all
        WHERE type='assistant' AND timestamp IS NOT NULL
          AND timestamp >= datetime('now', ?)
        GROUP BY hour_ago, model
@@ -278,7 +278,7 @@ def skill_breakdown(db_path, since=None, until=None) -> list:
              COUNT(*) AS invocations,
              COUNT(DISTINCT session_id) AS sessions,
              MAX(timestamp) AS last_used
-        FROM tool_calls
+        FROM tool_calls_all
        WHERE tool_name = 'Skill' AND target IS NOT NULL AND target != '' {rng}
        GROUP BY target
        ORDER BY invocations DESC
@@ -317,7 +317,7 @@ def window_billable_tokens(db_path, since_iso: str, pricing: "dict | None" = Non
                  + COALESCE(SUM(output_tokens),0)
                  + COALESCE(SUM(cache_create_5m_tokens),0)
                  + COALESCE(SUM(cache_create_1h_tokens),0) AS billable
-            FROM messages
+            FROM messages_all
            WHERE type='assistant' AND timestamp >= ?
         """
         with connect(db_path) as c:
@@ -330,7 +330,7 @@ def window_billable_tokens(db_path, since_iso: str, pricing: "dict | None" = Non
              + COALESCE(SUM(output_tokens),0)
              + COALESCE(SUM(cache_create_5m_tokens),0)
              + COALESCE(SUM(cache_create_1h_tokens),0) AS billable
-        FROM messages
+        FROM messages_all
        WHERE type='assistant' AND timestamp >= ?
        GROUP BY model
     """
@@ -361,7 +361,7 @@ def current_session_anchor(db_path, now_iso: str) -> "str | None":
     now = _parse_iso(now_iso)
     cutoff = (now - timedelta(hours=24)).isoformat().replace("+00:00", "Z")
     sql = """
-      SELECT timestamp FROM messages
+      SELECT timestamp FROM messages_all
        WHERE type='assistant' AND timestamp >= ? AND timestamp <= ?
        ORDER BY timestamp ASC
     """
@@ -410,8 +410,8 @@ def phase_split(db_path, since=None, until=None) -> list:
                        AND tc.tool_name NOT IN ({plan_in})
                        AND tc.tool_name NOT IN ({exec_in})
                       THEN 1 ELSE 0 END) AS other_n
-        FROM messages m
-        LEFT JOIN tool_calls tc
+        FROM messages_all m
+        LEFT JOIN tool_calls_all tc
                ON tc.message_uuid = m.uuid AND tc.tool_name != '_tool_result'
        WHERE m.type='assistant' AND m.is_sidechain = 0 {rng}
        GROUP BY m.uuid
@@ -426,7 +426,7 @@ def session_tags(db_path, session_ids) -> dict:
     if not session_ids:
         return {}
     placeholders = ",".join("?" * len(session_ids))
-    sql = f"SELECT session_id, tag FROM session_tags WHERE session_id IN ({placeholders}) ORDER BY tag"
+    sql = f"SELECT session_id, tag FROM session_tags_all WHERE session_id IN ({placeholders}) ORDER BY tag"
     out: dict = {sid: [] for sid in session_ids}
     with connect(db_path) as c:
         for r in c.execute(sql, list(session_ids)):
@@ -438,7 +438,7 @@ def all_tags(db_path) -> list:
     """All tags + how many sessions each is attached to."""
     sql = """
       SELECT tag, COUNT(*) AS sessions
-        FROM session_tags
+        FROM session_tags_all
        GROUP BY tag
        ORDER BY sessions DESC, tag ASC
     """
@@ -468,7 +468,7 @@ def remove_session_tag(db_path, session_id: str, tag: str) -> None:
 def session_ids_with_tag(db_path, tag: str) -> list:
     with connect(db_path) as c:
         return [r["session_id"] for r in c.execute(
-            "SELECT session_id FROM session_tags WHERE tag=?", (tag,))]
+            "SELECT session_id FROM session_tags_all WHERE tag=?", (tag,))]
 
 
 def model_breakdown(db_path, since=None, until=None) -> list:
@@ -482,7 +482,7 @@ def model_breakdown(db_path, since=None, until=None) -> list:
              COALESCE(SUM(cache_read_tokens),0)       AS cache_read_tokens,
              COALESCE(SUM(cache_create_5m_tokens),0)  AS cache_create_5m_tokens,
              COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens
-        FROM messages
+        FROM messages_all
        WHERE type = 'assistant' {rng}
        GROUP BY model
        ORDER BY (input_tokens + output_tokens + cache_create_5m_tokens + cache_create_1h_tokens) DESC
