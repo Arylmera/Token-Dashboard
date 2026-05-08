@@ -57,9 +57,11 @@ Grab one for your OS from the [latest release](https://github.com/Arylmera/Token
 
 | OS | Standalone exe | Electron installer |
 |---|---|---|
-| Windows | `token-dashboard-<version>-windows-x64.exe` | `token-dashboard-<version>-windows-x64-*.exe` (NSIS) |
-| macOS (Apple Silicon) | `token-dashboard-<version>-macos-arm64` | `token-dashboard-<version>-macos-arm64-*.dmg` |
-| Linux x64 | `token-dashboard-<version>-linux-x64` | `token-dashboard-<version>-linux-x64-*.AppImage` |
+| Windows | `token-dashboard-<version>-windows-x64.exe` | `token-dashboard-<version>-windows-x64-Setup.exe` (NSIS) — **recommended** |
+| macOS (Apple Silicon) | `token-dashboard-<version>-macos-arm64` | `token-dashboard-<version>-macos-arm64.dmg` |
+| Linux x64 | `token-dashboard-<version>-linux-x64` | `token-dashboard-<version>-linux-x64.AppImage` |
+
+**Windows: use the Setup installer.** Double-click `token-dashboard-<version>-windows-x64-Setup.exe`, accept the SmartScreen prompt, and the app installs to `%LOCALAPPDATA%\Programs\Token Dashboard\` with Start Menu and desktop shortcuts. The standalone PyInstaller exe is fragile on Windows (Defender / third-party AV occasionally strip bytes from the embedded archive, producing a *"Could not load PyInstaller's embedded PKG archive"* error on launch). Only fall back to the standalone exe if you specifically need a CLI binary.
 
 Run the standalone executable:
 
@@ -68,7 +70,7 @@ Run the standalone executable:
 chmod +x token-dashboard-*
 ./token-dashboard-* dashboard
 
-# Windows
+# Windows (CLI use only — prefer the Setup installer above)
 token-dashboard-<version>-windows-x64.exe dashboard
 ```
 
@@ -93,7 +95,9 @@ The Electron installer drops a regular desktop app — launch it from Start Menu
 >
 > On older macOS (≤ 13) the issue was tied to the quarantine flag and `xattr -dr com.apple.quarantine "/Applications/Token Dashboard.app"` was sufficient. On macOS 14+ — and confirmed required on macOS 26 — the Team-ID check fires regardless of quarantine, so you need the `codesign` command above.
 
-> **Windows:** SmartScreen may warn about an unrecognized publisher. Click *More info* → *Run anyway*.
+> **Windows:** SmartScreen may warn about an unrecognized publisher when launching either the Setup installer or the standalone exe. Click *More info* → *Run anyway*.
+>
+> If the standalone `token-dashboard-<version>-windows-x64.exe` fails with *"Could not load PyInstaller's embedded PKG archive"*, your AV stripped bytes from the embedded archive. Use the **Setup installer** (`...-windows-x64-Setup.exe`) instead — it ships the same backend inside an Electron shell that AVs tolerate.
 
 The standalone binary is a self-contained PyInstaller bundle (no Python on the host). The Electron installer wraps the same bundle inside a Chromium shell. Both are built in CI from the same source tree — see [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
