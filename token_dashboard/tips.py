@@ -41,7 +41,7 @@ def cache_discipline_tips(db_path, today_iso: Optional[str] = None) -> List[dict
       SELECT project_slug,
              SUM(cache_read_tokens) AS cr,
              SUM(input_tokens + cache_create_5m_tokens + cache_create_1h_tokens) AS rebuild
-        FROM messages
+        FROM messages_all
        WHERE type='assistant' AND timestamp >= ?
        GROUP BY project_slug
        HAVING (cr + rebuild) > 100000
@@ -73,7 +73,7 @@ def repeated_target_tips(db_path, today_iso: Optional[str] = None) -> List[dict]
     with connect(db_path) as c:
         for row in c.execute("""
           SELECT project_slug, target, COUNT(*) AS n, COUNT(DISTINCT session_id) AS sessions
-            FROM tool_calls
+            FROM tool_calls_all
            WHERE tool_name IN ('Read','Edit','Write') AND timestamp >= ?
            GROUP BY project_slug, target HAVING n > 10
            ORDER BY n DESC LIMIT 10
@@ -95,7 +95,7 @@ def repeated_target_tips(db_path, today_iso: Optional[str] = None) -> List[dict]
             })
         for row in c.execute("""
           SELECT project_slug, target, COUNT(*) AS n
-            FROM tool_calls
+            FROM tool_calls_all
            WHERE tool_name='Bash' AND timestamp >= ?
            GROUP BY project_slug, target HAVING n > 15
            ORDER BY n DESC LIMIT 10
@@ -125,7 +125,7 @@ def right_size_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
              COUNT(*) AS n,
              SUM(input_tokens+cache_create_5m_tokens+cache_create_1h_tokens) AS in_tok,
              SUM(output_tokens) AS out_tok
-        FROM messages
+        FROM messages_all
        WHERE type='assistant' AND model LIKE '%opus%'
          AND output_tokens < 500 AND is_sidechain = 0
          AND timestamp >= ?
@@ -163,7 +163,7 @@ def outlier_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
     with connect(db_path) as c:
         for big in c.execute("""
           SELECT project_slug, COUNT(*) AS n, AVG(result_tokens) AS avg_t
-            FROM tool_calls
+            FROM tool_calls_all
            WHERE tool_name='_tool_result' AND result_tokens > 50000 AND timestamp >= ?
            GROUP BY project_slug
         """, (since,)):
@@ -184,7 +184,7 @@ def outlier_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
           SELECT agent_id, COUNT(*) AS n,
                  AVG(input_tokens+output_tokens) AS mean_t,
                  MAX(input_tokens+output_tokens) AS max_t
-            FROM messages
+            FROM messages_all
            WHERE is_sidechain=1 AND agent_id IS NOT NULL AND timestamp >= ?
            GROUP BY agent_id HAVING n >= 10
         """, (since,)):
@@ -206,7 +206,7 @@ def _project_cwds(db_path) -> dict:
     """Return {project_slug: most_recent_cwd} via SQLite's bare-column-with-MAX trick."""
     sql = """
       SELECT project_slug, MAX(timestamp) AS ts, cwd
-        FROM messages
+        FROM messages_all
        WHERE cwd IS NOT NULL AND cwd != ''
        GROUP BY project_slug
     """
@@ -232,8 +232,8 @@ def waste_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
           SELECT a.session_id, a.project_slug,
                  COUNT(*) AS n,
                  SUM(LENGTH(COALESCE(a.prompt_text, ''))) AS chars
-            FROM messages a
-            JOIN messages b
+            FROM messages_all a
+            JOIN messages_all b
               ON b.session_id = a.session_id
              AND b.type = 'user'
              AND b.uuid != a.uuid
@@ -267,7 +267,7 @@ def waste_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
           SELECT project_slug, COUNT(*) AS n,
                  SUM(input_tokens + cache_create_5m_tokens + cache_create_1h_tokens) AS in_tok,
                  SUM(output_tokens) AS out_tok
-            FROM messages
+            FROM messages_all
            WHERE type='assistant' AND is_sidechain=0
              AND output_tokens < 100
              AND (input_tokens + cache_create_5m_tokens + cache_create_1h_tokens) > 5000
