@@ -56,27 +56,19 @@ The Electron installer drops a regular desktop app — launch it from Start Menu
 
 > **macOS:** the DMG isn't code-signed (no Apple Developer ID), so on first launch macOS Gatekeeper will say *"Token Dashboard is damaged and can't be opened. You should move it to the Trash."* It isn't damaged — it's the standard quarantine warning for unsigned apps. On macOS 14+ the quarantine also triggers a stricter dyld check that fails with a *"different Team IDs"* crash, so neither right-click → Open nor System Settings → "Open Anyway" works. Pick one of the workarounds below.
 >
-> **Workaround A — clear the quarantine flag** (after dragging to Applications):
+> **Workaround A — clear the quarantine flag** (works for both the DMG and the Homebrew cask; run after install):
 >
 > ```bash
 > xattr -dr com.apple.quarantine "/Applications/Token Dashboard.app"
 > ```
 >
-> **Workaround B — install via Homebrew without quarantine** (skips the flag in the first place, no follow-up step needed):
->
-> ```bash
-> brew install --cask --no-quarantine arylmera/token-dashboard/token-dashboard
-> ```
->
-> If you already have the cask installed, reinstall with the same flag: `brew reinstall --cask --no-quarantine arylmera/token-dashboard/token-dashboard`.
->
-> **Workaround C — ad-hoc re-sign the bundle** (use if A still fails on some macOS 26 builds):
+> **Workaround B — ad-hoc re-sign the bundle** (use if A still fails on some macOS 26 builds):
 >
 > ```bash
 > codesign --force --deep --sign - "/Applications/Token Dashboard.app"
 > ```
 >
-> The app opens normally after any of these.
+> The app opens normally after either of these. (Homebrew used to support `--no-quarantine` to skip step A automatically, but that switch was disabled in Homebrew 5.x and has no replacement — you have to run the `xattr` command yourself.)
 
 > **Windows:** SmartScreen may warn about an unrecognized publisher. Click *More info* → *Run anyway*.
 
