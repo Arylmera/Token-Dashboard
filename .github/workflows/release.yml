@@ -39,10 +39,10 @@ jobs:
             git fetch --tags --force --quiet
             highest=$(git tag --list "v${base}.*" \
               | sed -E "s/^v${base}\.//" \
-              | grep -E '^[0-9]+$' \
+              | awk '/^[0-9]+$/' \
               | sort -n \
               | tail -n1)
-            next_patch=$(( ${highest:-(-1)} + 1 ))
+            next_patch=$(( ${highest:--1} + 1 ))
             version="${base}.${next_patch}"
             if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
               should_release=true
