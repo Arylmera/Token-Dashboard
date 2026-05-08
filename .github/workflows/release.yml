@@ -229,10 +229,12 @@ jobs:
           cd "$tmp/tap"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
+          git add Casks/token-dashboard.rb
+          if git diff --cached --quiet; then
             echo "Cask already up to date."
           else
-            git add Casks/token-dashboard.rb
             git commit -m "token-dashboard ${VERSION}"
-            git push origin HEAD
+            # Empty repos have no default branch yet; push to main explicitly.
+            git branch -M main
+            git push -u origin main
           fi
