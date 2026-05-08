@@ -24,7 +24,29 @@ The package itself has zero runtime dependencies (Python stdlib only). No Node.j
 
 ## Quickstart
 
-### Option A — prebuilt binary (no Python needed)
+### Option A — one-line install (recommended)
+
+The fastest path. The scripts download the latest release, install it, and on macOS handle the ad-hoc re-sign that's otherwise required for the unsigned bundle to launch.
+
+**macOS** (Apple Silicon):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Arylmera/Token-Dashboard/main/scripts/install.sh | bash
+```
+
+What it does: if [Homebrew](https://brew.sh) is on your `PATH`, runs `brew install --cask arylmera/token-dashboard/token-dashboard`; otherwise downloads the latest `*-macos-arm64-*.dmg` from the GitHub releases API and copies the `.app` to `/Applications`. Either way it then runs `codesign --force --deep --sign - "/Applications/Token Dashboard.app"` to fix the Team-ID dyld mismatch (see Option B for the full explanation) and launches the app. Source: [`scripts/install.sh`](scripts/install.sh).
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/Arylmera/Token-Dashboard/main/scripts/install.ps1 | iex
+```
+
+What it does: queries the GitHub releases API for the latest release, downloads the NSIS installer (`token-dashboard-*-windows-x64-*.exe`), and runs it. SmartScreen may still warn about an unrecognized publisher — click *More info* → *Run anyway*. Source: [`scripts/install.ps1`](scripts/install.ps1).
+
+> ⚠️ Both scripts are unsigned plain text. If you'd rather review the commands before running them, open the script URLs in your browser first, or use Option B below.
+
+### Option B — manual download (no Python needed)
 
 Two flavors ship per release:
 
@@ -52,29 +74,24 @@ token-dashboard-<version>-windows-x64.exe dashboard
 
 The Electron installer drops a regular desktop app — launch it from Start Menu / Launchpad / your app launcher.
 
-> **macOS:** the DMG isn't code-signed (no Apple Developer ID), so on first launch macOS Gatekeeper will say *"Token Dashboard is damaged and can't be opened. You should move it to the Trash."* It isn't damaged — it's the standard quarantine warning for unsigned apps. On macOS 14+ the quarantine also triggers a stricter dyld check that fails with a *"different Team IDs"* crash, so neither right-click → Open nor System Settings → "Open Anyway" works. Pick one of the workarounds below.
->
-> **Workaround A — clear the quarantine flag** (after dragging to Applications):
+> **macOS quick install (copy-paste):**
 >
 > ```bash
-> xattr -dr com.apple.quarantine "/Applications/Token Dashboard.app"
+> # Homebrew cask
+> brew install --cask arylmera/token-dashboard/token-dashboard \
+>   && codesign --force --deep --sign - "/Applications/Token Dashboard.app" \
+>   && open -a "Token Dashboard"
 > ```
->
-> **Workaround B — install via Homebrew without quarantine** (skips the flag in the first place, no follow-up step needed):
 >
 > ```bash
-> brew install --cask --no-quarantine arylmera/token-dashboard/token-dashboard
+> # DMG download — after dragging Token Dashboard.app to /Applications
+> codesign --force --deep --sign - "/Applications/Token Dashboard.app" \
+>   && open -a "Token Dashboard"
 > ```
 >
-> If you already have the cask installed, reinstall with the same flag: `brew reinstall --cask --no-quarantine arylmera/token-dashboard/token-dashboard`.
+> **Why the extra `codesign` step:** the DMG isn't code-signed (no Apple Developer ID), so on first launch the app crashes with a `Library not loaded` / *"different Team IDs"* error — the outer bundle is unsigned, but the embedded `Electron Framework` carries Electron's Team ID, and macOS refuses to load the mismatch. Neither right-click → Open nor System Settings → "Open Anyway" fixes this. The `codesign --force --deep --sign -` command re-signs the whole bundle (outer binary + every embedded framework) with a single ad-hoc identity so the Team IDs match. It only needs to be run once per install.
 >
-> **Workaround C — ad-hoc re-sign the bundle** (use if A still fails on some macOS 26 builds):
->
-> ```bash
-> codesign --force --deep --sign - "/Applications/Token Dashboard.app"
-> ```
->
-> The app opens normally after any of these.
+> On older macOS (≤ 13) the issue was tied to the quarantine flag and `xattr -dr com.apple.quarantine "/Applications/Token Dashboard.app"` was sufficient. On macOS 14+ — and confirmed required on macOS 26 — the Team-ID check fires regardless of quarantine, so you need the `codesign` command above.
 
 > **Windows:** SmartScreen may warn about an unrecognized publisher. Click *More info* → *Run anyway*.
 
