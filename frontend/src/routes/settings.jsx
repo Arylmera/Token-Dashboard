@@ -577,6 +577,36 @@ const DeveloperCard = () => {
   );
 };
 
+// ---------- about ----------
+
+const AboutCard = () => {
+  const [version, setVersion] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled && d && d.version) setVersion(String(d.version)); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, []);
+  return (
+    <section className="a-card">
+      <div className="a-card-head">
+        <h2>About</h2>
+        <span className="a-card-meta">{loaded ? "build info" : "loading…"}</span>
+      </div>
+      <dl className="a-glossary">
+        <dt>App</dt>
+        <dd>token-dashboard</dd>
+        <dt>Version</dt>
+        <dd className="mono">{version ? `v${version}` : "—"}</dd>
+      </dl>
+    </section>
+  );
+};
+
 // ---------- glossary ----------
 
 const Glossary = () => (
@@ -671,6 +701,7 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
 
       <SettingsGroup title="Reference">
         <Glossary />
+        <AboutCard />
       </SettingsGroup>
     </div>
   );
