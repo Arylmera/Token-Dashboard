@@ -26,7 +26,29 @@ The package itself has zero runtime dependencies (Python stdlib only). No Node.j
 
 ## Quickstart
 
-### Option A — prebuilt binary (no Python needed)
+### Option A — one-line install (recommended)
+
+The fastest path. The scripts download the latest release, install it, and on macOS handle the ad-hoc re-sign that's otherwise required for the unsigned bundle to launch.
+
+**macOS** (Apple Silicon):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Arylmera/Token-Dashboard/main/scripts/install.sh | bash
+```
+
+What it does: if [Homebrew](https://brew.sh) is on your `PATH`, runs `brew install --cask arylmera/token-dashboard/token-dashboard`; otherwise downloads the latest `*-macos-arm64-*.dmg` from the GitHub releases API and copies the `.app` to `/Applications`. Either way it then runs `codesign --force --deep --sign - "/Applications/Token Dashboard.app"` to fix the Team-ID dyld mismatch (see Option B for the full explanation) and launches the app. Source: [`scripts/install.sh`](scripts/install.sh).
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/Arylmera/Token-Dashboard/main/scripts/install.ps1 | iex
+```
+
+What it does: queries the GitHub releases API for the latest release, downloads the NSIS installer (`token-dashboard-*-windows-x64-*.exe`), and runs it. SmartScreen may still warn about an unrecognized publisher — click *More info* → *Run anyway*. Source: [`scripts/install.ps1`](scripts/install.ps1).
+
+> ⚠️ Both scripts are unsigned plain text. If you'd rather review the commands before running them, open the script URLs in your browser first, or use Option B below.
+
+### Option B — manual download (no Python needed)
 
 Two flavors ship per release:
 
@@ -79,7 +101,7 @@ The standalone binary is a self-contained PyInstaller bundle (no Python on the h
 
 **Versioning.** [`VERSION`](VERSION) at the repo root holds `MAJOR.MINOR` (manual bump). Every merge to `main` reads it, computes the next free patch by counting existing `v<major>.<minor>.*` tags, builds, then tags + publishes a release as `v<major>.<minor>.<patch>`. Pushing a `v*` tag manually publishes that exact version. Pull requests and other branches build but do not publish.
 
-### Option B — from source
+### Option C — from source
 
 ```bash
 git clone https://github.com/Arylmera/Token-Dashboard.git
