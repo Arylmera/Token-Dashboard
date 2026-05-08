@@ -11,9 +11,10 @@ import time
 
 from ..scanner import scan_dir
 from .routes import build_handler, set_started_at
-from .sse import EVENTS
+from .sse import EVENTS, active_clients, ever_connected, last_disconnect_ts
 
 DEFAULT_SCAN_INTERVAL = 5.0
+AUTO_EXIT_IDLE_SECONDS = 8.0
 READY_TOKEN = "TOKEN_DASHBOARD_READY"
 
 
@@ -63,7 +64,23 @@ def _emit_ready(host: str, port: int, db_path: str, projects_dir: str) -> None:
         pass
 
 
-def run(host: str, port: int, db_path: str, projects_dir: str):
+def _auto_exit_watcher(httpd, idle_seconds: float):
+    """Shut the server down once all SSE clients have disconnected and stayed gone."""
+    while True:
+        time.sleep(1.0)
+        if not ever_connected():
+            continue
+        if active_clients() > 0:
+            continue
+        ts = last_disconnect_ts()
+        if ts is None:
+            continue
+        if (time.time() - ts) >= idle_seconds:
+            threading.Thread(target=httpd.shutdown, daemon=True).start()
+            return
+
+
+def run(host: str, port: int, db_path: str, projects_dir: str, auto_exit: bool = False):
     interval = _resolve_scan_interval()
     threading.Thread(
         target=_scan_loop, args=(db_path, projects_dir, interval), daemon=True
@@ -82,6 +99,10 @@ def run(host: str, port: int, db_path: str, projects_dir: str):
             )
             sys.exit(2)
         raise
+    if auto_exit:
+        threading.Thread(
+            target=_auto_exit_watcher, args=(httpd, AUTO_EXIT_IDLE_SECONDS), daemon=True
+        ).start()
     _emit_ready(host, port, db_path, projects_dir)
     httpd.serve_forever()
 

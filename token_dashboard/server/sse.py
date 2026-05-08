@@ -11,6 +11,7 @@ import json
 import os
 import queue
 import threading
+import time
 
 _DEFAULT_KEEPALIVE = 15.0
 _DEFAULT_QUEUE_SIZE = 64
@@ -67,6 +68,26 @@ class Hub:
 
 EVENTS = Hub()
 
+_lock = threading.Lock()
+_active = 0
+_ever_connected = False
+_last_disconnect_ts: float | None = None
+
+
+def active_clients() -> int:
+    with _lock:
+        return _active
+
+
+def ever_connected() -> bool:
+    with _lock:
+        return _ever_connected
+
+
+def last_disconnect_ts() -> float | None:
+    with _lock:
+        return _last_disconnect_ts
+
 
 def stream(handler) -> None:
     """Keep the connection open, ship events as they arrive, ping periodically."""
@@ -78,6 +99,10 @@ def stream(handler) -> None:
     handler.send_header("Connection", "keep-alive")
     handler.send_header("X-Accel-Buffering", "no")
     handler.end_headers()
+    global _active, _ever_connected, _last_disconnect_ts
+    with _lock:
+        _active += 1
+        _ever_connected = True
     try:
         while True:
             try:
@@ -92,3 +117,7 @@ def stream(handler) -> None:
                 return
     finally:
         EVENTS.unsubscribe(q)
+        with _lock:
+            _active -= 1
+            if _active <= 0:
+                _last_disconnect_ts = time.time()
