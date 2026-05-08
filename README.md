@@ -54,6 +54,16 @@ token-dashboard-<version>-windows-x64.exe dashboard
 
 The Electron installer drops a regular desktop app — launch it from Start Menu / Launchpad / your app launcher.
 
+> **macOS:** the DMG isn't code-signed (no Apple Developer ID), so on first launch macOS Gatekeeper will say *"Token Dashboard is damaged and can't be opened. You should move it to the Trash."* It isn't damaged — it's the standard quarantine warning for unsigned apps. After dragging to Applications, run this once in Terminal to clear the quarantine flag:
+>
+> ```bash
+> xattr -dr com.apple.quarantine "/Applications/Token Dashboard.app"
+> ```
+>
+> The app opens normally afterward. (Right-click → Open does not work for this case on recent macOS.)
+
+> **Windows:** SmartScreen may warn about an unrecognized publisher. Click *More info* → *Run anyway*.
+
 The standalone binary is a self-contained PyInstaller bundle (no Python on the host). The Electron installer wraps the same bundle inside a Chromium shell. Both are built in CI from the same source tree — see [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 **Versioning.** [`VERSION`](VERSION) at the repo root holds `MAJOR.MINOR` (manual bump). Every merge to `main` reads it, computes the next free patch by counting existing `v<major>.<minor>.*` tags, builds, then tags + publishes a release as `v<major>.<minor>.<patch>`. Pushing a `v*` tag manually publishes that exact version. Pull requests and other branches build but do not publish.

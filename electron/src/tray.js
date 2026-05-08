@@ -6,7 +6,12 @@
 const { Tray, Menu, app, nativeImage } = require("electron");
 const http = require("http");
 
-const { formatTokens, formatCostUSD } = require("../../shared/format");
+// Path differs between dev (electron/src → repo/shared, two-up) and packaged
+// asar (electron-builder re-roots `../shared/**/*` so it lives one level up
+// from src/ inside the bundle).
+const { formatTokens, formatCostUSD } = app.isPackaged
+  ? require("../shared/format")
+  : require("../../shared/format");
 
 const DISPLAY_THROTTLE_MS = 1000;
 
