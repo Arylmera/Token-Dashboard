@@ -63,6 +63,42 @@ class ServerTests(unittest.TestCase):
         self.assertIn("plan", body)
         self.assertIn("pricing", body)
 
+    def test_limits_json(self):
+        body = json.loads(self._get("/api/limits"))
+        self.assertIn("plan", body)
+        self.assertIn("five_hour", body)
+        self.assertIn("weekly", body)
+        self.assertIn("used", body["five_hour"])
+        self.assertIn("pct_remaining", body["weekly"])
+
+    def test_preferences_default(self):
+        body = json.loads(self._get("/api/preferences"))
+        self.assertEqual(body["badge_metric"], "tokens")
+        self.assertIn("tokens", body["badge_metrics"])
+        self.assertIn("burn", body["badge_metrics"])
+
+    def test_preferences_set_and_round_trip(self):
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/preferences",
+            data=json.dumps({"badge_metric": "burn"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        resp = json.loads(urllib.request.urlopen(req).read())
+        self.assertEqual(resp["badge_metric"], "burn")
+        body = json.loads(self._get("/api/preferences"))
+        self.assertEqual(body["badge_metric"], "burn")
+
+    def test_preferences_rejects_unknown_metric(self):
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/preferences",
+            data=json.dumps({"badge_metric": "bogus"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        resp = json.loads(urllib.request.urlopen(req).read())
+        self.assertEqual(resp["badge_metric"], "tokens")
+
     def test_head_returns_200_not_501(self):
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}/", method="HEAD")
         with urllib.request.urlopen(req) as resp:
@@ -74,6 +110,162 @@ class ServerTests(unittest.TestCase):
         with urllib.request.urlopen(req) as resp:
             self.assertEqual(resp.status, 200)
             self.assertEqual(resp.read(), b"")
+
+    def _post(self, path, body):
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        return json.loads(urllib.request.urlopen(req).read())
+
+    def test_tag_add_remove_round_trip(self):
+        resp = self._post("/api/sessions/s/tags", {"add": ["client-a", "  client-a  ", "billable"]})
+        self.assertEqual(set(resp["tags"]), {"client-a", "billable"})
+        # Per-session GET reflects them
+        body = json.loads(self._get("/api/sessions/s/tags"))
+        self.assertEqual(set(body["tags"]), {"client-a", "billable"})
+        # Aggregate /api/tags shows counts
+        all_tags = json.loads(self._get("/api/tags"))
+        names = [t["tag"] for t in all_tags]
+        self.assertIn("client-a", names)
+        # Remove one
+        resp = self._post("/api/sessions/s/tags", {"remove": ["client-a"]})
+        self.assertEqual(resp["tags"], ["billable"])
+
+    def test_sessions_filtered_by_tag(self):
+        self._post("/api/sessions/s/tags", {"add": ["alpha"]})
+        body = json.loads(self._get("/api/sessions?tag=alpha"))
+        self.assertEqual(len(body), 1)
+        body = json.loads(self._get("/api/sessions?tag=does-not-exist"))
+        self.assertEqual(body, [])
+
+    def test_csv_export(self):
+        self._post("/api/sessions/s/tags", {"add": ["alpha"]})
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/export.csv") as resp:
+            self.assertEqual(resp.status, 200)
+            self.assertIn("text/csv", resp.headers.get("Content-Type", ""))
+            csv_body = resp.read().decode("utf-8")
+        self.assertIn("session_id", csv_body)  # header row
+        self.assertIn("alpha", csv_body)        # tag column populated
+
+    def test_budget_get_and_set(self):
+        # Defaults: caps unset, status ok
+        body = json.loads(self._get("/api/budget"))
+        self.assertIsNone(body["daily"]["cap_usd"])
+        # Set caps
+        resp = self._post("/api/budget", {"daily": 5, "weekly": 25, "monthly": 100})
+        self.assertEqual(resp["daily"], 5.0)
+        body = json.loads(self._get("/api/budget"))
+        self.assertEqual(body["daily"]["cap_usd"], 5.0)
+        self.assertEqual(body["weekly"]["cap_usd"], 25.0)
+        self.assertIn(body["daily"]["status"], ("ok", "warn", "over"))
+        # Clear with null
+        self._post("/api/budget", {"daily": None})
+        body = json.loads(self._get("/api/budget"))
+        self.assertIsNone(body["daily"]["cap_usd"])
+
+    def _post_binary(self, path, blob, content_type="application/x-sqlite3"):
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            data=blob,
+            headers={"Content-Type": content_type},
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as r:
+            return r.status, json.loads(r.read())
+
+    def test_import_round_trip_and_idempotent(self):
+        # 1. Export the seeded DB.
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/export.db") as resp:
+            blob = resp.read()
+        # 2. Stand up a SECOND server pointed at a fresh DB.
+        other_db = os.path.join(self.tmp, "other.db")
+        init_db(other_db)
+        port2 = _free_port()
+        H = build_handler(other_db, projects_dir="/nonexistent")
+        httpd2 = http.server.HTTPServer(("127.0.0.1", port2), H)
+        threading.Thread(target=httpd2.serve_forever, daemon=True).start()
+        try:
+            # Pre-import: empty.
+            req = urllib.request.Request(f"http://127.0.0.1:{port2}/api/overview")
+            self.assertEqual(json.loads(urllib.request.urlopen(req).read())["sessions"], 0)
+            # Import.
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port2}/api/import.db",
+                data=blob,
+                headers={"Content-Type": "application/x-sqlite3"},
+                method="POST",
+            )
+            resp = json.loads(urllib.request.urlopen(req).read())
+            self.assertTrue(resp["ok"])
+            self.assertEqual(resp["messages_added"], 2)
+            # Post-import: visible.
+            body = json.loads(urllib.request.urlopen(
+                f"http://127.0.0.1:{port2}/api/overview").read())
+            self.assertEqual(body["sessions"], 1)
+            # Idempotency: re-import adds zero messages.
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port2}/api/import.db",
+                data=blob,
+                headers={"Content-Type": "application/x-sqlite3"},
+                method="POST",
+            )
+            resp = json.loads(urllib.request.urlopen(req).read())
+            self.assertEqual(resp["messages_added"], 0)
+        finally:
+            httpd2.shutdown()
+
+    def test_import_rejects_non_sqlite(self):
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/import.db",
+            data=b"not a database, just some bytes",
+            headers={"Content-Type": "application/x-sqlite3"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(req)
+            self.fail("expected 400")
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 400)
+            err = json.loads(e.read())
+            self.assertIn("SQLite", err["error"])
+
+    def test_import_rejects_empty_body(self):
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/import.db",
+            data=b"",
+            headers={"Content-Type": "application/x-sqlite3"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(req)
+            self.fail("expected 400")
+        except urllib.error.HTTPError as e:
+            self.assertEqual(e.code, 400)
+
+    def test_export_db_is_valid_sqlite(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/export.db") as resp:
+            self.assertEqual(resp.status, 200)
+            self.assertIn("sqlite", resp.headers.get("Content-Type", ""))
+            blob = resp.read()
+        # SQLite files start with this magic header.
+        self.assertTrue(blob.startswith(b"SQLite format 3\x00"))
+        # Round-trip: open it and confirm it carries the seeded fixture row.
+        out = os.path.join(self.tmp, "exported.db")
+        with open(out, "wb") as f:
+            f.write(blob)
+        with sqlite3.connect(out) as c:
+            rows = list(c.execute("SELECT session_id FROM messages WHERE type='user'"))
+            self.assertEqual(rows, [("s",)])
+
+    def test_phase_split(self):
+        body = json.loads(self._get("/api/phase-split"))
+        for k in ("plan", "execute", "other"):
+            self.assertIn(k, body)
+            self.assertIn("billable_tokens", body[k])
+            self.assertIn("turns", body[k])
 
 
 if __name__ == "__main__":

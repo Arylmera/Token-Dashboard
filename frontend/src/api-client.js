@@ -97,6 +97,11 @@ const fetchAll = (rangeSince) => {
     j("/api/hourly?hours=24").catch(() => []),
     j("/api/tips").catch(() => []),
     j("/api/plan").catch(() => ({ plan: "max" })),
+    j("/api/limits").catch(() => null),
+    j("/api/budget").catch(() => null),
+    j(`/api/phase-split${rq("")}`).catch(() => null),
+    j("/api/tags").catch(() => []),
+    j("/api/preferences").catch(() => null),
   ]);
 };
 
@@ -178,6 +183,7 @@ const buildSessions = (rows) => rows.map((s) => ({
   cost: s.cost_usd || 0,
   model: shortModel(s.model),
   firstPrompt: (s.first_prompt || "").replace(/\s+/g, " ").trim(),
+  tags: Array.isArray(s.tags) ? s.tags : [],
   _raw: s,
 }));
 
@@ -249,6 +255,11 @@ const EMPTY_DATA = () => ({
   heatmap: WEEKDAYS.map((d) => ({ day: d, cells: Array(24).fill(0) })),
   burn: { rate: 0, weeklyAvg: 0, multiple: 0 },
   plan: { plan: "max" },
+  limits: null,
+  budget: null,
+  phase: null,
+  tags: [],
+  prefs: null,
 });
 
 async function load(range) {
@@ -260,7 +271,8 @@ async function load(range) {
   const [
     overviewAll, overview30, overview7, overviewToday, overviewYday,
     overviewRange,
-    daily, projects, tools, sessionsRaw, skills, byModel, prompts, hourlyRaw, tips, planResp,
+    daily, projects, tools, sessionsRaw, skills, byModel, prompts, hourlyRaw, tips, planResp, limitsResp,
+    budgetResp, phaseResp, tagsResp, prefsResp,
   ] = await fetchAll(rangeSince);
 
   const totals = buildTotals(r, overviewAll, overview30, overview7, overviewToday, overviewYday, overviewRange);
@@ -280,6 +292,11 @@ async function load(range) {
     heatmap: buildHeatmap(sessionsRaw),
     burn: buildBurn(hourly, totals.week),
     plan: planResp || { plan: "max" },
+    limits: limitsResp || null,
+    budget: budgetResp || null,
+    phase: phaseResp || null,
+    tags: Array.isArray(tagsResp) ? tagsResp : [],
+    prefs: prefsResp || null,
   };
 }
 

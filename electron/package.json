@@ -9,7 +9,6 @@
     "dev": "electron .",
     "dev:devtools": "electron . --dev",
     "frontend:build": "npm --prefix ../frontend run build",
-    "icon:gen": "python3 scripts/gen-icon.py",
     "py:prepare": "python3 scripts/prepare-py.py",
     "prebuild": "npm run frontend:build && npm run py:prepare",
     "prebuild:win": "npm run prebuild",
@@ -36,7 +35,8 @@
       "main.js",
       "preload.js",
       "package.json",
-      "src/**/*"
+      "src/**/*",
+      "build-resources/icon.png"
     ],
     "extraResources": [
       {
@@ -47,17 +47,20 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "build-resources/icon.ico"
+      "icon": "build-resources/icon.ico",
+      "artifactName": "token-dashboard-${version}-windows-x64.${ext}"
     },
     "mac": {
       "target": "dmg",
       "icon": "build-resources/icon.icns",
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "artifactName": "token-dashboard-${version}-macos-arm64.${ext}"
     },
     "linux": {
       "target": "AppImage",
       "icon": "build-resources/icon.png",
-      "category": "Development"
+      "category": "Development",
+      "artifactName": "token-dashboard-${version}-linux-x64.${ext}"
     }
   }
 }

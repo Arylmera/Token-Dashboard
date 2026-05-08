@@ -42,7 +42,10 @@ function createSSEClient({ getBackendUrl, onTick }) {
             buf = buf.slice(idx + 2);
             if (frame.startsWith(":")) continue; // keep-alive ping
             const line = frame.replace(/^data:\s*/, "").trim();
-            if (line) onTick();
+            if (!line) continue;
+            let payload = null;
+            try { payload = JSON.parse(line); } catch (_) {}
+            onTick(payload);
           }
         });
         res.on("end", scheduleReconnect);
