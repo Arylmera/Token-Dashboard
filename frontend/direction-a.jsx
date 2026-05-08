@@ -3,6 +3,8 @@
 // 13px body, mono numerics, label tier uppercase, flat surfaces with 1px borders.
 // All 6 tabs functional, hash-router, sparkline + bar charts in pure SVG.
 
+import React from "react";
+
 (function() {
 const { useState, useEffect, useMemo } = React;
 
@@ -47,6 +49,25 @@ const ModelBadge = ({ model }) => {
   return <span className={`a-badge ${cls}`}>{model || "—"}</span>;
 };
 
+// Catmull-Rom → cubic Bezier; tension 0..1 (lower = smoother)
+const smoothPath = (pts, tension = 0.5) => {
+  if (pts.length === 0) return "";
+  if (pts.length === 1) return `M${pts[0].x},${pts[0].y}`;
+  let d = `M${pts[0].x},${pts[0].y}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    const c1x = p1.x + ((p2.x - p0.x) / 6) * tension * 2;
+    const c1y = p1.y + ((p2.y - p0.y) / 6) * tension * 2;
+    const c2x = p2.x - ((p3.x - p1.x) / 6) * tension * 2;
+    const c2y = p2.y - ((p3.y - p1.y) / 6) * tension * 2;
+    d += ` C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
+  }
+  return d;
+};
+
 // Area chart — hatched fill + optional peak/trough annotations
 const AreaChart = ({ data, height = 200, accent = "var(--accent)", annotate = false, format = (v) => `$${v.toFixed(2)}` }) => {
   if (!data || data.length === 0) return <div className="a-chart-wrap" style={{ height }}><div className="a-chart" style={{ height }} /></div>;
@@ -55,9 +76,9 @@ const AreaChart = ({ data, height = 200, accent = "var(--accent)", annotate = fa
   const topPad = 22;
   const botPad = 14;
   const yOf = (v) => height - (v / max) * (height - topPad - botPad) - botPad;
-  const points = data.map((d, i) => `${(i / Math.max(1, data.length - 1)) * w},${yOf(d.cost)}`);
-  const area = `M0,${height - botPad} L${points.join(" L")} L${w},${height - botPad} Z`;
-  const line = `M${points.join(" L")}`;
+  const pts = data.map((d, i) => ({ x: (i / Math.max(1, data.length - 1)) * w, y: yOf(d.cost) }));
+  const line = smoothPath(pts);
+  const area = `M0,${height - botPad} L${line.slice(1)} L${w},${height - botPad} Z`;
   const peakIdx = data.reduce((mi, d, i) => (d.cost > data[mi].cost ? i : mi), 0);
   const troughIdx = data.reduce((mi, d, i) => (d.cost < data[mi].cost ? i : mi), 0);
   const ptAt = (i) => {
@@ -123,9 +144,9 @@ const StripSpark = ({ data, accent = "var(--accent)", height = 38 }) => {
   const range = max || 1;
   const w = 100;
   const denom = Math.max(1, data.length - 1);
-  const points = data.map((v, i) => `${(i / denom) * w},${height - (v / range) * (height - 8) - 4}`);
-  const area = `M0,${height - 4} L${points.join(" L")} L${w},${height - 4} Z`;
-  const line = `M${points.join(" L")}`;
+  const pts = data.map((v, i) => ({ x: (i / denom) * w, y: height - (v / range) * (height - 8) - 4 }));
+  const line = smoothPath(pts);
+  const area = `M0,${height - 4} L${line.slice(1)} L${w},${height - 4} Z`;
   const cursorX = w;
   const cursorY = height - (data[data.length - 1] / range) * (height - 8) - 4;
   const gid = `a-strip-grad-${Math.random().toString(36).slice(2, 7)}`;
@@ -177,7 +198,7 @@ const HBar = ({ value, max, accent = "var(--accent)" }) => (
 );
 
 // -------- topbar --------
-const Topbar = ({ tab, setTab, range, setRange, onRefresh, themeLabel, onCycleTheme }) => (
+const Topbar = ({ tab, setTab, range, setRange }) => (
   <header className="a-topbar">
     <div className="a-brand">
       <span className="a-brand-dot" />
@@ -188,6 +209,7 @@ const Topbar = ({ tab, setTab, range, setRange, onRefresh, themeLabel, onCycleTh
       {["overview", "prompts", "sessions", "token sink", "tips", "settings"].map((t) => (
         <button
           key={t}
+          data-tab={t}
           className={`a-navlink ${tab === t ? "is-active" : ""}`}
           onClick={() => setTab(t)}
         >
@@ -197,7 +219,7 @@ const Topbar = ({ tab, setTab, range, setRange, onRefresh, themeLabel, onCycleTh
     </nav>
     <div className="a-topbar-actions">
       <div className="a-range">
-        {["7d", "30d", "90d", "all"].map((r) => (
+        {["1d", "7d", "30d", "90d", "all"].map((r) => (
           <button
             key={r}
             className={`a-range-tab ${range === r ? "is-active" : ""}`}
@@ -207,12 +229,6 @@ const Topbar = ({ tab, setTab, range, setRange, onRefresh, themeLabel, onCycleTh
           </button>
         ))}
       </div>
-      <button className="a-pill-btn" title="Cycle theme" onClick={onCycleTheme}>
-        <span style={{ marginRight: 6 }}>◐</span>{themeLabel}
-      </button>
-      <button className="a-pill-btn" title="Refresh" onClick={onRefresh}>
-        <span style={{ marginRight: 6 }}>↻</span>refresh
-      </button>
     </div>
   </header>
 );
@@ -227,7 +243,7 @@ const Overview = () => {
         <div className="a-strip-left">
           <div className="a-label">today · live</div>
           <div className="a-strip-num">{fmtCost(t.today)}</div>
-          <div className="a-strip-sub">vs {fmtCost(t.yesterday)} yesterday · {t.sessions} sessions·30d</div>
+          <div className="a-strip-sub">{fmtTokens(t.todayTokens)} tok · vs {fmtCost(t.yesterday)} yesterday · {t.rangeSessions || 0} sessions·{t.rangeKey || "30d"}</div>
         </div>
         <div className="a-strip-mid">
           <StripSpark data={D.hourly} accent="var(--accent)" height={38} />
@@ -249,20 +265,35 @@ const Overview = () => {
         </div>
       </section>
 
-      <section className="a-kpi-row" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
-        <KPI label="7 days" value={fmtCost(t.week)} sub={`avg ${fmtCost(t.week / 7)}/day`} />
-        <KPI label="30 days" value={fmtCost(t.month)} sub={`${t.sessions} sessions`} />
-        <KPI label="all-time" value={fmtCost(t.cost)} sub={`${fmtNum(t.turns)} turns`} />
-        <KPI label="input" value={fmtTokens(t.inputTokens)} sub="tokens" />
-        <KPI label="output" value={fmtTokens(t.outputTokens)} sub="tokens" />
-        <KPI label="cache hit" value={fmtPct(t.cacheHitRate)} sub="last 7 days" />
-      </section>
+      {(() => {
+        const rangeDays = (() => {
+          const k = String(t.rangeKey || "").toLowerCase();
+          if (k === "today") return 1;
+          if (k === "yesterday") return 1;
+          const m = k.match(/^(\d+)\s*d/);
+          if (m) return parseInt(m[1], 10);
+          return 30;
+        })();
+        const windows = [
+          { key: "range", days: rangeDays, label: t.rangeLabel || "range", value: fmtCost(t.range || 0), sub: `${fmtTokens(t.rangeTokens)} tok · ${t.rangeSessions || 0} sessions` },
+          { key: "week", days: 7, label: "7 days", value: fmtCost(t.week), sub: `${fmtTokens(t.weekTokens)} tok · avg ${fmtCost(t.week / 7)}/day` },
+          { key: "all", days: Infinity, label: "all-time", value: fmtCost(t.cost), sub: `${fmtTokens(t.allTokens)} tok · ${fmtNum(t.turns)} turns` },
+        ].sort((a, b) => a.days - b.days);
+        return (
+          <section className="a-kpi-row">
+            {windows.map((w) => <KPI key={w.key} label={w.label} value={w.value} sub={w.sub} />)}
+            <KPI label="input" value={fmtTokens(t.inputTokens)} sub="tokens" />
+            <KPI label="output" value={fmtTokens(t.outputTokens)} sub="tokens" />
+            <KPI label="cache hit" value={fmtPct(t.cacheHitRate)} sub="last 7 days" />
+          </section>
+        );
+      })()}
 
       <section className="a-card-row">
         <div className="a-card">
           <div className="a-card-head">
             <h2>Daily cost</h2>
-            <span className="a-card-meta">last 30 days · {fmtCost((D.daily || []).reduce((a, b) => a + b.cost, 0))} total</span>
+            <span className="a-card-meta">last {t.rangeLabel || "30 days"} · {fmtCost((D.daily || []).reduce((a, b) => a + b.cost, 0))} total</span>
           </div>
           <AreaChart data={D.daily} height={200} accent="var(--accent)" annotate={true} />
           {D.daily && D.daily.length > 0 && (
@@ -782,6 +813,36 @@ const mergeTipsByCategory = (tips, projectKey) => {
   return out;
 };
 
+const TipsGroup = ({ groupKey, tips, defaultOpen }) => {
+  const storageKey = `tips.open.${groupKey}`;
+  const [open, setOpen] = useState(() => {
+    const v = localStorage.getItem(storageKey);
+    return v === null ? defaultOpen : v === "1";
+  });
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    localStorage.setItem(storageKey, next ? "1" : "0");
+  };
+  const merged = mergeTipsByCategory(tips, groupKey);
+  return (
+    <div className={`a-tips-group ${open ? "is-open" : "is-collapsed"}`}>
+      <button type="button" className="a-tips-group-head" onClick={toggle} aria-expanded={open}>
+        <span className="a-tips-group-head-left">
+          <span className="a-tips-group-caret">{open ? "▾" : "▸"}</span>
+          <Label>{groupKey === "__global__" ? "global" : groupKey}</Label>
+        </span>
+        <span className="a-card-meta">{merged.length} tip{merged.length === 1 ? "" : "s"}</span>
+      </button>
+      {open && (
+        <div className="a-tips">
+          {merged.map((t, i) => <TipCard key={i} t={t} projectKey={groupKey} />)}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Tips = () => {
   const groups = {};
   (D.tips || []).forEach((t) => {
@@ -797,27 +858,39 @@ const Tips = () => {
     <div className="a-route">
       <section className="a-card">
         <div className="a-card-head"><h2>Tips</h2><span className="a-card-meta">rule-based suggestions · no telemetry</span></div>
-        {keys.map((k) => {
-          const merged = mergeTipsByCategory(groups[k], k);
-          return (
-            <div key={k} className="a-tips-group">
-              <div className="a-tips-group-head">
-                <Label>{k === "__global__" ? "global" : k}</Label>
-                <span className="a-card-meta">{merged.length} tip{merged.length === 1 ? "" : "s"}</span>
-              </div>
-              <div className="a-tips">
-                {merged.map((t, i) => <TipCard key={i} t={t} projectKey={k} />)}
-              </div>
-            </div>
-          );
-        })}
+        {keys.map((k, idx) => (
+          <TipsGroup key={k} groupKey={k} tips={groups[k]} defaultOpen={idx === 0} />
+        ))}
       </section>
     </div>
   );
 };
 
+// -------- theme --------
+const THEMES = [
+  { id: "bench",  label: "bench",  cls: "" },
+  { id: "forge",  label: "forge",  cls: "theme-forge" },
+  { id: "forest", label: "forest", cls: "theme-forest" },
+  { id: "paper",  label: "paper",  cls: "theme-light" },
+];
+const THEME_KEY = "td.theme.v2";
+const themeIndexFromStorage = () => {
+  try {
+    const id = localStorage.getItem(THEME_KEY);
+    const i = THEMES.findIndex(t => t.id === id);
+    return i >= 0 ? i : 0;
+  } catch (_) { return 0; }
+};
+const applyThemeClass = (idx) => {
+  const root = document.querySelector(".dir-a-root");
+  if (!root) return;
+  THEMES.forEach(t => { if (t.cls) root.classList.remove(t.cls); });
+  const cls = THEMES[idx].cls;
+  if (cls) root.classList.add(cls);
+};
+
 // -------- Settings --------
-const Settings = () => {
+const Settings = ({ themeIdx, onPickTheme }) => {
   const [plan, setPlan] = useState((D.plan && D.plan.id) || "max");
   const [saving, setSaving] = useState(false);
   const onPick = async (id) => {
@@ -830,6 +903,21 @@ const Settings = () => {
   };
   return (
     <div className="a-route">
+      <section className="a-card">
+        <div className="a-card-head"><h2>Theme</h2><span className="a-card-meta">appearance</span></div>
+        <div className="a-theme-picker">
+          {THEMES.map((t, i) => (
+            <button
+              key={t.id}
+              className={`a-pill-btn ${themeIdx === i ? "is-active" : ""}`}
+              onClick={() => onPickTheme(i)}
+            >
+              <span style={{ marginRight: 6 }}>◐</span>{t.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
       <section className="a-card">
         <div className="a-card-head"><h2>Pricing plan</h2><span className="a-card-meta">{saving ? "saving…" : "drives all cost figures"}</span></div>
         <div className="a-plans">
@@ -878,6 +966,21 @@ const Settings = () => {
         </table>
       </section>
 
+      {window.td && typeof window.td.toggleDevTools === "function" ? (
+        <section className="a-card">
+          <div className="a-card-head"><h2>Developer</h2><span className="a-card-meta">renderer debugging</span></div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              className="a-pill-btn"
+              onClick={() => { try { window.td.toggleDevTools(); } catch (_) {} }}
+            >
+              <span style={{ marginRight: 6 }}>{`{}`}</span>open devtools
+            </button>
+            <span className="a-card-meta">opens a detached Chromium DevTools window</span>
+          </div>
+        </section>
+      ) : null}
+
       <section className="a-card">
         <div className="a-card-head"><h2>Glossary</h2></div>
         <dl className="a-glossary">
@@ -897,28 +1000,6 @@ const Settings = () => {
 
 // -------- App shell --------
 const ROUTES = { overview: Overview, prompts: Prompts, sessions: Sessions, "token sink": Work, tips: Tips, settings: Settings };
-
-const THEMES = [
-  { id: "bench",  label: "bench",  cls: "" },
-  { id: "forge",  label: "forge",  cls: "theme-forge" },
-  { id: "forest", label: "forest", cls: "theme-forest" },
-  { id: "paper",  label: "paper",  cls: "theme-light" },
-];
-const THEME_KEY = "td.theme.v2";
-const themeIndexFromStorage = () => {
-  try {
-    const id = localStorage.getItem(THEME_KEY);
-    const i = THEMES.findIndex(t => t.id === id);
-    return i >= 0 ? i : 0;
-  } catch (_) { return 0; }
-};
-const applyThemeClass = (idx) => {
-  const root = document.querySelector(".dir-a-root");
-  if (!root) return;
-  THEMES.forEach(t => { if (t.cls) root.classList.remove(t.cls); });
-  const cls = THEMES[idx].cls;
-  if (cls) root.classList.add(cls);
-};
 
 const tabFromHash = () => {
   const h = (window.location.hash || "").replace(/^#\/?/, "").toLowerCase();
@@ -942,26 +1023,23 @@ window.DirectionA = function DirectionA({ initialTab, lockTab = false }) {
     const slug = tab === "token sink" ? "token-sink" : tab;
     if (`#/${slug}` !== window.location.hash) window.location.hash = `/${slug}`;
   }, [tab, lockTab]);
-  const onRefresh = async () => {
-    if (window.RELOAD_DATA) { await window.RELOAD_DATA(); setNonce(n => n + 1); }
-  };
+  useEffect(() => {
+    if (!window.RELOAD_DATA) return;
+    let cancelled = false;
+    window.RELOAD_DATA(range).then(() => { if (!cancelled) setNonce(n => n + 1); });
+    return () => { cancelled = true; };
+  }, [range]);
   const [themeIdx, setThemeIdx] = useState(themeIndexFromStorage);
   useEffect(() => {
     applyThemeClass(themeIdx);
     try { localStorage.setItem(THEME_KEY, THEMES[themeIdx].id); } catch (_) {}
   }, [themeIdx]);
-  const onCycleTheme = () => setThemeIdx(i => (i + 1) % THEMES.length);
   const Route = ROUTES[tab] || Overview;
   return (
     <React.Fragment>
-      <Topbar
-        tab={tab} setTab={setTab} range={range} setRange={setRange}
-        onRefresh={onRefresh}
-        themeLabel={THEMES[themeIdx].label}
-        onCycleTheme={onCycleTheme}
-      />
+      <Topbar tab={tab} setTab={setTab} range={range} setRange={setRange} />
       <main className="a-main-area">
-        <Route />
+        <Route themeIdx={themeIdx} onPickTheme={setThemeIdx} />
       </main>
     </React.Fragment>
   );

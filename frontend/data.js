@@ -64,29 +64,40 @@
     return d.toISOString();
   };
 
-  async function load() {
-    const sinceAll = null;
+  const RANGE_DAYS = { "1d": 1, "7d": 7, "30d": 30, "90d": 90, "all": null };
+
+  let currentRange = "30d";
+
+  async function load(range) {
+    if (range !== undefined && RANGE_DAYS[range] !== undefined) currentRange = range;
+    const r = currentRange;
+    const days = RANGE_DAYS[r];
+    const rangeSince = days == null ? null : isoDaysAgo(days);
+    const rq = (extra) => rangeSince ? `?since=${encodeURIComponent(rangeSince)}${extra ? "&" + extra : ""}` : (extra ? `?${extra}` : "");
+
     const since30 = isoDaysAgo(30);
     const since7 = isoDaysAgo(7);
     const since1 = isoDaysAgo(1);
-    const since2 = isoDaysAgo(2);
 
     const [
       overviewAll, overview30, overview7, overviewToday, overviewYday,
-      daily, projects, tools, sessionsRaw, skills, byModel, prompts, tips, planResp,
+      overviewRange,
+      daily, projects, tools, sessionsRaw, skills, byModel, prompts, hourlyRaw, tips, planResp,
     ] = await Promise.all([
       j("/api/overview"),
       j(`/api/overview?since=${encodeURIComponent(since30)}`),
       j(`/api/overview?since=${encodeURIComponent(since7)}`),
       j(`/api/overview?since=${encodeURIComponent(isoDaysAgo(0))}`),
       j(`/api/overview?since=${encodeURIComponent(since1)}&until=${encodeURIComponent(isoDaysAgo(0))}`),
-      j(`/api/daily?since=${encodeURIComponent(since30)}`),
-      j("/api/projects"),
-      j("/api/tools"),
-      j("/api/sessions?limit=50"),
-      j("/api/skills"),
-      j("/api/by-model"),
-      j("/api/prompts?limit=20&sort=tokens"),
+      j(`/api/overview${rq("")}`),
+      j(`/api/daily${rq("")}`),
+      j(`/api/projects${rq("")}`),
+      j(`/api/tools${rq("")}`),
+      j(`/api/sessions${rq("limit=50")}`),
+      j(`/api/skills${rq("")}`),
+      j(`/api/by-model${rq("")}`),
+      j(`/api/prompts${rq("limit=20&sort=tokens")}`),
+      j("/api/hourly?hours=24").catch(() => []),
       j("/api/tips").catch(() => []),
       j("/api/plan").catch(() => ({ plan: "max" })),
     ]);
@@ -96,17 +107,30 @@
     const weekCost = overview7.cost_usd || 0;
     const todayCost = overviewToday.cost_usd || 0;
     const ydayCost = overviewYday.cost_usd || 0;
+    const rangeCost = overviewRange.cost_usd || 0;
     const cacheRead = overview7.cache_read_tokens || 0;
-    const billable7 = (overview7.input_tokens || 0) + (overview7.output_tokens || 0)
-      + (overview7.cache_create_5m_tokens || 0) + (overview7.cache_create_1h_tokens || 0);
+    const billable = (o) => (o.input_tokens || 0) + (o.output_tokens || 0)
+      + (o.cache_create_5m_tokens || 0) + (o.cache_create_1h_tokens || 0);
+    const totalTokens = (o) => billable(o) + (o.cache_read_tokens || 0);
+    const billable7 = billable(overview7);
     const cacheHit = cacheRead + billable7 > 0 ? cacheRead / (cacheRead + billable7) : 0;
 
+    const RANGE_LABELS = { "1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days", "all": "all-time" };
     const totals = {
       cost: totalCost,
       today: todayCost,
       yesterday: ydayCost,
       week: weekCost,
       month: monthCost,
+      range: rangeCost,
+      rangeKey: r,
+      rangeLabel: RANGE_LABELS[r] || r,
+      rangeSessions: overviewRange.sessions || 0,
+      todayTokens: totalTokens(overviewToday),
+      yesterdayTokens: totalTokens(overviewYday),
+      weekTokens: totalTokens(overview7),
+      rangeTokens: totalTokens(overviewRange),
+      allTokens: totalTokens(overviewAll),
       inputTokens: overviewAll.input_tokens || 0,
       outputTokens: overviewAll.output_tokens || 0,
       cacheReadTokens: overviewAll.cache_read_tokens || 0,
@@ -124,7 +148,7 @@
       const billable = (d.input_tokens || 0) + (d.output_tokens || 0) + (d.cache_create_tokens || 0);
       return {
         date: shortDate(d.day),
-        cost: monthCost * (billable / totalBillable),
+        cost: rangeCost * (billable / totalBillable),
         input: d.input_tokens || 0,
         output: d.output_tokens || 0,
         cacheRead: d.cache_read_tokens || 0,
@@ -136,7 +160,7 @@
       const tokens = (p.input_tokens || 0) + (p.output_tokens || 0);
       // project cost not returned; approximate share of total all-time cost
       const allBillable = projects.reduce((a, x) => a + (x.billable_tokens || 0), 0) || 1;
-      const cost = totalCost * ((p.billable_tokens || 0) / allBillable);
+      const cost = rangeCost * ((p.billable_tokens || 0) / allBillable);
       return {
         slug: p.project_slug,
         name: p.project_name || p.project_slug,
@@ -217,26 +241,15 @@
       sessions: t.sessions || 0,
     }));
 
-    // hourly — last 24h cost per hour, derived from sessions/prompts (no endpoint).
-    // Bucket prompts by hour over the last 24h, scale to estimated cost.
-    const now = new Date();
-    const hourly = Array.from({ length: 24 }, () => 0);
-    prompts.forEach((p) => {
-      if (!p.timestamp) return;
-      const t = new Date(p.timestamp);
-      const ageH = (now.getTime() - t.getTime()) / 3_600_000;
-      if (ageH < 0 || ageH > 23) return;
-      const idx = 23 - Math.floor(ageH);
-      hourly[idx] += p.estimated_cost_usd || 0;
+    // hourly — last 24h cost per hour, from /api/hourly (DB-backed, oldest→newest).
+    const hourly = Array.from({ length: 24 }, (_, i) => {
+      const b = (Array.isArray(hourlyRaw) && hourlyRaw[i]) || null;
+      return b ? (b.cost_usd || 0) : 0;
     });
-    if (hourly.every((h) => h === 0)) {
-      const perH = todayCost / 24;
-      for (let i = 0; i < 24; i++) hourly[i] = perH;
-    }
 
     // heatmap — turns per hour, last 7 days × 24h, bucketed from sessions.
-    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const heatmap = days.map((day) => ({ day, cells: Array.from({ length: 24 }, () => 0) }));
+    const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const heatmap = weekdays.map((day) => ({ day, cells: Array.from({ length: 24 }, () => 0) }));
     sessionsRaw.forEach((s) => {
       if (!s.started) return;
       const d = new Date(s.started);

@@ -88,6 +88,65 @@ Every `token-dashboard <subcmd>` example below works as `python3 cli.py <subcmd>
 | macOS | `run.command` (first time: `chmod +x run.command run.sh`) |
 | Linux | `run.sh` (first time: `chmod +x run.sh`) |
 
+## Desktop app (Electron)
+
+A native-feeling desktop wrapper lives under [`electron/`](electron/). It
+spawns the same Python backend, opens a frameless window, and surfaces today's
+billable-token count in the OS shell (Windows taskbar overlay icon, macOS
+menu-bar tray title + dock badge).
+
+### Dev workflow
+
+```bash
+# 1. Build the React bundle (esbuild, ~150 ms)
+cd frontend
+npm install
+npm run build         # or `npm run dev` for watch mode
+
+# 2. Run the Electron shell
+cd ../electron
+npm install
+npm run dev
+```
+
+The Electron main process probes a free TCP port, spawns
+`python -m token_dashboard dashboard --no-open --no-scan` with `PORT=<n>`,
+parses the `TOKEN_DASHBOARD_READY {…}` line on stdout, and opens a
+`BrowserWindow` at the bound URL. Multiple SSE clients (main window + tray)
+each get their own event stream.
+
+### Production build
+
+```bash
+# Optional: regenerate the placeholder app icon
+python electron/scripts/gen-icon.py
+
+# Stage the PyInstaller exe under dist-py/ for electron-builder
+python electron/scripts/prepare-py.py
+
+# Build the Electron installer
+cd electron
+npm run build              # current OS
+npm run build:win          # Windows NSIS
+npm run build:mac          # macOS DMG
+npm run build:linux        # Linux AppImage
+```
+
+`prepare-py` runs PyInstaller using [`token-dashboard.spec`](token-dashboard.spec)
+and copies the result to `dist-py/`; electron-builder ships `dist-py/` under
+`<resources>/py/` and the main process picks it up automatically when
+`app.isPackaged` is true.
+
+### Layout
+
+| Dir | Contents |
+| --- | -------- |
+| [`token_dashboard/`](token_dashboard/) | Python backend (scanner + SQLite + stdlib HTTP server + tips engine) |
+| [`frontend/`](frontend/) | React 18 frontend, esbuild-bundled, vendored fonts |
+| [`electron/`](electron/) | Electron main + preload + electron-builder config |
+| [`shared/`](shared/) | JSON Schema + format helpers used by both sides |
+| [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) | Backend HTTP/SSE contract |
+
 ## Where the data comes from
 
 Claude Code writes one JSONL file per session here:
@@ -179,7 +238,7 @@ Layout:
 - `token_dashboard/reloader.py` — dev auto-reload helper.
 - `token_dashboard/db/` — `schema.py` (DDL + migrations), `queries.py` (read paths), `projects.py` (project-slug helpers).
 - `token_dashboard/server/` — `routes.py` (HTTP routes), `sse.py` (server-sent events), `scan_loop.py` (background rescan), `http_utils.py` (shared helpers).
-- `token_dashboard/web/` — frontend, split into `core/` (router, API client, formatters), `charts/` (ECharts theme), and `routes/` (one file per tab: `overview`, `prompts`, `sessions`, `projects`, `skills`, `tips`, `settings`).
+- `token_dashboard/web/` — frontend: single React 18 app in `direction-a.jsx` + `a-styles.css`, loaded by `index.html` and transpiled live in the browser by Babel-standalone. `data.js` fetches API payloads. No build step; charts are inline SVG.
 - `token-dashboard.spec` — PyInstaller spec for the prebuilt binaries.
 - `.github/workflows/release.yml` — CI builds Windows / macOS-arm64 / Linux-x64 executables on every push to `main` and publishes a GitHub Release on `v*` tags.
 

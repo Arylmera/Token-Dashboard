@@ -7,11 +7,15 @@ from __future__ import annotations
 
 import http.server
 import json
+import os
+import time
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ..db import (
     daily_token_breakdown,
     expensive_prompts,
+    hourly_breakdown,
     model_breakdown,
     overview_totals,
     project_summary,
@@ -32,7 +36,51 @@ from .http_utils import (
     send_json,
     serve_static,
 )
+from .sse import EVENTS
 from .sse import stream as sse_stream
+
+_STARTED_AT: float | None = None
+
+
+def set_started_at(ts: float) -> None:
+    """Called by scan_loop.run after the listening socket is bound."""
+    global _STARTED_AT
+    _STARTED_AT = ts
+
+
+def _read_version() -> str:
+    here = Path(__file__).resolve().parent.parent.parent
+    candidates = [here / "VERSION", Path(__file__).resolve().parent.parent / "VERSION"]
+    for p in candidates:
+        try:
+            return p.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+    return "0.0.0"
+
+
+_VERSION = _read_version()
+
+
+class _PricingCache:
+    """Reloads pricing.json when its mtime changes — no server restart needed."""
+
+    def __init__(self) -> None:
+        self._mtime: float | None = None
+        self._data: dict = {}
+        self._path: Path | None = None
+
+    def get(self) -> dict:
+        path = pricing_path()
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            mtime = None
+        if path != self._path or mtime != self._mtime or not self._data:
+            self._data = load_pricing(path)
+            self._path = path
+            self._mtime = mtime
+        return self._data
 
 
 def _api_overview(handler, db_path, pricing, qs):
@@ -87,6 +135,30 @@ def _api_daily(handler, db_path, pricing, qs):
         db_path, qs.get("since", [None])[0], qs.get("until", [None])[0]))
 
 
+def _api_hourly(handler, db_path, pricing, qs):
+    try:
+        hours = max(1, min(168, int(qs.get("hours", ["24"])[0])))
+    except ValueError:
+        hours = 24
+    rows = hourly_breakdown(db_path, hours=hours)
+    buckets = [{"cost_usd": 0.0, "billable_tokens": 0} for _ in range(hours)]
+    for r in rows:
+        ha = int(r["hour_ago"])
+        if ha < 0 or ha >= hours:
+            continue
+        idx = hours - 1 - ha
+        c = cost_for(r["model"], r, pricing)
+        if c["usd"] is not None:
+            buckets[idx]["cost_usd"] += c["usd"]
+        buckets[idx]["billable_tokens"] += (
+            r["input_tokens"] + r["output_tokens"]
+            + r["cache_create_5m_tokens"] + r["cache_create_1h_tokens"]
+        )
+    for b in buckets:
+        b["cost_usd"] = round(b["cost_usd"], 6)
+    send_json(handler, buckets)
+
+
 def _api_skills(handler, db_path, pricing, qs):
     rows = skill_breakdown(
         db_path, qs.get("since", [None])[0], qs.get("until", [None])[0])
@@ -115,6 +187,22 @@ def _api_plan(handler, db_path, pricing, qs):
     send_json(handler, {"plan": get_plan(db_path), "pricing": pricing})
 
 
+def _api_health(handler, db_path, pricing, qs):
+    """Cheap liveness/readiness probe. Used by Electron to detect ready-state."""
+    now = time.time()
+    send_json(handler, {
+        "ok": True,
+        "version": _VERSION,
+        "started_at": _STARTED_AT,
+        "uptime_s": (now - _STARTED_AT) if _STARTED_AT else None,
+        "now": now,
+        "scan_interval_s": float(os.environ.get("TOKEN_DASHBOARD_SCAN_INTERVAL", "5.0") or 5.0),
+        "projects_dir": getattr(handler.__class__, "_td_projects_dir", None),
+        "db": getattr(handler.__class__, "_td_db_path", None),
+        "sse_clients": EVENTS.subscriber_count(),
+    })
+
+
 GET_ROUTES = {
     "/api/overview":  _api_overview,
     "/api/prompts":   _api_prompts,
@@ -122,17 +210,22 @@ GET_ROUTES = {
     "/api/tools":     _api_tools,
     "/api/sessions":  _api_sessions,
     "/api/daily":     _api_daily,
+    "/api/hourly":    _api_hourly,
     "/api/skills":    _api_skills,
     "/api/by-model":  _api_by_model,
     "/api/tips":      _api_tips,
     "/api/plan":      _api_plan,
+    "/api/health":    _api_health,
 }
 
 
 def build_handler(db_path: str, projects_dir: str):
-    pricing = load_pricing(pricing_path())
+    pricing_cache = _PricingCache()
 
     class H(http.server.BaseHTTPRequestHandler):
+        _td_db_path = db_path
+        _td_projects_dir = projects_dir
+
         def log_message(self, fmt, *args):
             pass
 
@@ -158,7 +251,7 @@ def build_handler(db_path: str, projects_dir: str):
 
             handler_fn = GET_ROUTES.get(path)
             if handler_fn is not None:
-                return handler_fn(self, db_path, pricing, qs)
+                return handler_fn(self, db_path, pricing_cache.get(), qs)
 
             self.send_response(404)
             self.end_headers()

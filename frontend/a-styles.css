@@ -1,7 +1,17 @@
 /* Token Dashboard — Direction A · Quiet Telemetry Bench
    Self-contained styles. Apply class "dir-a-root" to a wrapper element. */
 
-html, body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0A0E14; }
+html, body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0A0E14; overflow-x: hidden; }
+html, body { scrollbar-width: thin; scrollbar-color: #283040 transparent; }
+html::-webkit-scrollbar, body::-webkit-scrollbar { width: 8px; height: 8px; }
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track { background: transparent; }
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb { background: #283040; border-radius: 4px; }
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover { background: #3A4458; }
+.dir-a-root, .dir-a-root *, .dir-a-root *::before, .dir-a-root *::after { box-sizing: border-box; }
+.dir-a-root { max-width: 100vw; min-width: 0; }
+.dir-a-root > * { max-width: 100%; min-width: 0; }
+.dir-a-root .a-card, .dir-a-root .a-kpi, .dir-a-root .a-strip,
+.dir-a-root .a-strip-left, .dir-a-root .a-strip-mid, .dir-a-root .a-strip-right { min-width: 0; }
 body:has(.dir-a-root.theme-light)  { background: #F7F9FC; }
 body:has(.dir-a-root.theme-forge)  { background: #14100C; }
 body:has(.dir-a-root.theme-forest) { background: #0C1410; }
@@ -26,6 +36,9 @@ body:has(.dir-a-root.theme-forest) { background: #0C1410; }
   --warn: #E8A23B;
   --bad: #E5484D;
   --grid-dot: rgba(255,255,255,0.025);
+  /* Reserve for native window controls. Win overlay ≈ 138px, mac is 0 (lights are on the LEFT). */
+  --tb-reserve-right: 150px;
+  --tb-reserve-left: 0px;
 
   background:
     radial-gradient(circle, var(--grid-dot) 1px, transparent 1px) 0 0 / 8px 8px,
@@ -47,24 +60,45 @@ body:has(.dir-a-root.theme-forest) { background: #0C1410; }
 .dir-a-root .tone-bad { color: var(--bad); }
 .dir-a-root .a-prose { font-family: Inter, system-ui, sans-serif; }
 
-/* themed scrollbars */
-.dir-a-root * { scrollbar-width: thin; scrollbar-color: var(--iron-border-2) transparent; }
-.dir-a-root *::-webkit-scrollbar { width: 8px; height: 8px; }
-.dir-a-root *::-webkit-scrollbar-track { background: transparent; }
-.dir-a-root *::-webkit-scrollbar-thumb { background: var(--iron-border-2); border-radius: 4px; border: 2px solid var(--panel); background-clip: padding-box; }
-.dir-a-root *::-webkit-scrollbar-thumb:hover { background: var(--gull-2); border: 2px solid var(--panel); background-clip: padding-box; }
-.dir-a-root *::-webkit-scrollbar-corner { background: transparent; }
+/* themed scrollbars — track-on-bg, thumb in iron-border-2 with hover lift to accent */
+.dir-a-root, .dir-a-root * { scrollbar-width: thin; scrollbar-color: var(--iron-border-2) transparent; }
+.dir-a-root::-webkit-scrollbar, .dir-a-root *::-webkit-scrollbar { width: 10px; height: 10px; }
+.dir-a-root::-webkit-scrollbar-track, .dir-a-root *::-webkit-scrollbar-track { background: transparent; }
+.dir-a-root::-webkit-scrollbar-thumb, .dir-a-root *::-webkit-scrollbar-thumb {
+  background: var(--iron-border-2); border-radius: 5px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+.dir-a-root::-webkit-scrollbar-thumb:hover, .dir-a-root *::-webkit-scrollbar-thumb:hover {
+  background: var(--accent); border: 2px solid transparent; background-clip: padding-box;
+}
+.dir-a-root::-webkit-scrollbar-corner, .dir-a-root *::-webkit-scrollbar-corner { background: transparent; }
 
 /* topbar */
 .a-topbar {
   display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px;
   padding: 12px 20px;
+  /* Always reserve native-control real estate via CSS vars set on .dir-a-root.
+     This survives responsive breakpoints because the var is read at every level. */
+  padding-right: max(20px, var(--tb-reserve-right));
+  padding-left: max(20px, var(--tb-reserve-left));
   background: var(--panel);
   border-bottom: 1px solid var(--iron-border);
   position: sticky; top: 0; z-index: 10;
   position: relative;
   overflow: hidden;
+  -webkit-app-region: drag;
 }
+.a-topbar button,
+.a-topbar a,
+.a-topbar select,
+.a-topbar input,
+.a-topbar [role="tab"],
+.a-topbar [role="button"],
+.a-topbar-actions { -webkit-app-region: no-drag; }
+/* macOS: traffic lights live on the LEFT. */
+body.platform-darwin .dir-a-root { --tb-reserve-right: 0px; --tb-reserve-left: 90px; }
+/* Plain browser (no Electron): no reservation. */
+body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root { --tb-reserve-right: 0px; --tb-reserve-left: 0px; }
 .a-topbar::after {
   content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
   background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
@@ -115,8 +149,11 @@ body:has(.dir-a-root.theme-forest) { background: #0C1410; }
   text-transform: uppercase; letter-spacing: 0.04em;
 }
 .a-pill-btn:hover { border-color: var(--iron-border-2); }
+.a-pill-btn.is-active { background: var(--bg); color: var(--bone); border-color: var(--iron-border-2); }
 
-.a-main-area { padding: 20px; overflow-y: auto; flex: 1; }
+.a-theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.a-main-area { padding: 20px; overflow-y: auto; flex: 1; min-width: 0; box-sizing: border-box; width: 100%; }
 
 /* atoms */
 .a-label {
@@ -146,10 +183,11 @@ body:has(.dir-a-root.theme-forest) { background: #0C1410; }
 .a-kpi-sub { font: 400 11px "JetBrains Mono"; color: var(--gull); margin-top: 6px; }
 .a-delta { font: 500 11px "JetBrains Mono"; margin-top: 4px; }
 
-.a-kpi-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; margin-bottom: 16px; border: 1px solid var(--iron-border); }
-.a-kpi-row .a-kpi { border: 0; border-right: 1px solid var(--iron-border); }
+.a-kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0; margin-bottom: 16px; border: 1px solid var(--iron-border); }
+.a-kpi-row .a-kpi { border: 0; border-right: 1px solid var(--iron-border); border-bottom: 1px solid var(--iron-border); min-width: 0; }
 .a-kpi-row .a-kpi:last-child { border-right: 0; }
-.a-kpi-row-tight { grid-template-columns: repeat(4, 1fr); margin-bottom: 0; }
+.a-kpi-row-tight { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom: 0; }
+.a-kpi .a-metric { overflow-wrap: anywhere; word-break: break-word; }
 .a-card-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-bottom: 12px; }
 
 .a-chart { width: 100%; height: 180px; display: block; }
@@ -219,7 +257,7 @@ body:has(.dir-a-root.theme-forest) { background: #0C1410; }
 .a-donut { width: 130px; height: 130px; display: block; }
 
 /* TODAY strip */
-.a-strip { display: grid; grid-template-columns: 220px 1fr 260px; gap: 0;
+.a-strip { display: grid; grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(220px, 260px); gap: 0;
   border: 1px solid var(--iron-border); background: var(--panel); margin-bottom: 12px; }
 .a-strip-left, .a-strip-right { padding: 14px 18px; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
 .a-strip-mid { padding: 14px 8px 8px; border-left: 1px solid var(--iron-border); border-right: 1px solid var(--iron-border); display: flex; flex-direction: column; }
@@ -290,7 +328,11 @@ body:has(.dir-a-root.theme-forest) { background: #0C1410; }
 .a-tips { display: flex; flex-direction: column; gap: 10px; }
 .a-tips-group { margin-top: 14px; }
 .a-tips-group:first-of-type { margin-top: 8px; }
-.a-tips-group-head { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 0 8px; border-bottom: 1px solid var(--iron-border); margin-bottom: 10px; }
+.a-tips-group-head { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 0 8px; border-bottom: 1px solid var(--iron-border); margin-bottom: 10px; width: 100%; background: none; border-top: 0; border-left: 0; border-right: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; gap: 10px; }
+.a-tips-group-head:hover { background: rgba(255,255,255,0.02); }
+.a-tips-group-head-left { display: inline-flex; align-items: baseline; gap: 8px; }
+.a-tips-group-caret { color: var(--gull); width: 12px; display: inline-block; font-size: 11px; flex: 0 0 auto; }
+.a-tips-group.is-collapsed .a-tips-group-head { margin-bottom: 0; }
 .a-tip-list { margin: 8px 0 0; padding-left: 18px; color: var(--gull); font: 12px JetBrains Mono, monospace; }
 .a-tip-list li { margin: 2px 0; }
 .a-tip-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -315,3 +357,109 @@ body:has(.dir-a-root.theme-forest) { background: #0C1410; }
 .a-glossary dt { font: 600 10px Inter; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gull); padding-top: 4px; }
 .a-glossary dd { margin: 0; color: var(--bone); }
 .a-glossary code { background: var(--panel-2); padding: 1px 6px; border-radius: 3px; font: 500 11px "JetBrains Mono"; color: var(--accent); }
+
+/* ============================================================
+   RESPONSIVE — widget-friendly down to ~280px
+   ============================================================ */
+
+/* Force the KPI row to always wrap fluidly, overriding any inline grid columns set in JSX */
+.dir-a-root .a-kpi-row { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important; }
+.dir-a-root .a-kpi-row-tight { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important; }
+
+/* Wide tablet (<=1024px): allow topbar wrap */
+@media (max-width: 1024px) {
+  .dir-a-root .a-topbar {
+    grid-template-columns: auto 1fr; row-gap: 8px;
+    padding-top: 10px; padding-bottom: 10px;
+    padding-left: max(14px, var(--tb-reserve-left));
+    padding-right: max(14px, var(--tb-reserve-right));
+  }
+  .dir-a-root .a-nav { grid-column: 1 / -1; order: 3; flex-wrap: wrap; }
+  .dir-a-root .a-topbar-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .dir-a-root .a-split { grid-template-columns: 260px 1fr; }
+}
+
+/* Mid (<=900px): stack the TODAY strip — three fixed sub-panes don't fit comfortably below this */
+@media (max-width: 900px) {
+  .dir-a-root .a-strip { grid-template-columns: 1fr; }
+  .dir-a-root .a-strip-mid { border-left: 0; border-right: 0; border-top: 1px solid var(--iron-border); border-bottom: 1px solid var(--iron-border); }
+}
+
+/* Tablet/portrait (<=768px): stack two-pane sections */
+@media (max-width: 768px) {
+  .dir-a-root .a-main-area { padding: 14px; }
+  .dir-a-root .a-card-row { grid-template-columns: 1fr; }
+  .dir-a-root .a-split { grid-template-columns: 1fr; }
+  .dir-a-root .a-side-list { max-height: 280px; }
+  .dir-a-root .a-side-table-wrap { max-height: none; }
+  .dir-a-root .a-model-block { grid-template-columns: 1fr; gap: 12px; justify-items: center; }
+  .dir-a-root .a-donut { width: 110px; height: 110px; }
+  .dir-a-root .a-glossary { grid-template-columns: 1fr; gap: 2px 0; }
+  .dir-a-root .a-glossary dt { padding-top: 8px; }
+  .dir-a-root .a-heatmap-axis-x,
+  .dir-a-root .a-heatmap-row { grid-template-columns: 28px repeat(24, minmax(10px, 1fr)); }
+  .dir-a-root .a-heatmap-cell { height: 16px; }
+  /* tables become horizontally scrollable rather than crushing columns */
+  .dir-a-root .a-card > .a-table,
+  .dir-a-root .a-card .a-scroll-5 > .a-table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+
+/* Phone / narrow widget (<=560px): native buttons get their own top row, then
+   brand, then nav, then actions — vertical stack avoids overlap. */
+@media (max-width: 560px) {
+  .dir-a-root .a-topbar {
+    display: flex; flex-direction: column; align-items: stretch;
+    grid-template-columns: none;
+    gap: 6px;
+    padding: 38px 12px 8px; /* top reserves the native-button row */
+  }
+  .dir-a-root .a-brand { order: 1; }
+  .dir-a-root .a-nav { order: 2; flex-wrap: wrap; }
+  .dir-a-root .a-topbar-actions { order: 3; justify-content: flex-start; }
+  .dir-a-root .a-brand-sub { display: none; }
+  .dir-a-root .a-navlink { padding: 5px 8px; font-size: 10px; }
+  .dir-a-root .a-navlink.is-active::after { left: 8px; right: 8px; bottom: -10px; }
+  .dir-a-root .a-range-tab { padding: 3px 7px; font-size: 10px; }
+  .dir-a-root .a-pill-btn { padding: 3px 7px; font-size: 10px; }
+  .dir-a-root .a-main-area { padding: 10px; }
+  .dir-a-root .a-card { padding: 12px; }
+  .dir-a-root .a-kpi { padding: 10px 12px; }
+  .dir-a-root .a-kpi-row { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)) !important; }
+  .dir-a-root .a-metric { font-size: 24px; }
+  .dir-a-root .a-strip-num { font-size: 22px; }
+  .dir-a-root .a-strip-left, .dir-a-root .a-strip-right { padding: 12px 14px; }
+  .dir-a-root .a-strip-mid { padding: 10px 8px; }
+  .dir-a-root .a-chart { height: 140px; }
+  .dir-a-root .a-search { min-width: 0; width: 100%; }
+  .dir-a-root .a-card-head { flex-wrap: wrap; gap: 6px; }
+  /* Heatmap is too wide to be useful — let it scroll */
+  .dir-a-root .a-heatmap { overflow-x: auto; }
+  .dir-a-root .a-heatmap-axis-x,
+  .dir-a-root .a-heatmap-row { grid-template-columns: 24px repeat(24, 12px); min-width: 312px; }
+}
+
+/* Widget mode (<=380px): one KPI per row, tighter chrome.
+   Nav reduces to overview + settings — other tabs aren't usable in this footprint. */
+@media (max-width: 380px) {
+  .dir-a-root .a-topbar {
+    gap: 4px;
+    padding: 36px 10px 6px;
+  }
+  .dir-a-root .a-navlink[data-tab="prompts"],
+  .dir-a-root .a-navlink[data-tab="sessions"],
+  .dir-a-root .a-navlink[data-tab="token sink"],
+  .dir-a-root .a-navlink[data-tab="tips"] { display: none; }
+  .dir-a-root .a-brand-text { font-size: 11px; }
+  .dir-a-root .a-nav { gap: 0; overflow-x: auto; flex-wrap: nowrap; }
+  .dir-a-root .a-navlink { white-space: nowrap; padding: 4px 6px; }
+  .dir-a-root .a-main-area { padding: 8px; }
+  .dir-a-root .a-card { padding: 10px; }
+  .dir-a-root .a-kpi-row { grid-template-columns: 1fr !important; }
+  .dir-a-root .a-kpi-row .a-kpi { border-right: 0 !important; }
+  .dir-a-root .a-kpi-row .a-kpi:last-child { border-bottom: 0; }
+  .dir-a-root .a-metric { font-size: 22px; }
+  .dir-a-root .a-strip-num { font-size: 20px; }
+  .dir-a-root .a-chart { height: 120px; }
+  .dir-a-root .a-spark { height: 24px; }
+  .dir-a-root .a-card-head h2 { font-size: 10px; }
+}

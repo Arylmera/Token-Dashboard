@@ -215,6 +215,29 @@ def daily_token_breakdown(db_path, since=None, until=None) -> list:
         return [dict(r) for r in c.execute(sql, args)]
 
 
+def hourly_breakdown(db_path, hours: int = 24) -> list:
+    """Per-hour token totals for the last `hours` hours, grouped by model.
+
+    Returns rows with (hour_ago, model, *_tokens). hour_ago=0 is the current
+    hour bucket; the caller maps these into a fixed-length array.
+    """
+    sql = """
+      SELECT CAST((strftime('%s','now') - strftime('%s', timestamp)) / 3600 AS INT) AS hour_ago,
+             COALESCE(model, 'unknown') AS model,
+             COALESCE(SUM(input_tokens),0)            AS input_tokens,
+             COALESCE(SUM(output_tokens),0)           AS output_tokens,
+             COALESCE(SUM(cache_read_tokens),0)       AS cache_read_tokens,
+             COALESCE(SUM(cache_create_5m_tokens),0)  AS cache_create_5m_tokens,
+             COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens
+        FROM messages
+       WHERE type='assistant' AND timestamp IS NOT NULL
+         AND timestamp >= datetime('now', ?)
+       GROUP BY hour_ago, model
+    """
+    with connect(db_path) as c:
+        return [dict(r) for r in c.execute(sql, (f"-{int(hours)} hours",))]
+
+
 def skill_breakdown(db_path, since=None, until=None) -> list:
     """Per-skill invocation counts, distinct sessions, last-used timestamp.
 
