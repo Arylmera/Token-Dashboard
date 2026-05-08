@@ -1,12 +1,11 @@
-// Bundle entry. esbuild compiles this + direction-a.jsx + React/ReactDOM into
-// `frontend/dist/app.js`. index.html loads only that one file.
 import React from "react";
 import { createRoot } from "react-dom/client";
-import "./direction-a.jsx";
+import { DirectionA } from "./src/app.jsx";
+import "./src/api-client.js";
 
 const Shell = () => (
   <div className="dir-a-root" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-    {React.createElement(window.DirectionA)}
+    <DirectionA />
   </div>
 );
 

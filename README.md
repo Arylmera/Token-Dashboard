@@ -238,7 +238,8 @@ Layout:
 - `token_dashboard/reloader.py` — dev auto-reload helper.
 - `token_dashboard/db/` — `schema.py` (DDL + migrations), `queries.py` (read paths), `projects.py` (project-slug helpers).
 - `token_dashboard/server/` — `routes.py` (HTTP routes), `sse.py` (server-sent events), `scan_loop.py` (background rescan), `http_utils.py` (shared helpers).
-- `token_dashboard/web/` — frontend: single React 18 app in `direction-a.jsx` + `a-styles.css`, loaded by `index.html` and transpiled live in the browser by Babel-standalone. `data.js` fetches API payloads. No build step; charts are inline SVG.
+- `frontend/` — React 18 app bundled with esbuild (`entry.jsx` → `dist/app.js`). Sources live in `frontend/src/`: `app.jsx` (shell + hash router), `routes/*.jsx` (one per tab), `components/*.jsx` (atoms + charts), `api-client.js` (fetches `/api/*` and shapes `MOCK_DATA`), `data-store.js`, `format.js`, `theme.js`, `clipboard.js`. Stylesheet is `styles.css`; charts are inline SVG.
+- `electron/` — Electron desktop shell. `main.js` orchestrates; `src/` splits backend lifecycle, window, tray + dock badge, and SSE refresh into focused modules.
 - `token-dashboard.spec` — PyInstaller spec for the prebuilt binaries.
 - `.github/workflows/release.yml` — CI builds Windows / macOS-arm64 / Linux-x64 executables on every push to `main` and publishes a GitHub Release on `v*` tags.
 
