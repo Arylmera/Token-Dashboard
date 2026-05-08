@@ -1,4 +1,4 @@
-"""Generate a placeholder 256x256 app icon (PNG) without third-party deps.
+"""Generate a placeholder 512x512 app icon (PNG) without third-party deps.
 
 Run from repo root:
     python electron/scripts/gen-icon.py
@@ -6,6 +6,8 @@ Run from repo root:
 Drops `electron/build-resources/icon.png`. Convert to .ico (Windows) and
 .icns (macOS) using your favorite tool — electron-builder needs both
 for production installers. See electron/README.md.
+
+512x512 is the minimum size electron-builder accepts for macOS.
 """
 from __future__ import annotations
 
@@ -15,17 +17,17 @@ import sys
 import zlib
 from pathlib import Path
 
-W = H = 256
+W = H = 512
 BG = (10, 10, 10, 255)
 FG = (255, 255, 255, 255)
 
 
 def is_T(x: int, y: int) -> bool:
     # Crossbar
-    if 60 <= y < 92 and 48 <= x < 208:
+    if 120 <= y < 184 and 96 <= x < 416:
         return True
     # Stem
-    if 112 <= x < 144 and 60 <= y < 200:
+    if 224 <= x < 288 and 120 <= y < 400:
         return True
     return False
 

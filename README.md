@@ -28,15 +28,20 @@ The package itself has zero runtime dependencies (Python stdlib only). No Node.j
 
 ### Option A — prebuilt binary (no Python needed)
 
-Grab the binary for your OS from the [latest release](https://github.com/Arylmera/Token-Dashboard/releases/latest):
+Two flavors ship per release:
 
-| OS | Asset pattern |
-|---|---|
-| Windows | `token-dashboard-<version>-windows-x64.exe` |
-| macOS (Apple Silicon) | `token-dashboard-<version>-macos-arm64` |
-| Linux x64 | `token-dashboard-<version>-linux-x64` |
+- **Standalone Python executable** — single PyInstaller bundle, run from the command line.
+- **Electron desktop installer** — full desktop app with tray icon and dock badge.
 
-Then run it:
+Grab one for your OS from the [latest release](https://github.com/Arylmera/Token-Dashboard/releases/latest):
+
+| OS | Standalone exe | Electron installer |
+|---|---|---|
+| Windows | `token-dashboard-<version>-windows-x64.exe` | `token-dashboard-<version>-windows-x64-*.exe` (NSIS) |
+| macOS (Apple Silicon) | `token-dashboard-<version>-macos-arm64` | `token-dashboard-<version>-macos-arm64-*.dmg` |
+| Linux x64 | `token-dashboard-<version>-linux-x64` | `token-dashboard-<version>-linux-x64-*.AppImage` |
+
+Run the standalone executable:
 
 ```bash
 # macOS / Linux
@@ -47,9 +52,11 @@ chmod +x token-dashboard-*
 token-dashboard-<version>-windows-x64.exe dashboard
 ```
 
-Each binary is a single self-contained PyInstaller bundle — no install, no Python on the host, no dependencies. Built in CI from the same source tree (see [`.github/workflows/release.yml`](.github/workflows/release.yml)).
+The Electron installer drops a regular desktop app — launch it from Start Menu / Launchpad / your app launcher.
 
-**Versioning.** Every push to `main` publishes a release tagged `v<major>.<minor>.<build>`, where `<major>.<minor>` is read from the [`VERSION`](VERSION) file at the repo root and `<build>` is the GitHub Actions run number (monotonic). To cut a major or minor bump, edit `VERSION` (e.g. `0.1` → `0.2` or `1.0`); the next merge to `main` produces a release on the new line. Pull requests and other branches build but do not publish.
+The standalone binary is a self-contained PyInstaller bundle (no Python on the host). The Electron installer wraps the same bundle inside a Chromium shell. Both are built in CI from the same source tree — see [`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+**Versioning.** [`VERSION`](VERSION) at the repo root holds `MAJOR.MINOR` (manual bump). Every merge to `main` reads it, computes the next free patch by counting existing `v<major>.<minor>.*` tags, builds, then tags + publishes a release as `v<major>.<minor>.<patch>`. Pushing a `v*` tag manually publishes that exact version. Pull requests and other branches build but do not publish.
 
 ### Option B — from source
 
@@ -226,7 +233,7 @@ Nothing leaves your machine. No telemetry. No remote calls for your data. The br
 
 ## Tech stack
 
-Python 3 (stdlib only) for the CLI, scanner, and HTTP server. SQLite for the local cache. Vanilla JS + ECharts for the UI, no build step. Dark theme, hash-based router, server-sent events for live refresh.
+Python 3 (stdlib only) for the CLI, scanner, and HTTP server. SQLite for the local cache. React 18 + inline-SVG charts for the UI, bundled with esbuild. Dark theme, hash-based router, server-sent events for live refresh. An optional Electron shell wraps the backend into a desktop app.
 
 Layout:
 
@@ -241,7 +248,7 @@ Layout:
 - `frontend/` — React 18 app bundled with esbuild (`entry.jsx` → `dist/app.js`). Sources live in `frontend/src/`: `app.jsx` (shell + hash router), `routes/*.jsx` (one per tab), `components/*.jsx` (atoms + charts), `api-client.js` (fetches `/api/*` and shapes `MOCK_DATA`), `data-store.js`, `format.js`, `theme.js`, `clipboard.js`. Stylesheet is `styles.css`; charts are inline SVG.
 - `electron/` — Electron desktop shell. `main.js` orchestrates; `src/` splits backend lifecycle, window, tray + dock badge, and SSE refresh into focused modules.
 - `token-dashboard.spec` — PyInstaller spec for the prebuilt binaries.
-- `.github/workflows/release.yml` — CI builds Windows / macOS-arm64 / Linux-x64 executables on every push to `main` and publishes a GitHub Release on `v*` tags.
+- `.github/workflows/release.yml` — CI builds Windows / macOS-arm64 / Linux-x64 standalone executables and Electron installers on every push to `main`, auto-tags the next `v<major>.<minor>.<patch>` from [`VERSION`](VERSION), and publishes a GitHub Release.
 
 Data flow: `token-dashboard` → `scanner.scan_dir` → SQLite at `~/.claude/token-dashboard.db`; `token_dashboard.server.run` exposes `/api/*` JSON routes and serves the static frontend.
 

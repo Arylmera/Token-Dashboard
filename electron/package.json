@@ -24,6 +24,7 @@
   "build": {
     "appId": "com.arylmera.token-dashboard",
     "productName": "Token Dashboard",
+    "publish": null,
     "directories": {
       "output": "dist",
       "buildResources": "build-resources"
