@@ -194,6 +194,54 @@ jobs:
           files: dist/*
           generate_release_notes: true
 
+  winget:
+    name: Submit to winget-pkgs
+    needs: [version, release]
+    if: needs.version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check WINGET_TOKEN
+        id: check
+        shell: bash
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if [ -z "${WINGET_TOKEN:-}" ]; then
+            echo "WINGET_TOKEN not set — skipping winget submission."
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Submit manifest
+        if: steps.check.outputs.has_token == 'true'
+        uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          identifier: Arylmera.TokenDashboard
+          version: ${{ needs.version.outputs.version }}
+          installers-regex: 'token-dashboard-.*-windows-x64-Setup\.exe$'
+          release-tag: ${{ needs.version.outputs.tag }}
+          token: ${{ secrets.WINGET_TOKEN }}
+          max-versions-to-keep: 5
+          fork-user: Arylmera
+
+  homebrew:
+    name: Update Homebrew tap
+    needs: [version, release]
+    if: needs.version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Update Homebrew tap
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
