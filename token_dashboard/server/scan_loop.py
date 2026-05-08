@@ -2,16 +2,20 @@
 from __future__ import annotations
 
 import http.server
+import json
 import os
+import socket
+import sys
 import threading
 import time
 
 from ..scanner import scan_dir
-from .routes import build_handler
+from .routes import build_handler, set_started_at
 from .sse import EVENTS, active_clients, ever_connected, last_disconnect_ts
 
 DEFAULT_SCAN_INTERVAL = 5.0
 AUTO_EXIT_IDLE_SECONDS = 8.0
+READY_TOKEN = "TOKEN_DASHBOARD_READY"
 
 
 def _resolve_scan_interval() -> float:
@@ -31,10 +35,33 @@ def _scan_loop(db_path: str, projects_dir: str, interval: float = DEFAULT_SCAN_I
         try:
             n = scan_dir(projects_dir, db_path)
             if n["messages"] > 0:
-                EVENTS.put({"type": "scan", "n": n, "ts": time.time()})
+                EVENTS.publish({"type": "scan", "n": n, "ts": time.time()})
         except Exception as e:
-            EVENTS.put({"type": "error", "message": str(e)})
+            EVENTS.publish({"type": "error", "message": str(e)})
         time.sleep(interval)
+
+
+def _emit_ready(host: str, port: int, db_path: str, projects_dir: str) -> None:
+    """Print a structured ready line so a parent process (e.g. Electron) can
+    detect bound state without polling. Format:
+
+        TOKEN_DASHBOARD_READY {"url": "...", "pid": ..., "host": "...", "port": ...}
+    """
+    payload = {
+        "url": f"http://{host}:{port}/",
+        "host": host,
+        "port": port,
+        "pid": os.getpid(),
+        "db": db_path,
+        "projects_dir": projects_dir,
+        "ts": time.time(),
+    }
+    try:
+        line = f"{READY_TOKEN} {json.dumps(payload)}"
+        print(line, flush=True)
+    except Exception:
+        # Best-effort: never let logging fail server startup.
+        pass
 
 
 def _auto_exit_watcher(httpd, idle_seconds: float):
@@ -59,9 +86,29 @@ def run(host: str, port: int, db_path: str, projects_dir: str, auto_exit: bool =
         target=_scan_loop, args=(db_path, projects_dir, interval), daemon=True
     ).start()
     H = build_handler(db_path, projects_dir)
-    httpd = http.server.ThreadingHTTPServer((host, port), H)
+    set_started_at(time.time())
+    try:
+        httpd = http.server.ThreadingHTTPServer((host, port), H)
+    except OSError as e:
+        # 10048 (Windows) / 48 (macOS) / 98 (Linux) all surface as EADDRINUSE.
+        in_use = getattr(e, "errno", None) in (48, 98) or "address already in use" in str(e).lower() or "10048" in str(e)
+        if in_use:
+            sys.stderr.write(
+                f"Token Dashboard: port {port} on {host} is already in use. "
+                f"Set PORT=<free port> and retry.\n"
+            )
+            sys.exit(2)
+        raise
     if auto_exit:
         threading.Thread(
             target=_auto_exit_watcher, args=(httpd, AUTO_EXIT_IDLE_SECONDS), daemon=True
         ).start()
+    _emit_ready(host, port, db_path, projects_dir)
     httpd.serve_forever()
+
+
+def free_port(host: str = "127.0.0.1") -> int:
+    """Probe a free TCP port. Useful for tests / Electron handshake."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((host, 0))
+        return s.getsockname()[1]

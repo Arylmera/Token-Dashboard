@@ -9,9 +9,18 @@ from pathlib import Path
 
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
     _PKG_ROOT = Path(sys._MEIPASS) / "token_dashboard"
+    _REPO_ROOT = Path(sys._MEIPASS)
 else:
     _PKG_ROOT = Path(__file__).resolve().parent.parent
-WEB_ROOT = _PKG_ROOT / "web"
+    _REPO_ROOT = _PKG_ROOT.parent
+
+# Resolve frontend asset root in priority order:
+#   1. Repo / frozen-bundle layout: `<root>/frontend/`
+#   2. Wheel-installed layout (hatch force-include): `<pkg>/_frontend/`
+# The first candidate that exists wins; falls back to the first if neither
+# exists yet (so import time never fails).
+_WEB_CANDIDATES = (_REPO_ROOT / "frontend", _PKG_ROOT / "_frontend")
+WEB_ROOT = next((p for p in _WEB_CANDIDATES if p.exists()), _WEB_CANDIDATES[0])
 PACKAGED_PRICING_JSON = _PKG_ROOT / "pricing.json"
 
 
@@ -21,8 +30,19 @@ def pricing_path() -> Path:
         return Path(override)
     return PACKAGED_PRICING_JSON
 
-MAX_POST_BYTES = 1_000_000  # 1 MB — we only accept tiny JSON bodies (plan, tip key)
-MAX_LIMIT = 1000
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        v = int(raw)
+    except ValueError:
+        return default
+    return v if v > 0 else default
+
+
+MAX_POST_BYTES = _env_int("TOKEN_DASHBOARD_MAX_POST_BYTES", 1_000_000)  # JSON-only POSTs
+MAX_LIMIT = _env_int("TOKEN_DASHBOARD_MAX_LIMIT", 1000)
 
 
 def send_json(handler, obj, status: int = 200) -> None:
@@ -59,5 +79,6 @@ def serve_static(handler, rel: str) -> None:
     handler.send_response(200)
     handler.send_header("Content-Type", ctype or "application/octet-stream")
     handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Cache-Control", "no-store")
     handler.end_headers()
     handler.wfile.write(body)
