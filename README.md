@@ -54,21 +54,15 @@ token-dashboard-<version>-windows-x64.exe dashboard
 
 The Electron installer drops a regular desktop app — launch it from Start Menu / Launchpad / your app launcher.
 
-> **macOS:** the DMG isn't code-signed (no Apple Developer ID), so on first launch macOS Gatekeeper will say *"Token Dashboard is damaged and can't be opened. You should move it to the Trash."* It isn't damaged — it's the standard quarantine warning for unsigned apps. On macOS 14+ the quarantine also triggers a stricter dyld check that fails with a *"different Team IDs"* crash, so neither right-click → Open nor System Settings → "Open Anyway" works. Pick one of the workarounds below.
->
-> **Workaround A — clear the quarantine flag** (works for both the DMG and the Homebrew cask; run after install):
->
-> ```bash
-> xattr -dr com.apple.quarantine "/Applications/Token Dashboard.app"
-> ```
->
-> **Workaround B — ad-hoc re-sign the bundle** (use if A still fails on some macOS 26 builds):
+> **macOS:** the DMG isn't code-signed (no Apple Developer ID), so on first launch the app crashes immediately with a `Library not loaded` / *"different Team IDs"* error (the outer bundle is unsigned, but the embedded `Electron Framework` carries Electron's Team ID, and macOS refuses to load the mismatch). Neither right-click → Open nor System Settings → "Open Anyway" fixes this. Run this once after installing:
 >
 > ```bash
 > codesign --force --deep --sign - "/Applications/Token Dashboard.app"
 > ```
 >
-> The app opens normally after either of these. (Homebrew used to support `--no-quarantine` to skip step A automatically, but that switch was disabled in Homebrew 5.x and has no replacement — you have to run the `xattr` command yourself.)
+> This re-signs the whole bundle (outer binary + every embedded framework) with a single ad-hoc identity so the Team IDs match. The app opens normally afterward, and the command only needs to be run once per install.
+>
+> On older macOS (≤ 13) the issue was tied to the quarantine flag and `xattr -dr com.apple.quarantine "/Applications/Token Dashboard.app"` was sufficient. On macOS 14+ — and confirmed required on macOS 26 — the Team-ID check fires regardless of quarantine, so you need the `codesign` command above.
 
 > **Windows:** SmartScreen may warn about an unrecognized publisher. Click *More info* → *Run anyway*.
 
