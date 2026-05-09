@@ -71,6 +71,47 @@ class ScanManifestTests(unittest.TestCase):
         self.assertIsNone(out["min_ts"])
         self.assertIsNone(out["max_ts"])
 
+    def test_manifest_skips_records_with_missing_model(self) -> None:
+        # User records without a model field should still contribute to
+        # sessions/projects/days but must not pollute the model set.
+        self._write("proj-a", "sess-1", [
+            {"uuid": "u1", "type": "user", "sessionId": "sess-1",
+             "timestamp": "2026-05-09T08:00:00.000Z",
+             "message": {"content": "hi",
+                         "usage": {"input_tokens": 1, "output_tokens": 0}}},
+            {"uuid": "u2", "type": "assistant", "sessionId": "sess-1",
+             "timestamp": "2026-05-09T08:00:01.000Z",
+             "message": {"id": "m2", "model": "claude-opus-4-7",
+                         "usage": {"output_tokens": 2}}},
+        ])
+        out = scan_dir(self.projects, self.db)
+        self.assertEqual(out["messages"], 2)
+        self.assertEqual(out["models"], ["claude-opus-4-7"])
+        self.assertEqual(out["sessions"], ["sess-1"])
+        self.assertEqual(out["days"], ["2026-05-09"])
+
+    def test_manifest_empty_on_second_scan_with_no_new_data(self) -> None:
+        self._write("proj-a", "sess-1", [
+            {"uuid": "u1", "type": "user", "sessionId": "sess-1",
+             "timestamp": "2026-05-09T09:00:00.000Z",
+             "message": {"content": "first",
+                         "model": "claude-opus-4-7",
+                         "usage": {"input_tokens": 1, "output_tokens": 0}}},
+        ])
+
+        first = scan_dir(self.projects, self.db)
+        self.assertEqual(first["messages"], 1)
+
+        # No new bytes appended; second scan should be a no-op manifest.
+        second = scan_dir(self.projects, self.db)
+        self.assertEqual(second["messages"], 0)
+        self.assertEqual(second["sessions"], [])
+        self.assertEqual(second["projects"], [])
+        self.assertEqual(second["days"], [])
+        self.assertEqual(second["models"], [])
+        self.assertIsNone(second["min_ts"])
+        self.assertIsNone(second["max_ts"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -273,10 +273,10 @@ def _finalize(totals: dict) -> dict:
         "messages": totals["messages"],
         "tools":    totals["tools"],
         "files":    totals["files"],
-        "sessions": sorted(totals["sessions"]) if isinstance(totals["sessions"], set) else totals["sessions"],
-        "projects": sorted(totals["projects"]) if isinstance(totals["projects"], set) else totals["projects"],
-        "days":     sorted(totals["days"])     if isinstance(totals["days"], set)     else totals["days"],
-        "models":   sorted(totals["models"])   if isinstance(totals["models"], set)   else totals["models"],
+        "sessions": sorted(totals["sessions"]),
+        "projects": sorted(totals["projects"]),
+        "days":     sorted(totals["days"]),
+        "models":   sorted(totals["models"]),
         "min_ts":   totals["min_ts"],
         "max_ts":   totals["max_ts"],
     }
@@ -318,6 +318,7 @@ def scan_dir(projects_root: Union[str, Path], db_path: Union[str, Path]) -> dict
             totals["messages"] += sub["messages"]
             totals["tools"]    += sub["tools"]
             totals["files"]    += 1
+            # Only mark this project as changed if the file produced new rows.
             if sub["sessions"]:
                 totals["sessions"].update(sub["sessions"])
                 totals["projects"].add(slug)
