@@ -267,6 +267,113 @@ class ServerTests(unittest.TestCase):
             self.assertIn("billable_tokens", body[k])
             self.assertIn("turns", body[k])
 
+    def _post_status(self, path, body=None):
+        """Like _post but returns (status_code, body_dict). Tolerates 4xx."""
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            data=json.dumps(body or {}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_pricing_get_default_no_overrides(self):
+        body = json.loads(self._get("/api/pricing"))
+        self.assertIn("defaults", body)
+        self.assertEqual(body["overrides"], {})
+        self.assertEqual(
+            body["effective"]["claude-opus-4-7"]["input"],
+            body["defaults"]["claude-opus-4-7"]["input"],
+        )
+
+    def test_pricing_set_partial_override_round_trip(self):
+        status, _ = self._post_status("/api/pricing/claude-opus-4-7", {"input": 9.99})
+        self.assertEqual(status, 200)
+        body = json.loads(self._get("/api/pricing"))
+        self.assertEqual(body["overrides"]["claude-opus-4-7"]["input"], 9.99)
+        self.assertEqual(body["effective"]["claude-opus-4-7"]["input"], 9.99)
+        self.assertEqual(body["defaults"]["claude-opus-4-7"]["input"], 5.00)
+        self.assertEqual(
+            body["effective"]["claude-opus-4-7"]["output"],
+            body["defaults"]["claude-opus-4-7"]["output"],
+        )
+
+    def test_pricing_overview_cost_uses_override(self):
+        with sqlite3.connect(self.db) as c:
+            c.execute("INSERT INTO messages (uuid, parent_uuid, session_id, project_slug, type, timestamp, model, input_tokens, output_tokens, cache_read_tokens, cache_create_5m_tokens, cache_create_1h_tokens) VALUES ('big','u','s','p','assistant','2026-04-19T00:00:02Z','claude-haiku-4-5',0,1000000,0,0,0)")
+            c.commit()
+        before = json.loads(self._get("/api/overview"))["cost_usd"]
+        self._post_status("/api/pricing/claude-haiku-4-5", {"output": 50.00})
+        after = json.loads(self._get("/api/overview"))["cost_usd"]
+        self.assertGreater(after, before + 40.0)
+
+    def test_pricing_unknown_model_rejected(self):
+        status, _ = self._post_status("/api/pricing/not-a-real-model", {"input": 1})
+        self.assertEqual(status, 404)
+
+    def test_pricing_negative_value_rejected(self):
+        status, _ = self._post_status("/api/pricing/claude-opus-4-7", {"input": -1})
+        self.assertEqual(status, 400)
+
+    def test_pricing_clear_row(self):
+        self._post_status("/api/pricing/claude-opus-4-7", {"input": 9.99})
+        self._post_status("/api/pricing/claude-opus-4-7/clear")
+        body = json.loads(self._get("/api/pricing"))
+        self.assertEqual(body["overrides"], {})
+
+    def test_pricing_clear_all(self):
+        self._post_status("/api/pricing/claude-opus-4-7", {"input": 9.99})
+        self._post_status("/api/pricing/claude-sonnet-4-6", {"output": 99})
+        self._post_status("/api/pricing/clear-all")
+        body = json.loads(self._get("/api/pricing"))
+        self.assertEqual(body["overrides"], {})
+
+
+class PreferencesResetUnitTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db = os.path.join(self.tmp, "t.db")
+        init_db(self.db)
+
+    def test_default_is_none(self):
+        from token_dashboard.preferences import LIMIT_RESET_KEYS, get_limit_reset_at
+        for k in LIMIT_RESET_KEYS:
+            self.assertIsNone(get_limit_reset_at(self.db, k))
+
+    def test_set_and_get_roundtrip(self):
+        from token_dashboard.preferences import LIMIT_RESET_KEYS, get_limit_reset_at, set_limit_reset_at
+        for k in LIMIT_RESET_KEYS:
+            v = set_limit_reset_at(self.db, k, "2026-05-09T14:32:00Z")
+            self.assertEqual(v, "2026-05-09T14:32:00Z")
+            self.assertEqual(get_limit_reset_at(self.db, k), "2026-05-09T14:32:00Z")
+
+    def test_naive_iso_assumes_utc(self):
+        from token_dashboard.preferences import set_limit_reset_at
+        v = set_limit_reset_at(self.db, "limits_five_hour_reset_at", "2026-05-09T14:32:00")
+        self.assertEqual(v, "2026-05-09T14:32:00Z")
+
+    def test_clear_with_none_or_empty(self):
+        from token_dashboard.preferences import get_limit_reset_at, set_limit_reset_at
+        set_limit_reset_at(self.db, "limits_five_hour_reset_at", "2026-05-09T14:32:00Z")
+        self.assertIsNone(set_limit_reset_at(self.db, "limits_five_hour_reset_at", None))
+        self.assertIsNone(get_limit_reset_at(self.db, "limits_five_hour_reset_at"))
+        set_limit_reset_at(self.db, "limits_five_hour_reset_at", "2026-05-09T14:32:00Z")
+        self.assertIsNone(set_limit_reset_at(self.db, "limits_five_hour_reset_at", ""))
+        self.assertIsNone(get_limit_reset_at(self.db, "limits_five_hour_reset_at"))
+
+    def test_invalid_iso_rejected(self):
+        from token_dashboard.preferences import get_limit_reset_at, set_limit_reset_at
+        self.assertIsNone(set_limit_reset_at(self.db, "limits_five_hour_reset_at", "not-a-date"))
+        self.assertIsNone(get_limit_reset_at(self.db, "limits_five_hour_reset_at"))
+
+    def test_invalid_key_rejected(self):
+        from token_dashboard.preferences import set_limit_reset_at
+        self.assertIsNone(set_limit_reset_at(self.db, "bogus_key", "2026-05-09T14:32:00Z"))
+
 
 if __name__ == "__main__":
     unittest.main()
