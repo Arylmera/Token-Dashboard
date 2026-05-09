@@ -3,6 +3,78 @@ import { D } from "../data-store.js";
 import { fmtCost, fmtTokens } from "../format.js";
 import { HBar, KPI, Label, ModelBadge } from "../components/atoms.jsx";
 
+const BANDS = [
+  { from: 0,  to: 6,  label: "00:00–06:00" },
+  { from: 6,  to: 12, label: "06:00–12:00" },
+  { from: 12, to: 18, label: "12:00–18:00" },
+  { from: 18, to: 24, label: "18:00–24:00" },
+];
+const WEEKEND = new Set(["Sat", "Sun"]);
+
+const computeActivityStats = (rows) => {
+  if (!rows || !rows.length) return null;
+  const total = rows.reduce((a, r) => a + r.cells.reduce((s, v) => s + v, 0), 0);
+  if (total === 0) return null;
+  let bestDayBand = { day: rows[0].day, band: BANDS[0], sum: 0 };
+  let bestHour    = { day: rows[0].day, h: 0, v: 0 };
+  let quietHour   = { day: rows[0].day, h: 0, v: Infinity };
+  let weekday = 0, weekend = 0;
+  rows.forEach((row) => {
+    const isWk = WEEKEND.has(row.day);
+    BANDS.forEach((b) => {
+      let s = 0;
+      for (let h = b.from; h < b.to; h++) s += row.cells[h] || 0;
+      if (s > bestDayBand.sum) bestDayBand = { day: row.day, band: b, sum: s };
+    });
+    row.cells.forEach((v, h) => {
+      if (v > bestHour.v)  bestHour  = { day: row.day, h, v };
+      if (v > 0 && v < quietHour.v) quietHour = { day: row.day, h, v };
+      if (isWk) weekend += v; else weekday += v;
+    });
+  });
+  return {
+    total,
+    bestDayBand,
+    bestHour,
+    quietHour: quietHour.v === Infinity ? null : quietHour,
+    weekday, weekend,
+    weekdayShare: weekday / total,
+    weekendShare: weekend / total,
+    bestShare: bestDayBand.sum / total,
+  };
+};
+
+const fmtH = (h) => `${String(h).padStart(2, "0")}:00`;
+
+const ActivitySidebar = ({ rows }) => {
+  const s = computeActivityStats(rows);
+  if (!s) return null;
+  const peakPct = (s.bestShare * 100).toFixed(0);
+  const wkPct   = (s.weekdayShare * 100).toFixed(0);
+  const wePct   = (s.weekendShare * 100).toFixed(0);
+  return (
+    <aside className="a-actmap-side">
+      <div className="a-actmap-side-kicker">your typical day</div>
+      <div className="a-actmap-side-headline">
+        <span className="a-actmap-side-headline-num">{peakPct}<span className="a-actmap-side-headline-unit">%</span></span>
+        <span className="a-actmap-side-headline-tail">of weekly turns happen on <strong>{s.bestDayBand.day} {s.bestDayBand.band.label}</strong></span>
+      </div>
+      <dl className="a-actmap-side-list">
+        <dt>weekday / weekend</dt>
+        <dd>{wkPct}% / {wePct}%</dd>
+        <dt>peak hour</dt>
+        <dd>{s.bestHour.day} {fmtH(s.bestHour.h)} · {s.bestHour.v} turns</dd>
+        {s.quietHour && (<>
+          <dt>quietest active hour</dt>
+          <dd>{s.quietHour.day} {fmtH(s.quietHour.h)} · {s.quietHour.v} turn{s.quietHour.v === 1 ? "" : "s"}</dd>
+        </>)}
+        <dt>total</dt>
+        <dd>{s.total} turns</dd>
+      </dl>
+    </aside>
+  );
+};
+
 const Heatmap = () => {
   const rows = D.heatmap || [];
   const max = Math.max(1, ...rows.flatMap((r) => r.cells));
@@ -135,13 +207,16 @@ const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSele
             <option key={t.tag} value={t.tag}>{t.tag} ({t.sessions})</option>
           ))}
         </select>
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="search sessions…"
-          className="a-search"
-        />
+        <span className="a-search-prompt">
+          <span className="a-search-prompt-glyph" aria-hidden="true">›</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="filter…"
+            className="a-search"
+          />
+        </span>
         <a className="a-pill-btn" href={exportHref} download onClick={onExport}>export CSV</a>
         <span>{filtered.length}/{sessions.length}</span>
       </span>
@@ -207,9 +282,22 @@ const TagEditor = ({ tags, onAdd, onRemove }) => {
   );
 };
 
+const TURN_LIMITS = [
+  { id: 10,   label: "10" },
+  { id: 20,   label: "20" },
+  { id: 50,   label: "50" },
+  { id: 100,  label: "100" },
+  { id: "all", label: "all" },
+];
+
 const SessionDetail = ({ selected, turns, onMutateTags }) => {
   const maxTurnTokens = Math.max(1, ...turns.map((x) => x.tokens));
   const avgPerTurn = fmtTokens(Math.floor((selected.tokens || 0) / Math.max(1, selected.turns)));
+  const [limit, setLimit] = useState(10);
+  const totalTurns = turns.length;
+  const sliceCount = limit === "all" ? totalTurns : Math.min(limit, totalTurns);
+  const visible = limit === "all" ? turns : turns.slice(0, limit);
+  const isScrollable = sliceCount > 10;
   return (
     <section className="a-card">
       <div className="a-card-head">
@@ -231,14 +319,33 @@ const SessionDetail = ({ selected, turns, onMutateTags }) => {
         <KPI label="avg / turn" value={avgPerTurn} />
       </div>
       <div className="a-card-divider" />
-      <Label>turn-by-turn</Label>
-      <div className="a-table-scroll" style={{ marginTop: 8 }}>
-        <table className="a-table a-turn-table">
+      <div className="a-turn-toolbar">
+        <Label>turn-by-turn</Label>
+        <span className="a-turn-toolbar-meta">
+          showing {sliceCount} of {totalTurns}
+        </span>
+        <div className="a-density" role="radiogroup" aria-label="turn limit">
+          {TURN_LIMITS.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              role="radio"
+              aria-checked={limit === opt.id}
+              className={`a-density-btn ${limit === opt.id ? "is-on" : ""}`}
+              onClick={() => setLimit(opt.id)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className={`a-table-scroll a-turn-scroll ${isScrollable ? "is-scrollable" : ""}`} style={{ marginTop: 8 }}>
+        <table className="a-table a-turn-table a-sticky-head">
           <thead>
             <tr><th className="num">#</th><th style={{ paddingLeft: 16 }}>prompt</th><th className="num">tokens</th><th className="num">tools</th><th className="num">cost</th><th style={{ paddingLeft: 16, width: 180 }}>distribution</th></tr>
           </thead>
           <tbody>
-            {turns.map((t) => (
+            {visible.map((t) => (
               <tr key={t.n}>
                 <td className="num mono">{t.n}</td>
                 <td style={{ paddingLeft: 16, maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t.prompt || ""}>
@@ -315,7 +422,10 @@ export const Sessions = () => {
           <h2>Activity heatmap</h2>
           <span className="a-card-meta">turns per hour · last 7 days · UTC</span>
         </div>
-        <Heatmap />
+        <div className="a-actmap-grid">
+          <Heatmap />
+          <ActivitySidebar rows={D.heatmap || []} />
+        </div>
       </section>
       <SessionsList
         sessions={sessions}

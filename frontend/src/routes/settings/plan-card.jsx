@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 
 const PLANS = [
-  { id: "api",   label: "API (pay-as-you-go)", note: "exact cost as the Anthropic API would bill" },
-  { id: "pro",   label: "Pro · $20/mo",        note: "5x usage cap, Sonnet only" },
-  { id: "max",   label: "Max · $100/mo",       note: "20x usage cap, Sonnet + Opus" },
-  { id: "max-20x", label: "Max-20x · $200/mo", note: "100x usage cap, all models" },
+  { id: "api",     name: "api",     price: "API",           priceUnit: "",     subtitle: "pay-as-you-go", note: "exact cost as the Anthropic API would bill" },
+  { id: "pro",     name: "pro",     price: "$20",           priceUnit: "/mo",  subtitle: "5× cap",    note: "5x usage cap, Sonnet only" },
+  { id: "max",     name: "max",     price: "$100",          priceUnit: "/mo",  subtitle: "20× cap",   note: "20x usage cap, Sonnet + Opus" },
+  { id: "max-20x", name: "max-20x", price: "$200",          priceUnit: "/mo",  subtitle: "100× cap",  note: "100x usage cap, all models" },
 ];
+
+const padIdx = (i) => String(i + 1).padStart(2, "0");
 
 export const PlanCard = ({ plan, saving, onPick }) => (
   <section className="a-card">
@@ -14,15 +16,24 @@ export const PlanCard = ({ plan, saving, onPick }) => (
       <span className="a-card-meta">{saving ? "saving…" : "drives all cost figures"}</span>
     </div>
     <div className="a-plans">
-      {PLANS.map((p) => (
-        <label key={p.id} className={`a-plan ${plan === p.id ? "is-active" : ""}`}>
-          <input type="radio" name="plan" checked={plan === p.id} onChange={() => onPick(p.id)} />
-          <div>
-            <div className="a-plan-title">{p.label}</div>
-            <div className="a-plan-note">{p.note}</div>
-          </div>
-        </label>
-      ))}
+      {PLANS.map((p, i) => {
+        const active = plan === p.id;
+        return (
+          <label key={p.id} className={`a-plan ${active ? "is-active" : ""}`}>
+            <input type="radio" name="plan" checked={active} onChange={() => onPick(p.id)} />
+            <div className="a-plan-inner">
+              <div className="a-plan-kicker">
+                <span>{padIdx(i)} · {p.name.toUpperCase()}</span>
+                {active ? <span className="a-plan-kicker-badge">CURRENT</span> : <span className="a-plan-kicker-meta">{p.subtitle}</span>}
+              </div>
+              <div className="a-plan-price">
+                {p.price}{p.priceUnit && <span className="a-plan-price-unit">{p.priceUnit}</span>}
+              </div>
+              <div className="a-plan-note">{p.note}</div>
+            </div>
+          </label>
+        );
+      })}
     </div>
   </section>
 );

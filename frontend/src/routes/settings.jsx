@@ -9,7 +9,7 @@ import { BudgetCard } from "./settings/budget-card.jsx";
 import { BackupCard } from "./settings/backup-card.jsx";
 import { SourcesCard } from "./settings/sources-card.jsx";
 import { GlassCard } from "./settings/glass-card.jsx";
-import { DeveloperCard, AboutCard, Glossary } from "./settings/misc-cards.jsx";
+import { DensityCard, DeveloperCard, AboutCard, Glossary } from "./settings/misc-cards.jsx";
 
 export const Settings = ({ themeIdx, onPickTheme }) => {
   const [plan, setPlan] = useState((D.plan && D.plan.plan) || "api");
@@ -59,6 +59,7 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
     <div className="a-route a-settings">
       <SettingsGroup title="Appearance" description="theme and window styling">
         <ThemeCard themeIdx={themeIdx} onPickTheme={onPickTheme} />
+        <DensityCard />
         <GlassCard />
       </SettingsGroup>
 

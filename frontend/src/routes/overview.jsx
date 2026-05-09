@@ -2,7 +2,7 @@ import React from "react";
 import { D } from "../data-store.js";
 import { fmtCost, fmtCostWhole, fmtNum, fmtPct, fmtTokens } from "../format.js";
 import { HBar, KPI, ModelBadge } from "../components/atoms.jsx";
-import { AreaChart, Donut, StripSpark } from "../components/charts.jsx";
+import { AreaChart, Donut, DualAreaChart, StripSpark } from "../components/charts.jsx";
 
 const rangeDaysFromKey = (key) => {
   const k = String(key || "").toLowerCase();
@@ -12,15 +12,36 @@ const rangeDaysFromKey = (key) => {
   return 30;
 };
 
+const sparkOf = (daily, days) => {
+  const arr = (daily || []).map((d) => Number(d.cost) || 0);
+  if (!arr.length) return null;
+  const slice = Number.isFinite(days) ? arr.slice(-days) : arr;
+  if (slice.length < 2) return null;
+  return slice;
+};
+
+const KpiSpark = ({ daily, days }) => {
+  const data = sparkOf(daily, days);
+  if (!data) return null;
+  return (
+    <div className="a-kpi-spark">
+      <StripSpark data={data} height={22} accent="var(--accent)" />
+    </div>
+  );
+};
+
 const KpiRow = ({ totals }) => {
   const t = totals;
+  const daily = D.daily || [];
+  const rangeDays = rangeDaysFromKey(t.rangeKey);
   const windows = [
     {
       key: "range",
-      days: rangeDaysFromKey(t.rangeKey),
+      days: rangeDays,
       label: t.rangeLabel || "range",
       value: fmtCostWhole(t.range || 0),
       sub: `${fmtTokens(t.rangeTokens)} tok · ${t.rangeSessions || 0} sessions`,
+      sparkDays: rangeDays,
     },
     {
       key: "week",
@@ -28,6 +49,7 @@ const KpiRow = ({ totals }) => {
       label: "7 days",
       value: fmtCostWhole(t.week),
       sub: `${fmtTokens(t.weekTokens)} tok · avg ${fmtCost(t.week / 7)}/day`,
+      sparkDays: 7,
     },
     {
       key: "all",
@@ -35,11 +57,20 @@ const KpiRow = ({ totals }) => {
       label: "all-time",
       value: fmtCostWhole(t.cost),
       sub: `${fmtTokens(t.allTokens)} tok · ${fmtNum(t.turns)} turns`,
+      sparkDays: Infinity,
     },
   ].sort((a, b) => a.days - b.days);
   return (
     <section className="a-kpi-row">
-      {windows.map((w) => <KPI key={w.key} label={w.label} value={w.value} sub={w.sub} />)}
+      {windows.map((w) => (
+        <KPI
+          key={w.key}
+          label={w.label}
+          value={w.value}
+          sub={w.sub}
+          spark={<KpiSpark daily={daily} days={w.sparkDays} />}
+        />
+      ))}
       <KPI label="input" value={fmtTokens(t.inputTokens)} sub="tokens" />
       <KPI label="output" value={fmtTokens(t.outputTokens)} sub="tokens" />
       <KPI label="cache hit" value={fmtPct(t.cacheHitRate)} sub="last 7 days" />
@@ -170,23 +201,39 @@ const PhaseSplitCard = ({ phase }) => {
     share: (phase[k]?.billable_tokens || 0) / total,
   });
   const segs = ["plan", "execute", "other"].map(seg);
+  const planExec = (segs[0].tokens && segs[1].tokens)
+    ? (segs[1].tokens / segs[0].tokens).toFixed(2)
+    : null;
   return (
     <div className="a-card">
       <div className="a-card-head">
         <h2>Plan vs execute</h2>
-        <span className="a-card-meta">billable tokens by phase</span>
+        <span className="a-card-meta">
+          billable tokens by phase{planExec ? ` · 1 : ${planExec} ratio` : ""}
+        </span>
       </div>
-      <div className="a-model-block">
-        <Donut size={130} thickness={14} segments={segs.map((s) => ({
-          value: s.share, color: PHASE_COLORS[s.key],
-        }))} />
-        <div className="a-model-stack">
+      <div className="a-split-wrap">
+        <div className="a-split-bar" role="img" aria-label="phase split">
           {segs.map((s) => (
-            <div key={s.key} className="a-model-legend">
-              <span className="a-model-swatch" style={{ background: PHASE_COLORS[s.key] }} />
-              <span className="a-model-name">{s.label}</span>
-              <span className="a-model-pct">{fmtPct(s.share)}</span>
-              <span className="a-model-cost">{fmtCost(s.cost)}</span>
+            <div
+              key={s.key}
+              className={`a-split-seg a-split-seg-${s.key}`}
+              style={{ flex: s.share || 0.0001, background: PHASE_COLORS[s.key] }}
+              title={`${s.label} · ${fmtPct(s.share)}`}
+            >
+              {s.share >= 0.06 ? fmtPct(s.share) : ""}
+            </div>
+          ))}
+        </div>
+        <div className="a-split-meta">
+          {segs.map((s) => (
+            <div key={s.key} className="a-split-meta-cell">
+              <div className={`a-split-meta-k a-split-meta-k-${s.key}`}>
+                <span className="a-split-meta-sw" style={{ background: PHASE_COLORS[s.key] }} />
+                {s.label}
+              </div>
+              <div className="a-split-meta-v">{fmtTokens(s.tokens)}</div>
+              <div className="a-split-meta-s">{fmtCost(s.cost)} · {fmtNum(s.turns)} turns</div>
             </div>
           ))}
         </div>
@@ -255,20 +302,16 @@ const TopStrip = ({ totals, burn }) => (
 
 const DailyCharts = ({ totals }) => (
   <section className="a-card-row">
-    <div className="a-card">
+    <div className="a-card" style={{ gridColumn: "1 / -1" }}>
       <div className="a-card-head">
-        <h2>Daily cost</h2>
-        <span className="a-card-meta">last {totals.rangeLabel || "30 days"} · {fmtCost((D.daily || []).reduce((a, b) => a + b.cost, 0))} total</span>
+        <h2>Cache &times; cost</h2>
+        <div className="a-chart-legend">
+          <span className="a-chart-legend-item"><span className="a-chart-legend-sw" style={{ background: "var(--accent)" }} /> cache reads · tokens</span>
+          <span className="a-chart-legend-item"><span className="a-chart-legend-sw a-chart-legend-sw-dashed" /> cost · USD</span>
+          <span className="a-card-meta" style={{ marginLeft: 8 }}>last {totals.rangeLabel || "30 days"} · {fmtCost((D.daily || []).reduce((a, b) => a + b.cost, 0))} total · {fmtPct(totals.cacheHitRate)} hit</span>
+        </div>
       </div>
-      <AreaChart data={D.daily} height={200} accent="var(--accent)" annotate={true} />
-      <ChartAxis data={D.daily} />
-    </div>
-    <div className="a-card">
-      <div className="a-card-head">
-        <h2>Cache reads</h2>
-        <span className="a-card-meta">{fmtPct(totals.cacheHitRate)} hit rate</span>
-      </div>
-      <AreaChart data={(D.daily || []).map((d) => ({ cost: d.cacheRead / 1000, date: d.date }))} height={200} accent="var(--gull)" />
+      <DualAreaChart data={D.daily} height={220} accent="var(--accent)" />
       <ChartAxis data={D.daily} />
     </div>
   </section>
