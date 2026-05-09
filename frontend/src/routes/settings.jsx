@@ -4,7 +4,7 @@ import { SettingsGroup } from "./settings/atoms.jsx";
 import { ThemeCard } from "./settings/theme-card.jsx";
 import { PlanCard, PricingTable } from "./settings/plan-card.jsx";
 import { BadgeCard } from "./settings/badge-card.jsx";
-import { LimitsToggleCard } from "./settings/limits-card.jsx";
+import { LimitsToggleCard, LimitResetCard } from "./settings/limits-card.jsx";
 import { BudgetCard } from "./settings/budget-card.jsx";
 import { BackupCard } from "./settings/backup-card.jsx";
 import { SourcesCard } from "./settings/sources-card.jsx";
@@ -71,6 +71,7 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
       <SettingsGroup title="Limits &amp; alerts" description="rolling-window estimates and the dock/menubar indicator">
         <LimitsToggleCard enabled={limitsEnabled} onChange={onToggleLimits} loaded={limitsLoaded} saving={limitsSaving} />
         <BadgeCard limitsEnabled={limitsEnabled} />
+        {limitsEnabled && <LimitResetCard />}
       </SettingsGroup>
 
       <SettingsGroup title="Data" description="export, portability, and external sources">
