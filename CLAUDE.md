@@ -25,7 +25,7 @@ Claude Code writes one JSONL file per session to `~/.claude/projects/<project-sl
 
 ## Conventions
 
-- **Fully local.** No telemetry, no remote calls for user data. Tests run offline.
+- **Fully local.** No telemetry, no remote calls for user data. Tests run offline. **Exception:** the user-initiated `POST /api/limits/sync` route makes one Anthropic API call with the user's saved key to read rate-limit headers; this is opt-in, never automatic, and disabled until the user saves a key in Settings.
 - **Stdlib only.** No `pip install`. If a new feature needs a third-party library, argue for it first — we're willing to pay ergonomics cost to keep install friction at zero.
 - **SQLite parameter binding always.** Any f-string in a SQL statement must interpolate only internal, caller-controlled values (column names, placeholder lists). User-reachable values go through `?`.
 - **Small files with clear responsibilities.** If a file grows past ~400 lines or accretes three distinct concerns, split it.
