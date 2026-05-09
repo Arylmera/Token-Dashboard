@@ -177,9 +177,30 @@ def skills(handler, db_path, pricing, qs):
     rows = skill_breakdown(
         db_path, qs.get("since", [None])[0], qs.get("until", [None])[0])
     catalog = cached_catalog()
+    # Skill definitions are loaded into the system prompt via system-reminder.
+    # We can't observe them directly, so we estimate: per session the def is
+    # written to cache once (cache_create_5m) then read on each subsequent
+    # invocation in that session (cache_read). Sonnet rates are used as a
+    # tier-neutral default since skills aren't tied to a specific model.
+    sonnet = (pricing.get("tier_fallback") or {}).get("sonnet") or {}
+    rate_create = float(sonnet.get("cache_create_5m") or 0.0) / 1_000_000.0
+    rate_read = float(sonnet.get("cache_read") or 0.0) / 1_000_000.0
     for r in rows:
         info = catalog.get(r["skill"])
-        r["tokens_per_call"] = info["tokens"] if info else None
+        tpc = info["tokens"] if info else None
+        r["tokens_per_call"] = tpc
+        if tpc:
+            invocations = int(r.get("invocations") or 0)
+            sessions = int(r.get("sessions") or 0)
+            extra = max(0, invocations - sessions)
+            r["est_tokens"] = invocations * tpc
+            r["est_cost_usd"] = round(
+                sessions * tpc * rate_create + extra * tpc * rate_read, 6
+            )
+        else:
+            r["est_tokens"] = None
+            r["est_cost_usd"] = None
+        r["estimated"] = True
     send_json(handler, rows)
 
 
