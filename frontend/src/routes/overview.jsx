@@ -1,6 +1,6 @@
 import React from "react";
 import { D } from "../data-store.js";
-import { fmtCost, fmtNum, fmtPct, fmtTokens } from "../format.js";
+import { fmtCost, fmtCostWhole, fmtNum, fmtPct, fmtTokens } from "../format.js";
 import { HBar, KPI, ModelBadge } from "../components/atoms.jsx";
 import { AreaChart, Donut, StripSpark } from "../components/charts.jsx";
 
@@ -19,21 +19,21 @@ const KpiRow = ({ totals }) => {
       key: "range",
       days: rangeDaysFromKey(t.rangeKey),
       label: t.rangeLabel || "range",
-      value: fmtCost(t.range || 0),
+      value: fmtCostWhole(t.range || 0),
       sub: `${fmtTokens(t.rangeTokens)} tok · ${t.rangeSessions || 0} sessions`,
     },
     {
       key: "week",
       days: 7,
       label: "7 days",
-      value: fmtCost(t.week),
+      value: fmtCostWhole(t.week),
       sub: `${fmtTokens(t.weekTokens)} tok · avg ${fmtCost(t.week / 7)}/day`,
     },
     {
       key: "all",
       days: Infinity,
       label: "all-time",
-      value: fmtCost(t.cost),
+      value: fmtCostWhole(t.cost),
       sub: `${fmtTokens(t.allTokens)} tok · ${fmtNum(t.turns)} turns`,
     },
   ].sort((a, b) => a.days - b.days);

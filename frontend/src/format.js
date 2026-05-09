@@ -3,6 +3,8 @@
 
 export const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
 
+export const fmtCostWhole = (n) => `$${Math.round(n || 0).toLocaleString("en-US")}`;
+
 export const fmtNum = (n) => (n || 0).toLocaleString("en-US");
 
 export const fmtTokens = (n) => {

@@ -236,6 +236,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 .a-kpi {
   background: var(--panel); border: 1px solid var(--iron-border);
   padding: 14px 16px;
+  container-type: inline-size;
 }
 .a-metric {
   font: 500 32px/1.05 "JetBrains Mono"; letter-spacing: -0.04em;
@@ -250,7 +251,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 .a-kpi-row .a-kpi { border: 0; border-right: 1px solid var(--iron-border); border-bottom: 1px solid var(--iron-border); min-width: 0; }
 .a-kpi-row .a-kpi:last-child { border-right: 0; }
 .a-kpi-row-tight { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom: 0; }
-.a-kpi .a-metric { overflow-wrap: anywhere; word-break: break-word; }
+.dir-a-root .a-kpi .a-metric { font-size: clamp(16px, 16cqi, 32px); white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .a-card-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-bottom: 12px; }
 
 .a-chart { width: 100%; height: 180px; display: block; }
