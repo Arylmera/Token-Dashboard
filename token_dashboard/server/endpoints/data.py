@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 from ...db import (
     EXECUTE_TOOLS,
     PLAN_TOOLS,
-    SESSION_HOURS,
     all_tags,
     current_session_anchor,
     daily_token_breakdown,
@@ -26,13 +25,17 @@ from ...db import (
 from ...preferences import (
     BADGE_METRICS,
     BADGE_WINDOW_MODES,
+    get_anthropic_api_key,
     get_badge_dock_enabled,
     get_badge_menubar_enabled,
     get_badge_metric,
     get_badge_window_mode,
     get_glass_enabled,
     get_glass_opacity,
+    get_limit_reset_at,
     get_limits_enabled,
+    get_limits_sync_meta,
+    set_limit_reset_at,
 )
 from ...pricing import cost_for, get_plan
 from ...skills import cached_catalog
@@ -198,6 +201,7 @@ def plan(handler, db_path, pricing, qs):
 
 
 def preferences(handler, db_path, pricing, qs):
+    _meta = get_limits_sync_meta(db_path)
     send_json(handler, {
         "badge_metric": get_badge_metric(db_path),
         "badge_metrics": list(BADGE_METRICS),
@@ -208,7 +212,37 @@ def preferences(handler, db_path, pricing, qs):
         "glass_enabled": get_glass_enabled(db_path),
         "glass_opacity": get_glass_opacity(db_path),
         "limits_enabled": get_limits_enabled(db_path),
+        "limits_five_hour_reset_at": get_limit_reset_at(db_path, "limits_five_hour_reset_at"),
+        "limits_weekly_reset_at":    get_limit_reset_at(db_path, "limits_weekly_reset_at"),
+        "anthropic_api_key_set":     get_anthropic_api_key(db_path) is not None,
+        "limits_last_sync_at":       _meta["last_sync_at"],
+        "limits_last_sync_status":   _meta["last_sync_status"],
     })
+
+
+_FIVE_H = timedelta(hours=5)
+_SEVEN_D = timedelta(days=7)
+
+
+def _roll_forward(reset_dt: datetime, now: datetime, period: timedelta) -> datetime:
+    while reset_dt <= now:
+        reset_dt += period
+    return reset_dt
+
+
+def _resolve_override(db_path, key: str, now: datetime, period: timedelta):
+    raw = get_limit_reset_at(db_path, key)
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    rolled = _roll_forward(dt, now, period)
+    rolled_iso = rolled.isoformat().replace("+00:00", "Z")
+    if rolled_iso != raw:
+        set_limit_reset_at(db_path, key, rolled_iso)
+    return rolled
 
 
 def _window_payload(used: int, cap):
@@ -233,6 +267,10 @@ def limits(handler, db_path, pricing, qs):
     `now-5h` slice — otherwise tokens from a previous session that ended
     hours ago would drag the remaining % down.
 
+    If the user has set a manual override for either window (via
+    /api/preferences or synced from Anthropic), that override is used as the
+    reset anchor and is automatically rolled forward if it has passed.
+
     Caps are approximate — Anthropic doesn't publish concrete token quotas,
     so these are rough community estimates per plan. Users on the API plan
     get null caps (unlimited)."""
@@ -240,27 +278,45 @@ def limits(handler, db_path, pricing, qs):
     caps = (pricing.get("limits") or {}).get(plan_id) or {"five_hour": None, "weekly": None}
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat().replace("+00:00", "Z")
-    since_week = (now - timedelta(days=7)).isoformat().replace("+00:00", "Z")
-    used_week = window_billable_tokens(db_path, since_week, pricing)
 
-    anchor_iso = current_session_anchor(db_path, now_iso)
-    if anchor_iso is None:
-        used_5h = 0
-        resets_at_iso = None
-    else:
+    override_5h = _resolve_override(db_path, "limits_five_hour_reset_at", now, _FIVE_H)
+    if override_5h is not None:
+        anchor_dt = override_5h - _FIVE_H
+        anchor_iso = anchor_dt.isoformat().replace("+00:00", "Z")
         used_5h = window_billable_tokens(db_path, anchor_iso, pricing)
-        anchor_dt = datetime.fromisoformat(anchor_iso.replace("Z", "+00:00"))
-        resets_at_iso = (anchor_dt + timedelta(hours=SESSION_HOURS)).isoformat().replace("+00:00", "Z")
+        resets_at_iso = override_5h.isoformat().replace("+00:00", "Z")
+    else:
+        anchor_iso = current_session_anchor(db_path, now_iso)
+        if anchor_iso is None:
+            used_5h = 0
+            resets_at_iso = None
+        else:
+            used_5h = window_billable_tokens(db_path, anchor_iso, pricing)
+            anchor_dt = datetime.fromisoformat(anchor_iso.replace("Z", "+00:00"))
+            resets_at_iso = (anchor_dt + _FIVE_H).isoformat().replace("+00:00", "Z")
 
     five_hour = _window_payload(used_5h, caps.get("five_hour"))
     five_hour["anchor"] = anchor_iso
     five_hour["resets_at"] = resets_at_iso
+
+    override_week = _resolve_override(db_path, "limits_weekly_reset_at", now, _SEVEN_D)
+    if override_week is not None:
+        since_week = (override_week - _SEVEN_D).isoformat().replace("+00:00", "Z")
+        weekly_resets_at = override_week.isoformat().replace("+00:00", "Z")
+    else:
+        since_week = (now - _SEVEN_D).isoformat().replace("+00:00", "Z")
+        weekly_resets_at = None
+
+    used_week = window_billable_tokens(db_path, since_week, pricing)
+    weekly = _window_payload(used_week, caps.get("weekly"))
+    weekly["resets_at"] = weekly_resets_at
+
     send_json(handler, {
         "plan": plan_id,
         "approximate": True,
         "meta": pricing.get("limits_meta") or {},
         "five_hour": five_hour,
-        "weekly": _window_payload(used_week, caps.get("weekly")),
+        "weekly": weekly,
     })
 
 

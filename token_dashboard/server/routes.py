@@ -9,19 +9,28 @@ import http.server
 import json
 from urllib.parse import parse_qs, urlparse
 
+from datetime import datetime, timezone
+
 from ..scanner import scan_dir
 from ..pricing import set_plan
 from ..preferences import set_budget
 from ..tips import dismiss_tip
 from ..db import add_session_tag, remove_session_tag
+from ..anthropic_sync import sync_limits
 from ..preferences import (
+    get_anthropic_api_key,
+    get_limit_reset_at,
+    get_limits_sync_meta,
+    set_anthropic_api_key,
     set_badge_dock_enabled,
     set_badge_menubar_enabled,
     set_badge_metric,
     set_badge_window_mode,
     set_glass_enabled,
     set_glass_opacity,
+    set_limit_reset_at,
     set_limits_enabled,
+    set_limits_sync_meta,
 )
 from .http_utils import (
     MAX_POST_BYTES,
@@ -73,6 +82,34 @@ def _normalise_tag(raw: str) -> str:
     if not isinstance(raw, str):
         return ""
     return " ".join(raw.split())[:64]
+
+
+def _api_limits_sync(handler, db_path, pricing, qs):
+    """User-initiated probe of Anthropic's API to read rate-limit headers.
+
+    Reads the saved API key, calls `sync_limits`, persists the result + sync
+    metadata, and echoes the updated state back. Returns 400 if no key is
+    saved.
+    """
+    api_key = get_anthropic_api_key(db_path)
+    if not api_key:
+        return send_error_json(handler, 400, "no api key saved")
+    result = sync_limits(api_key)
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    set_limits_sync_meta(db_path, status=result["status"], at_iso=now_iso)
+    if result["status"] == "ok":
+        if result["five_hour_reset_at"]:
+            set_limit_reset_at(db_path, "limits_five_hour_reset_at", result["five_hour_reset_at"])
+        if result["weekly_reset_at"]:
+            set_limit_reset_at(db_path, "limits_weekly_reset_at", result["weekly_reset_at"])
+    meta = get_limits_sync_meta(db_path)
+    send_json(handler, {
+        "status": result["status"],
+        "limits_five_hour_reset_at": get_limit_reset_at(db_path, "limits_five_hour_reset_at"),
+        "limits_weekly_reset_at":    get_limit_reset_at(db_path, "limits_weekly_reset_at"),
+        "limits_last_sync_at":       meta["last_sync_at"],
+        "limits_last_sync_status":   meta["last_sync_status"],
+    })
 
 
 def build_handler(db_path: str, projects_dir: str):
@@ -175,7 +212,14 @@ def build_handler(db_path: str, projects_dir: str):
                     v = set_limits_enabled(db_path, bool(body.get("limits_enabled")))
                     EVENTS.publish({"type": "preferences", "limits_enabled": v})
                     resp["limits_enabled"] = v
+                for k in ("limits_five_hour_reset_at", "limits_weekly_reset_at"):
+                    if k in body:
+                        set_limit_reset_at(db_path, k, body[k])
+                if "anthropic_api_key" in body:
+                    set_anthropic_api_key(db_path, body["anthropic_api_key"])
                 return send_json(self, resp)
+            if url.path == "/api/limits/sync":
+                return _api_limits_sync(self, db_path, pricing_cache.get(), parse_qs(url.query or ""))
             if url.path == "/api/tips/dismiss":
                 dismiss_tip(db_path, body.get("key", ""))
                 return send_json(self, {"ok": True})
