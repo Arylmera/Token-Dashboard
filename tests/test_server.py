@@ -375,5 +375,47 @@ class PreferencesResetUnitTests(unittest.TestCase):
         self.assertIsNone(set_limit_reset_at(self.db, "bogus_key", "2026-05-09T14:32:00Z"))
 
 
+class PreferencesApiKeyAndSyncTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db = os.path.join(self.tmp, "t.db")
+        init_db(self.db)
+
+    def test_api_key_default_none(self):
+        from token_dashboard.preferences import get_anthropic_api_key
+        self.assertIsNone(get_anthropic_api_key(self.db))
+
+    def test_api_key_roundtrip_and_clear(self):
+        from token_dashboard.preferences import get_anthropic_api_key, set_anthropic_api_key
+        v = set_anthropic_api_key(self.db, "sk-ant-test-123")
+        self.assertEqual(v, "sk-ant-test-123")
+        self.assertEqual(get_anthropic_api_key(self.db), "sk-ant-test-123")
+        self.assertIsNone(set_anthropic_api_key(self.db, None))
+        self.assertIsNone(get_anthropic_api_key(self.db))
+        set_anthropic_api_key(self.db, "sk-ant-test-456")
+        self.assertIsNone(set_anthropic_api_key(self.db, ""))
+        self.assertIsNone(get_anthropic_api_key(self.db))
+
+    def test_sync_meta_default(self):
+        from token_dashboard.preferences import get_limits_sync_meta
+        self.assertEqual(
+            get_limits_sync_meta(self.db),
+            {"last_sync_at": None, "last_sync_status": None},
+        )
+
+    def test_sync_meta_persist(self):
+        from token_dashboard.preferences import get_limits_sync_meta, set_limits_sync_meta
+        set_limits_sync_meta(self.db, status="ok", at_iso="2026-05-09T14:32:00Z")
+        self.assertEqual(
+            get_limits_sync_meta(self.db),
+            {"last_sync_at": "2026-05-09T14:32:00Z", "last_sync_status": "ok"},
+        )
+        set_limits_sync_meta(self.db, status="error:URLError", at_iso="2026-05-09T15:00:00Z")
+        self.assertEqual(
+            get_limits_sync_meta(self.db),
+            {"last_sync_at": "2026-05-09T15:00:00Z", "last_sync_status": "error:URLError"},
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

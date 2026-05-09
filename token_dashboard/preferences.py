@@ -232,3 +232,49 @@ def set_limit_reset_at(db_path: Union[str, Path], key: str, value) -> "str | Non
         c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES (?, ?)", (key, canonical))
         c.commit()
     return canonical
+
+
+def get_anthropic_api_key(db_path: Union[str, Path]) -> "str | None":
+    with connect(db_path) as c:
+        row = c.execute("SELECT v FROM plan WHERE k='anthropic_api_key'").fetchone()
+    if not row or not row["v"]:
+        return None
+    return row["v"]
+
+
+def set_anthropic_api_key(db_path: Union[str, Path], value) -> "str | None":
+    if value in (None, ""):
+        with connect(db_path) as c:
+            c.execute("DELETE FROM plan WHERE k='anthropic_api_key'")
+            c.commit()
+        return None
+    v = str(value).strip()
+    if not v:
+        with connect(db_path) as c:
+            c.execute("DELETE FROM plan WHERE k='anthropic_api_key'")
+            c.commit()
+        return None
+    with connect(db_path) as c:
+        c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES ('anthropic_api_key', ?)", (v,))
+        c.commit()
+    return v
+
+
+def get_limits_sync_meta(db_path: Union[str, Path]) -> dict:
+    out = {"last_sync_at": None, "last_sync_status": None}
+    with connect(db_path) as c:
+        for row in c.execute(
+            "SELECT k, v FROM plan WHERE k IN ('limits_last_sync_at', 'limits_last_sync_status')"
+        ):
+            if row["k"] == "limits_last_sync_at":
+                out["last_sync_at"] = row["v"]
+            elif row["k"] == "limits_last_sync_status":
+                out["last_sync_status"] = row["v"]
+    return out
+
+
+def set_limits_sync_meta(db_path: Union[str, Path], *, status: str, at_iso: str) -> None:
+    with connect(db_path) as c:
+        c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_last_sync_at', ?)", (at_iso,))
+        c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_last_sync_status', ?)", (status,))
+        c.commit()
