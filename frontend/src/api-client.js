@@ -275,8 +275,11 @@ const buildPrompts = (prompts) => prompts.map((p) => ({
 const buildSkills = (skills) => skills.map((s) => ({
   name: s.skill,
   invocations: s.invocations || 0,
-  tokens: (s.invocations || 0) * (s.tokens_per_call || 0),
-  cost: 0,
+  sessions: s.sessions || 0,
+  tokensPerCall: s.tokens_per_call,
+  tokens: s.est_tokens != null ? s.est_tokens : null,
+  cost: s.est_cost_usd != null ? s.est_cost_usd : null,
+  estimated: s.estimated === true,
 }));
 
 const buildTips = (tips) => (Array.isArray(tips) ? tips : []).map((t) => ({
