@@ -35,7 +35,19 @@ def _scan_loop(db_path: str, projects_dir: str, interval: float = DEFAULT_SCAN_I
         try:
             n = scan_dir(projects_dir, db_path)
             if n["messages"] > 0:
-                EVENTS.publish({"type": "scan", "n": n, "ts": time.time()})
+                EVENTS.publish({
+                    "type": "scan",
+                    "n": {"messages": n["messages"]},  # back-compat for tray client
+                    "changed": {
+                        "sessions": n.get("sessions") or [],
+                        "projects": n.get("projects") or [],
+                        "days":     n.get("days") or [],
+                        "models":   n.get("models") or [],
+                        "min_ts":   n.get("min_ts"),
+                        "max_ts":   n.get("max_ts"),
+                    },
+                    "ts": time.time(),
+                })
         except Exception as e:
             EVENTS.publish({"type": "error", "message": str(e)})
         time.sleep(interval)

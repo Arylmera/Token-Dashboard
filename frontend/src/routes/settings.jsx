@@ -343,7 +343,7 @@ const BudgetCard = () => {
         body: JSON.stringify({ [key]: amount }),
       });
       setValues((v) => ({ ...v, [key]: trimmed }));
-      if (window.RELOAD_DATA) window.RELOAD_DATA();
+      if (window.RELOAD_STATIC) window.RELOAD_STATIC();
     } catch (_) {}
     setSaving(false);
   };
@@ -818,7 +818,7 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ limits_enabled: next }),
       });
-      if (window.RELOAD_DATA) window.RELOAD_DATA();
+      if (window.RELOAD_STATIC) window.RELOAD_STATIC();
     } catch (_) {}
     setLimitsSaving(false);
   };
