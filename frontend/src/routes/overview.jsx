@@ -293,7 +293,7 @@ const ProjectsTable = ({ totals }) => (
   </div>
 );
 
-const ModelsAndTools = () => (
+const ModelsCard = () => (
   <div className="a-card">
     <div className="a-card-head"><h2>By model</h2></div>
     <div className="a-model-block">
@@ -312,8 +312,15 @@ const ModelsAndTools = () => (
         ))}
       </div>
     </div>
-    <div className="a-card-divider" />
-    <div className="a-card-head" style={{ marginTop: 4 }}><h2>Top tools</h2></div>
+  </div>
+);
+
+const TopToolsCard = () => (
+  <div className="a-card">
+    <div className="a-card-head">
+      <h2>Top tools</h2>
+      <span className="a-card-meta">most-used tools by call count</span>
+    </div>
     <table className="a-table">
       <thead><tr><th>tool</th><th className="num">calls</th><th className="num">tokens</th></tr></thead>
       <tbody>
@@ -368,10 +375,11 @@ export const Overview = () => {
       <DailyCharts totals={totals} />
       <section className="a-card-row">
         <ProjectsTable totals={totals} />
-        <ModelsAndTools />
+        <ModelsCard />
       </section>
       <section className="a-card-row">
         <PhaseSplitCard phase={D.phase} />
+        <TopToolsCard />
       </section>
       <RecentSessions />
     </div>
