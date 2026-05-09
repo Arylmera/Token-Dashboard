@@ -167,6 +167,7 @@ export const LimitResetCard = () => {
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <input
             type="password"
+            className="a-text-input"
             placeholder="sk-ant-…"
             autoComplete="off"
             value={apiKeyDraft}
