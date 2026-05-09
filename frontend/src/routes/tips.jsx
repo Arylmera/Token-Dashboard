@@ -142,10 +142,16 @@ const TipsGroup = ({ groupKey, tips, defaultOpen }) => {
   );
 };
 
+const normalizeProjectSlug = (slug) => {
+  if (!slug) return "__global__";
+  const i = slug.indexOf("--claude-worktrees-");
+  return i === -1 ? slug : slug.slice(0, i);
+};
+
 const groupTipsByProject = (tips) => {
   const groups = {};
   tips.forEach((t) => {
-    const k = t.project_slug || "__global__";
+    const k = normalizeProjectSlug(t.project_slug);
     (groups[k] = groups[k] || []).push(t);
   });
   return groups;
