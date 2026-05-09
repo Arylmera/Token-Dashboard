@@ -199,6 +199,11 @@ jobs:
     needs: [version, release]
     if: needs.version.outputs.should_release == 'true'
     runs-on: windows-latest
+    # Non-blocking: winget-releaser@v2 only updates existing manifests. The
+    # initial Arylmera.TokenDashboard submission must be done manually via
+    # `wingetcreate new` (one-time). Until merged into microsoft/winget-pkgs,
+    # this job will fail — that should not mark the release red.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
