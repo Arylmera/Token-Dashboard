@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...pricing import load_pricing
+from ...pricing import apply_pricing_overrides, get_pricing_overrides, load_pricing
 from ..http_utils import pricing_path
 
 _STARTED_AT: float | None = None
@@ -35,14 +35,35 @@ VERSION = _read_version()
 
 
 class PricingCache:
-    """Reloads pricing.json when its mtime changes — no server restart needed."""
+    """Reloads pricing.json when its mtime changes — no server restart needed.
 
-    def __init__(self) -> None:
+    Merges per-model overrides stored in the DB on every `get()` so that price
+    edits in the UI take effect immediately without a server restart.
+    """
+
+    def __init__(self, db_path: str | Path | None = None) -> None:
         self._mtime: float | None = None
         self._data: dict = {}
         self._path: Path | None = None
+        self._db_path = db_path
 
     def get(self) -> dict:
+        path = pricing_path()
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            mtime = None
+        if path != self._path or mtime != self._mtime or not self._data:
+            self._data = load_pricing(path)
+            self._path = path
+            self._mtime = mtime
+        if self._db_path is None:
+            return self._data
+        overrides = get_pricing_overrides(self._db_path)
+        return apply_pricing_overrides(self._data, overrides)
+
+    def defaults(self) -> dict:
+        """Return the file-only pricing data, ignoring DB overrides."""
         path = pricing_path()
         try:
             mtime = path.stat().st_mtime

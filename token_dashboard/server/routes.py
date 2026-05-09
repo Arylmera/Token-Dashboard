@@ -31,7 +31,13 @@ from .http_utils import (
 )
 from .sse import EVENTS
 from .sse import stream as sse_stream
-from .endpoints import data, budget as budget_ep, sources as sources_ep, io as io_ep
+from .endpoints import (
+    data,
+    budget as budget_ep,
+    sources as sources_ep,
+    io as io_ep,
+    pricing as pricing_ep,
+)
 from .endpoints.state import PricingCache, set_started_at  # noqa: F401  re-export
 
 # Imports inside route handlers (db.session_tags) are deferred to avoid a
@@ -70,7 +76,7 @@ def _normalise_tag(raw: str) -> str:
 
 
 def build_handler(db_path: str, projects_dir: str):
-    pricing_cache = PricingCache()
+    pricing_cache = PricingCache(db_path)
 
     class H(http.server.BaseHTTPRequestHandler):
         _td_db_path = db_path
@@ -95,6 +101,8 @@ def build_handler(db_path: str, projects_dir: str):
                 return sse_stream(self)
             if path == "/api/scan":
                 return send_json(self, scan_dir(projects_dir, db_path))
+            if path == "/api/pricing":
+                return pricing_ep.pricing_get(self, db_path, None, qs, cache=pricing_cache)
             if path.startswith("/api/sessions/"):
                 # /api/sessions/<sid>           → session turns
                 # /api/sessions/<sid>/tags      → that session's tags only
@@ -183,6 +191,19 @@ def build_handler(db_path: str, projects_dir: str):
                     if not name:
                         return send_error_json(self, 400, "missing source name")
                     return sources_ep.sources_delete(self, db_path, name)
+            if url.path == "/api/pricing/clear-all":
+                return pricing_ep.pricing_clear_all(self, db_path, cache=pricing_cache)
+            if url.path.startswith("/api/pricing/"):
+                rest = url.path[len("/api/pricing/"):]
+                if rest.endswith("/clear"):
+                    model = rest[:-len("/clear")]
+                    if not model:
+                        return send_error_json(self, 400, "missing model")
+                    return pricing_ep.pricing_clear(self, db_path, model, cache=pricing_cache)
+                if rest:
+                    return pricing_ep.pricing_set(
+                        self, db_path, rest, body, cache=pricing_cache
+                    )
             if url.path == "/api/budget":
                 resp: dict = {"ok": True}
                 key_map = {
