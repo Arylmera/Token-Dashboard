@@ -21,6 +21,13 @@ const Shell = () => (
   const render = () => root.render(<Shell />);
   render();
   try {
+    const d = localStorage.getItem("td.density.v1");
+    if (d && d !== "comfortable") {
+      const r = document.querySelector(".dir-a-root");
+      if (r) r.setAttribute("data-density", d);
+    }
+  } catch (_) {}
+  try {
     const es = new EventSource("/api/stream");
     es.onmessage = async (e) => {
       let evt = null;

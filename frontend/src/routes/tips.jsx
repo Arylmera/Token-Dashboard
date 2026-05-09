@@ -61,21 +61,23 @@ const TipCard = ({ t, projectKey }) => {
   };
   return (
     <div className={`a-tip a-tip-${t.type}`}>
-      <Label style={{ color: tipToneVar(t.type) }}>
+      <Label>
         {t.category ? (TIP_CATEGORY_LABELS[t.category] || t.type) : t.type}
       </Label>
-      <h3>{t.title}</h3>
-      <p>{t.body}</p>
-      {t._merged && (
-        <ul className="a-tip-list">
-          {t.rows.map((r, j) => <li key={j}>{r}</li>)}
-        </ul>
-      )}
-      <div className="a-tip-actions">
-        <button className="a-tip-btn" onClick={() => setOpen(!open)}>{open ? "hide prompt" : "show prompt"}</button>
-        <button className="a-tip-btn" onClick={onCopy}>{copied ? "copied" : "copy prompt"}</button>
+      <div className="a-tip-body">
+        <h3>{t.title}</h3>
+        <p>{t.body}</p>
+        {t._merged && (
+          <ul className="a-tip-list">
+            {t.rows.map((r, j) => <li key={j}>{r}</li>)}
+          </ul>
+        )}
+        <div className="a-tip-actions">
+          <button className="a-tip-btn" onClick={() => setOpen(!open)}>{open ? "hide prompt" : "show prompt"}</button>
+          <button className="a-tip-btn" onClick={onCopy}>{copied ? "copied" : "copy prompt"}</button>
+        </div>
+        {open && <pre className="a-tip-prompt">{prompt}</pre>}
       </div>
-      {open && <pre className="a-tip-prompt">{prompt}</pre>}
     </div>
   );
 };
@@ -142,10 +144,23 @@ const TipsGroup = ({ groupKey, tips, defaultOpen }) => {
   );
 };
 
+// Claude Code project slug shape: drive + path joined with single dashes,
+// with `--` between the drive letter and the rest (e.g. `C--Users-guill-...`).
+// Heuristic: collapse to the project basename so worktrees, mixed casing,
+// and slightly different ancestor paths still bucket into one project.
 const normalizeProjectSlug = (slug) => {
   if (!slug) return "__global__";
-  const i = slug.indexOf("--claude-worktrees-");
-  return i === -1 ? slug : slug.slice(0, i);
+  let s = slug;
+  const wt = s.indexOf("--claude-worktrees-");
+  if (wt !== -1) s = s.slice(0, wt);
+  // Strip everything up to and including `-git-` if present (covers
+  // `~/git/<project>` and `~/Documents/git/<project>` layouts).
+  const m = s.match(/-git-(.+)$/i);
+  if (m && m[1]) return m[1].toLowerCase();
+  // Otherwise, take the segment after the last single dash that follows
+  // a non-drive path component. Fall back to the original slug.
+  const tail = s.split(/-+/).filter(Boolean).pop();
+  return (tail || s).toLowerCase();
 };
 
 const groupTipsByProject = (tips) => {

@@ -1,5 +1,49 @@
 import React, { useEffect, useState } from "react";
 
+const DENSITY_KEY = "td.density.v1";
+const DENSITY_OPTIONS = [
+  { id: "compact",     label: "compact" },
+  { id: "comfortable", label: "comfortable" },
+  { id: "spacious",    label: "spacious" },
+];
+
+const applyDensity = (id) => {
+  const root = document.querySelector(".dir-a-root");
+  if (!root) return;
+  if (id === "comfortable") root.removeAttribute("data-density");
+  else root.setAttribute("data-density", id);
+};
+
+export const DensityCard = () => {
+  const [density, setDensity] = useState(() => {
+    try { return localStorage.getItem(DENSITY_KEY) || "comfortable"; }
+    catch (_) { return "comfortable"; }
+  });
+  useEffect(() => {
+    applyDensity(density);
+    try { localStorage.setItem(DENSITY_KEY, density); } catch (_) {}
+  }, [density]);
+  return (
+    <section className="a-card">
+      <div className="a-card-head"><h2>Density</h2><span className="a-card-meta">spacing across cards, KPIs, tables</span></div>
+      <div className="a-density" role="radiogroup" aria-label="Density">
+        {DENSITY_OPTIONS.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            role="radio"
+            aria-checked={density === opt.id}
+            className={`a-density-btn ${density === opt.id ? "is-on" : ""}`}
+            onClick={() => setDensity(opt.id)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+};
+
 export const DeveloperCard = () => {
   if (!window.td || typeof window.td.toggleDevTools !== "function") return null;
   return (
