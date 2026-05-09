@@ -297,6 +297,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 .a-table tbody tr.is-active td { background: var(--panel-2); }
 
 .a-scroll-5 { max-height: 175px; overflow-y: auto; }
+.a-recent-scroll { max-height: 588px; overflow-y: auto; }
 .a-table-scroll { overflow-x: auto; }
 .a-pricing-table { min-width: 520px; }
 .a-pricing-table td:first-child { white-space: nowrap; padding-right: 16px; }
