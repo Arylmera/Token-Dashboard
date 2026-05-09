@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "npx esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --minify --legal-comments=none",
-    "dev": "npx esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --sourcemap --watch"
+    "dev": "npx esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --sourcemap --watch",
+    "test": "node --test src/*.node-test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

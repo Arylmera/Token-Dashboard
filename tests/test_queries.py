@@ -218,6 +218,101 @@ class ProjectNameInQueriesTests(unittest.TestCase):
         self.assertEqual(by_sid["s2"]["project_name"], "slugOnly")
 
 
+class WorktreeNameTests(unittest.TestCase):
+    def test_worktree_parent_windows(self):
+        from token_dashboard.db.projects import worktree_parent_name
+        self.assertEqual(
+            worktree_parent_name(
+                r"C:\Users\guill\Documents\git\token-dashboard\.claude\worktrees\stoic-kapitsa-5486f3"
+            ),
+            "token-dashboard",
+        )
+
+    def test_worktree_parent_posix_with_subdir(self):
+        from token_dashboard.db.projects import worktree_parent_name
+        self.assertEqual(
+            worktree_parent_name(
+                "/Users/x/git/Token-Dashboard/.claude/worktrees/cool-bardeen-e0c385/frontend"
+            ),
+            "Token-Dashboard",
+        )
+
+    def test_worktree_parent_returns_none_for_non_worktree(self):
+        from token_dashboard.db.projects import worktree_parent_name
+        self.assertIsNone(worktree_parent_name("/Users/x/git/foo/bar"))
+        self.assertIsNone(worktree_parent_name(None))
+        self.assertIsNone(worktree_parent_name(""))
+
+    def test_best_project_name_resolves_worktree(self):
+        from token_dashboard.db.projects import best_project_name
+        self.assertEqual(
+            best_project_name(
+                [r"C:\Users\guill\Documents\git\token-dashboard\.claude\worktrees\stoic-kapitsa-5486f3"],
+                "C--Users-guill-Documents-git-token-dashboard--claude-worktrees-stoic-kapitsa-5486f3",
+            ),
+            "token-dashboard",
+        )
+
+
+class WorktreeFoldTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db = os.path.join(self.tmp, "wf.db")
+        init_db(self.db)
+        parent_cwd = "/Users/x/git/Repo"
+        parent_slug = "-Users-x-git-Repo"
+        wt_cwd = "/Users/x/git/Repo/.claude/worktrees/jovial-lamport-ddf0f8"
+        wt_slug = "-Users-x-git-Repo--claude-worktrees-jovial-lamport-ddf0f8"
+        with connect(self.db) as c:
+            c.execute(
+                "INSERT INTO messages (uuid, session_id, project_slug, cwd, type, timestamp, "
+                "input_tokens, output_tokens, cache_read_tokens, cache_create_5m_tokens, cache_create_1h_tokens) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                ("u1", "s_main", parent_slug, parent_cwd, "user",
+                 "2026-04-10T00:00:00Z", 0, 0, 0, 0, 0),
+            )
+            c.execute(
+                "INSERT INTO messages (uuid, session_id, project_slug, cwd, type, timestamp, "
+                "input_tokens, output_tokens, cache_read_tokens, cache_create_5m_tokens, cache_create_1h_tokens) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                ("a1", "s_main", parent_slug, parent_cwd, "assistant",
+                 "2026-04-10T00:00:01Z", 100, 200, 0, 0, 0),
+            )
+            c.execute(
+                "INSERT INTO messages (uuid, session_id, project_slug, cwd, type, timestamp, "
+                "input_tokens, output_tokens, cache_read_tokens, cache_create_5m_tokens, cache_create_1h_tokens) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                ("u2", "s_wt", wt_slug, wt_cwd, "user",
+                 "2026-04-10T01:00:00Z", 0, 0, 0, 0, 0),
+            )
+            c.execute(
+                "INSERT INTO messages (uuid, session_id, project_slug, cwd, type, timestamp, "
+                "input_tokens, output_tokens, cache_read_tokens, cache_create_5m_tokens, cache_create_1h_tokens) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                ("a2", "s_wt", wt_slug, wt_cwd, "assistant",
+                 "2026-04-10T01:00:01Z", 50, 60, 0, 0, 0),
+            )
+            c.commit()
+
+    def test_project_summary_folds_worktree_into_parent(self):
+        rows = project_summary(self.db)
+        by_name = {r["project_name"]: r for r in rows}
+        self.assertIn("Repo", by_name)
+        self.assertNotIn("jovial-lamport-ddf0f8", by_name)
+        agg = by_name["Repo"]
+        self.assertEqual(agg["sessions"], 2)
+        self.assertEqual(agg["turns"], 2)
+        self.assertEqual(agg["input_tokens"], 150)
+        self.assertEqual(agg["output_tokens"], 260)
+        self.assertEqual(agg["billable_tokens"], 410)
+
+    def test_recent_sessions_shows_parent_for_worktree(self):
+        rows = recent_sessions(self.db, limit=10)
+        by_sid = {r["session_id"]: r for r in rows}
+        self.assertEqual(by_sid["s_main"]["project_name"], "Repo")
+        self.assertEqual(by_sid["s_wt"]["project_name"], "Repo")
+
+
 class SessionAnchorTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

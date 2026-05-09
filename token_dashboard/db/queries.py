@@ -89,7 +89,39 @@ def project_summary(db_path, since=None, until=None) -> list:
                 (r["project_slug"],),
             )]
             r["project_name"] = best_project_name(cwds, r["project_slug"])
-    return rows
+    return _fold_worktree_rows(rows)
+
+
+_NUMERIC_COLS = (
+    "sessions", "turns", "input_tokens", "output_tokens",
+    "billable_tokens", "cache_read_tokens",
+)
+
+
+def _fold_worktree_rows(rows: list) -> list:
+    """Collapse worktree-derived rows into their parent project (same project_name).
+
+    Worktree sessions live under separate `project_slug` values (one per
+    `<repo>/.claude/worktrees/<name>`), but `best_project_name` resolves all
+    of them to the parent repo's basename. Without folding, the parent shows
+    up once plus N times for each worktree — confusing the projects view.
+    """
+    folded: dict = {}
+    for r in rows:
+        key = r.get("project_name") or r.get("project_slug")
+        if key not in folded:
+            folded[key] = dict(r)
+            continue
+        agg = folded[key]
+        for col in _NUMERIC_COLS:
+            agg[col] = (agg.get(col) or 0) + (r.get(col) or 0)
+        if "worktrees" in (agg.get("project_slug") or "").lower():
+            agg["project_slug"] = r["project_slug"]
+    return sorted(
+        folded.values(),
+        key=lambda x: x.get("billable_tokens") or 0,
+        reverse=True,
+    )
 
 
 def tool_token_breakdown(db_path, since=None, until=None) -> list:
@@ -111,13 +143,22 @@ def tool_token_breakdown(db_path, since=None, until=None) -> list:
         return [dict(r) for r in c.execute(sql, args)]
 
 
-def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=None, tag=None) -> list:
+def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=None, tag=None, order_by: str = "recent") -> list:
     rng, args = _range_clause(since, until)
     tag_join, tag_filter, tag_args = "", "", []
     if tag:
         tag_join = "JOIN session_tags_all st ON st.session_id = m.session_id"
         tag_filter = "AND st.tag = ?"
         tag_args = [tag]
+    if order_by == "cost":
+        # Proxy ordering by billable tokens in SQL; re-sort by computed cost in Python.
+        # Widen the candidate pool so cheap-token / expensive-model sessions still surface.
+        order_clause = ("SUM(m.input_tokens)+SUM(m.output_tokens)"
+                        "+SUM(m.cache_create_5m_tokens)+SUM(m.cache_create_1h_tokens) DESC")
+        fetch_limit = min(max(limit * 5, 100), 500)
+    else:
+        order_clause = "ended DESC"
+        fetch_limit = limit
     sql = f"""
       SELECT m.session_id AS session_id, m.project_slug AS project_slug,
              MIN(m.timestamp) AS started, MAX(m.timestamp) AS ended,
@@ -127,11 +168,11 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=No
         {tag_join}
        WHERE 1=1 {rng} {tag_filter}
        GROUP BY m.session_id
-       ORDER BY ended DESC
+       ORDER BY {order_clause}
        LIMIT ?
     """
     with connect(db_path) as c:
-        rows = [dict(r) for r in c.execute(sql, (*args, *tag_args, limit))]
+        rows = [dict(r) for r in c.execute(sql, (*args, *tag_args, fetch_limit))]
         slug_cache = {}
         for r in rows:
             slug = r["project_slug"]
@@ -204,6 +245,9 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=No
             tag_map = session_tags(db_path, [r["session_id"] for r in rows])
             for r in rows:
                 r["tags"] = tag_map.get(r["session_id"], [])
+    if order_by == "cost":
+        rows.sort(key=lambda r: r.get("cost_usd") or 0, reverse=True)
+        rows = rows[:limit]
     return rows
 
 

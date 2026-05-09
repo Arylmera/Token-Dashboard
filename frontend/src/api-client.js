@@ -4,6 +4,8 @@
 // resolves window.DATA_READY before mounting and exposes window.RELOAD_DATA
 // for range switches and SSE refreshes.
 
+import { pickEntries, pickStaticEntries } from "./sse-dispatch.js";
+
 const fmtTime = (iso) => {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -73,37 +75,109 @@ const totalTokens = (o) => billable(o) + (o.cache_read_tokens || 0);
 
 let currentRange = "30d";
 
-const fetchAll = (rangeSince) => {
-  const rq = (extra) => rangeSince
-    ? `?since=${encodeURIComponent(rangeSince)}${extra ? "&" + extra : ""}`
-    : (extra ? `?${extra}` : "");
-  const since30 = isoDaysAgo(30);
-  const since7 = isoDaysAgo(7);
-  const since1 = isoDaysAgo(1);
-  return Promise.all([
-    j("/api/overview"),
-    j(`/api/overview?since=${encodeURIComponent(since30)}`),
-    j(`/api/overview?since=${encodeURIComponent(since7)}`),
-    j(`/api/overview?since=${encodeURIComponent(isoDaysAgo(0))}`),
-    j(`/api/overview?since=${encodeURIComponent(since1)}&until=${encodeURIComponent(isoDaysAgo(0))}`),
-    j(`/api/overview${rq("")}`),
-    j(`/api/daily${rq("")}`),
-    j(`/api/projects${rq("")}`),
-    j(`/api/tools${rq("")}`),
-    j(`/api/sessions${rq("limit=50")}`),
-    j(`/api/skills${rq("")}`),
-    j(`/api/by-model${rq("")}`),
-    j(`/api/prompts${rq("limit=20&sort=tokens")}`),
-    j("/api/hourly?hours=24").catch(() => []),
-    j("/api/tips").catch(() => []),
-    j("/api/plan").catch(() => ({ plan: "max" })),
-    j("/api/limits").catch(() => null),
-    j("/api/budget").catch(() => null),
-    j(`/api/phase-split${rq("")}`).catch(() => null),
-    j("/api/tags").catch(() => []),
-    j("/api/preferences").catch(() => null),
-  ]);
-};
+// Endpoint registry. Each entry declares:
+//   key       — slot in MOCK_DATA the result lands in
+//   url(ctx)  — URL builder, given { rangeSince, range }
+//   trigger   — "any" | "static" | "sessions" | "projects" | "models" | "days"
+//   windowSince(range) — only for ["days"]; returns ISO since-bound or null
+//   fallback() — only for endpoints that may legitimately 404 / error; called on fetch failure
+//
+// loadAll runs every entry. (Tasks 4–5 add loadDelta + loadStatic.)
+const REG = [
+  { key: "overviewAll",   trigger: "any",   url: () => "/api/overview" },
+  { key: "overview30",    trigger: "days",  windowSince: () => isoDaysAgo(30), url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(30))}` },
+  { key: "overview7",     trigger: "days",  windowSince: () => isoDaysAgo(7),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(7))}` },
+  { key: "overviewToday", trigger: "days",  windowSince: () => isoDaysAgo(0),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(0))}` },
+  { key: "overviewYday",  trigger: "days",  windowSince: () => isoDaysAgo(1),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(1))}&until=${encodeURIComponent(isoDaysAgo(0))}` },
+  { key: "overviewRange", trigger: "days",  windowSince: (r) => r, url: ({ rangeSince }) => `/api/overview${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
+  { key: "daily",         trigger: "days",  windowSince: (r) => r, url: ({ rangeSince }) => `/api/daily${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
+  { key: "projects",      trigger: "projects", url: ({ rangeSince }) => `/api/projects${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
+  { key: "tools",         trigger: "any",   url: ({ rangeSince }) => `/api/tools${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
+  { key: "sessionsRaw",   trigger: "sessions", url: ({ rangeSince }) => `/api/sessions?${rangeSince ? `since=${encodeURIComponent(rangeSince)}&` : ""}limit=50` },
+  { key: "topSessionsRaw", trigger: "sessions", url: () => `/api/sessions?order=cost&limit=50`, fallback: () => [] },
+  { key: "skills",        trigger: "any",   url: ({ rangeSince }) => `/api/skills${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
+  { key: "byModel",       trigger: "models", url: ({ rangeSince }) => `/api/by-model${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
+  { key: "prompts",       trigger: "sessions", url: ({ rangeSince }) => `/api/prompts?${rangeSince ? `since=${encodeURIComponent(rangeSince)}&` : ""}limit=20&sort=tokens` },
+  { key: "hourlyRaw",     trigger: "days",  windowSince: () => isoDaysAgo(1), url: () => "/api/hourly?hours=24", fallback: () => [] },
+  { key: "tips",          trigger: "any",   url: () => "/api/tips", fallback: () => [] },
+  { key: "planResp",      trigger: "static", url: () => "/api/plan",   fallback: () => ({ plan: "max" }) },
+  { key: "limitsResp",    trigger: "static", url: () => "/api/limits", fallback: () => null },
+  { key: "budgetResp",    trigger: "static", url: () => "/api/budget", fallback: () => null },
+  { key: "phaseResp",     trigger: "any",   url: ({ rangeSince }) => `/api/phase-split${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}`, fallback: () => null },
+  { key: "tagsResp",      trigger: "static", url: () => "/api/tags", fallback: () => [] },
+  { key: "prefsResp",     trigger: "static", url: () => "/api/preferences", fallback: () => null },
+];
+
+const _cache = {};   // last-known raw value per key, mutated by _fetchKeys
+
+async function _fetchKeys(keys, ctx) {
+  const tasks = keys.map(async (k) => {
+    const entry = REG.find((e) => e.key === k);
+    try {
+      const v = await j(entry.url(ctx));
+      _cache[k] = v;
+    } catch (err) {
+      if (entry.fallback) _cache[k] = entry.fallback();
+      else throw err;
+    }
+  });
+  await Promise.all(tasks);
+}
+
+function _ctx(range) {
+  const days = RANGE_DAYS[range];
+  return { range, rangeSince: days == null ? null : isoDaysAgo(days) };
+}
+
+function _rebuildMockData(range) {
+  const c = _cache;
+  const totals = buildTotals(range, c.overviewAll || {}, c.overview30 || {}, c.overview7 || {}, c.overviewToday || {}, c.overviewYday || {}, c.overviewRange || {});
+  const hourly = buildHourly(c.hourlyRaw || []);
+  window.MOCK_DATA = {
+    totals,
+    daily:    buildDaily(c.daily || [], totals.range),
+    projects: buildProjects(c.projects || [], totals.range),
+    models:   buildModels(c.byModel || []),
+    tools:    (c.tools || []).map((t) => ({ name: t.tool_name, calls: t.calls || 0, tokens: t.result_tokens || 0 })),
+    sessions: buildSessions(c.sessionsRaw || []),
+    topSessions: buildSessions(c.topSessionsRaw || []),
+    prompts:  buildPrompts(c.prompts || []),
+    skills:   buildSkills(c.skills || []),
+    tips:     buildTips(c.tips || []),
+    hourly,
+    heatmap:  buildHeatmap(c.sessionsRaw || []),
+    burn:     buildBurn(hourly, totals.week),
+    plan:     c.planResp || { plan: "max" },
+    limits:   c.limitsResp || null,
+    budget:   c.budgetResp || null,
+    phase:    c.phaseResp || null,
+    tags:     Array.isArray(c.tagsResp) ? c.tagsResp : [],
+    prefs:    c.prefsResp || null,
+  };
+}
+
+async function loadAll(range) {
+  if (range !== undefined && RANGE_DAYS[range] !== undefined) currentRange = range;
+  const r = currentRange;
+  await _fetchKeys(REG.map((e) => e.key), _ctx(r));
+  _rebuildMockData(r);
+}
+
+async function loadDelta(hint) {
+  const r = currentRange;
+  const ctx = _ctx(r);
+  const keys = pickEntries(REG, hint || {}, ctx.rangeSince);
+  if (keys.length === 0) return;          // nothing in our view changed
+  await _fetchKeys(keys, ctx);
+  _rebuildMockData(r);
+}
+
+async function loadStatic() {
+  const r = currentRange;
+  const ctx = _ctx(r);
+  await _fetchKeys(pickStaticEntries(REG), ctx);
+  _rebuildMockData(r);
+}
 
 const buildTotals = (r, all, m30, w7, today, yday, range) => {
   const cacheRead = w7.cache_read_tokens || 0;
@@ -262,47 +336,11 @@ const EMPTY_DATA = () => ({
   prefs: null,
 });
 
-async function load(range) {
-  if (range !== undefined && RANGE_DAYS[range] !== undefined) currentRange = range;
-  const r = currentRange;
-  const days = RANGE_DAYS[r];
-  const rangeSince = days == null ? null : isoDaysAgo(days);
-
-  const [
-    overviewAll, overview30, overview7, overviewToday, overviewYday,
-    overviewRange,
-    daily, projects, tools, sessionsRaw, skills, byModel, prompts, hourlyRaw, tips, planResp, limitsResp,
-    budgetResp, phaseResp, tagsResp, prefsResp,
-  ] = await fetchAll(rangeSince);
-
-  const totals = buildTotals(r, overviewAll, overview30, overview7, overviewToday, overviewYday, overviewRange);
-  const hourly = buildHourly(hourlyRaw);
-
-  window.MOCK_DATA = {
-    totals,
-    daily: buildDaily(daily, totals.range),
-    projects: buildProjects(projects, totals.range),
-    models: buildModels(byModel),
-    tools: tools.map((t) => ({ name: t.tool_name, calls: t.calls || 0, tokens: t.result_tokens || 0 })),
-    sessions: buildSessions(sessionsRaw),
-    prompts: buildPrompts(prompts),
-    skills: buildSkills(skills),
-    tips: buildTips(tips),
-    hourly,
-    heatmap: buildHeatmap(sessionsRaw),
-    burn: buildBurn(hourly, totals.week),
-    plan: planResp || { plan: "max" },
-    limits: limitsResp || null,
-    budget: budgetResp || null,
-    phase: phaseResp || null,
-    tags: Array.isArray(tagsResp) ? tagsResp : [],
-    prefs: prefsResp || null,
-  };
-}
-
-window.DATA_READY = load().catch((err) => {
+window.DATA_READY = loadAll().catch((err) => {
   console.error("data load failed", err);
   window.MOCK_DATA = window.MOCK_DATA || EMPTY_DATA();
 });
 
-window.RELOAD_DATA = load;
+window.RELOAD_DATA   = loadAll;     // back-compat alias
+window.RELOAD_DELTA  = loadDelta;
+window.RELOAD_STATIC = loadStatic;

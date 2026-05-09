@@ -7,6 +7,7 @@ overkill.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Union
 
@@ -187,3 +188,135 @@ def set_glass_opacity(db_path: Union[str, Path], opacity: int) -> int:
         )
         c.commit()
     return n
+
+
+LIMIT_RESET_KEYS = ("limits_five_hour_reset_at", "limits_weekly_reset_at")
+
+
+def _normalize_iso_utc(s: str) -> "str | None":
+    """Parse an ISO 8601 datetime; assume UTC if naive; return canonical `…Z` form or None."""
+    if not isinstance(s, str) or not s.strip():
+        return None
+    raw = s.strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def get_limit_reset_at(db_path: Union[str, Path], key: str) -> "str | None":
+    if key not in LIMIT_RESET_KEYS:
+        return None
+    with connect(db_path) as c:
+        row = c.execute("SELECT v FROM plan WHERE k=?", (key,)).fetchone()
+    if not row or not row["v"]:
+        return None
+    return row["v"]
+
+
+def set_limit_reset_at(db_path: Union[str, Path], key: str, value) -> "str | None":
+    if key not in LIMIT_RESET_KEYS:
+        return None
+    if value in (None, ""):
+        with connect(db_path) as c:
+            c.execute("DELETE FROM plan WHERE k=?", (key,))
+            c.commit()
+        return None
+    canonical = _normalize_iso_utc(value)
+    if canonical is None:
+        return None
+    with connect(db_path) as c:
+        c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES (?, ?)", (key, canonical))
+        c.commit()
+    return canonical
+
+
+def get_anthropic_api_key(db_path: Union[str, Path]) -> "str | None":
+    with connect(db_path) as c:
+        row = c.execute("SELECT v FROM plan WHERE k='anthropic_api_key'").fetchone()
+    if not row or not row["v"]:
+        return None
+    return row["v"]
+
+
+def set_anthropic_api_key(db_path: Union[str, Path], value) -> "str | None":
+    if value in (None, ""):
+        with connect(db_path) as c:
+            c.execute("DELETE FROM plan WHERE k='anthropic_api_key'")
+            c.commit()
+        return None
+    v = str(value).strip()
+    if not v:
+        with connect(db_path) as c:
+            c.execute("DELETE FROM plan WHERE k='anthropic_api_key'")
+            c.commit()
+        return None
+    with connect(db_path) as c:
+        c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES ('anthropic_api_key', ?)", (v,))
+        c.commit()
+    return v
+
+
+LIMIT_CAP_KEYS = ("limits_5h_cap_override", "limits_weekly_cap_override")
+
+
+def get_limit_cap_override(db_path: Union[str, Path], key: str) -> "int | None":
+    """User-supplied 5h/weekly cap (sonnet-equiv tokens). None means use pricing.json default."""
+    if key not in LIMIT_CAP_KEYS:
+        return None
+    with connect(db_path) as c:
+        row = c.execute("SELECT v FROM plan WHERE k=?", (key,)).fetchone()
+    if not row or not row["v"]:
+        return None
+    try:
+        n = int(row["v"])
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def set_limit_cap_override(db_path: Union[str, Path], key: str, value) -> "int | None":
+    """Persist a cap override; pass None/0/negative to clear."""
+    if key not in LIMIT_CAP_KEYS:
+        return None
+    if value in (None, "", 0):
+        with connect(db_path) as c:
+            c.execute("DELETE FROM plan WHERE k=?", (key,))
+            c.commit()
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0:
+        with connect(db_path) as c:
+            c.execute("DELETE FROM plan WHERE k=?", (key,))
+            c.commit()
+        return None
+    with connect(db_path) as c:
+        c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES (?, ?)", (key, str(n)))
+        c.commit()
+    return n
+
+
+def get_limits_sync_meta(db_path: Union[str, Path]) -> dict:
+    out = {"last_sync_at": None, "last_sync_status": None}
+    with connect(db_path) as c:
+        for row in c.execute(
+            "SELECT k, v FROM plan WHERE k IN ('limits_last_sync_at', 'limits_last_sync_status')"
+        ):
+            if row["k"] == "limits_last_sync_at":
+                out["last_sync_at"] = row["v"]
+            elif row["k"] == "limits_last_sync_status":
+                out["last_sync_status"] = row["v"]
+    return out
+
+
+def set_limits_sync_meta(db_path: Union[str, Path], *, status: str, at_iso: str) -> None:
+    with connect(db_path) as c:
+        c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_last_sync_at', ?)", (at_iso,))
+        c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_last_sync_status', ?)", (status,))
+        c.commit()

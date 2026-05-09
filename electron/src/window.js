@@ -27,7 +27,10 @@ function createMainWindow({ url, preloadPath, iconPath, isMac, isWin, devMode, g
     opts.vibrancy = "under-window";
     opts.visualEffectState = "active";
   } else if (glass && isWin) {
-    opts.backgroundMaterial = "acrylic";
+    // Mica = Win11 native long-lived-shell material (Settings, File Explorer).
+    // Subtler than acrylic but matches the OS and renders consistently focused
+    // and unfocused — acrylic falls flat when the window loses focus.
+    opts.backgroundMaterial = "mica";
   }
   if (isMac) {
     // Keeps the macOS traffic-light buttons; frees the rest of the title bar.
@@ -78,7 +81,7 @@ function applyGlass(win, enabled, { isMac, isWin }) {
     if (isMac) {
       win.setVibrancy(enabled ? "under-window" : null);
     } else if (isWin && typeof win.setBackgroundMaterial === "function") {
-      win.setBackgroundMaterial(enabled ? "acrylic" : "none");
+      win.setBackgroundMaterial(enabled ? "mica" : "none");
     }
     if (typeof win.setBackgroundColor === "function") {
       win.setBackgroundColor(enabled ? "#00000000" : "#0a0a0a");

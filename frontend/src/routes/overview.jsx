@@ -1,6 +1,6 @@
 import React from "react";
 import { D } from "../data-store.js";
-import { fmtCost, fmtNum, fmtPct, fmtTokens } from "../format.js";
+import { fmtCost, fmtCostWhole, fmtNum, fmtPct, fmtTokens } from "../format.js";
 import { HBar, KPI, ModelBadge } from "../components/atoms.jsx";
 import { AreaChart, Donut, StripSpark } from "../components/charts.jsx";
 
@@ -19,21 +19,21 @@ const KpiRow = ({ totals }) => {
       key: "range",
       days: rangeDaysFromKey(t.rangeKey),
       label: t.rangeLabel || "range",
-      value: fmtCost(t.range || 0),
+      value: fmtCostWhole(t.range || 0),
       sub: `${fmtTokens(t.rangeTokens)} tok · ${t.rangeSessions || 0} sessions`,
     },
     {
       key: "week",
       days: 7,
       label: "7 days",
-      value: fmtCost(t.week),
+      value: fmtCostWhole(t.week),
       sub: `${fmtTokens(t.weekTokens)} tok · avg ${fmtCost(t.week / 7)}/day`,
     },
     {
       key: "all",
       days: Infinity,
       label: "all-time",
-      value: fmtCost(t.cost),
+      value: fmtCostWhole(t.cost),
       sub: `${fmtTokens(t.allTokens)} tok · ${fmtNum(t.turns)} turns`,
     },
   ].sort((a, b) => a.days - b.days);
@@ -94,11 +94,12 @@ const LimitWindow = ({ label, sub, win, plan }) => {
   const tone = toneFor(win.pct_used);
   const resetIn = fmtResetIn(win.resets_at);
   const idle = "anchor" in win && win.anchor == null;
+  const calBadge = win.calibrated ? " · calibrated" : "";
   const subText = idle
     ? `${sub} · idle — no active session`
     : resetIn
-      ? `${fmtTokens(win.used)} / ${fmtTokens(win.cap)} tok · ${resetIn}`
-      : `${fmtTokens(win.used)} / ${fmtTokens(win.cap)} tok · ${sub}`;
+      ? `${fmtTokens(win.used)} / ${fmtTokens(win.cap)} tok · ${resetIn}${calBadge}`
+      : `${fmtTokens(win.used)} / ${fmtTokens(win.cap)} tok · ${sub}${calBadge}`;
   return (
     <div className="a-limit">
       <div className="a-label">{label}</div>
@@ -199,7 +200,14 @@ const LimitsCard = ({ limits, enabled }) => {
   if (!limits || limits.plan === "api") return null;
   const meta = limits.meta || {};
   const verifiedSuffix = meta.last_verified ? ` · verified ${meta.last_verified}` : "";
-  const note = meta.source_note || "Anthropic doesn't publish exact token caps; treat as ±50% rough.";
+  const bothCalibrated = limits.five_hour?.calibrated && limits.weekly?.calibrated;
+  const anyCalibrated = limits.five_hour?.calibrated || limits.weekly?.calibrated;
+  const defaultNote = bothCalibrated
+    ? "Caps calibrated from your Anthropic statusbar. Re-calibrate in Settings if your plan changes."
+    : anyCalibrated
+      ? "One window is calibrated; the other uses a rough community estimate. Calibrate the rest in Settings."
+      : "Anthropic doesn't publish exact token caps; defaults are rough community estimates. Calibrate from your statusbar in Settings.";
+  const note = meta.source_note || defaultNote;
   return (
     <section className="a-card a-limits">
       <div className="a-card-head">
@@ -293,7 +301,7 @@ const ProjectsTable = ({ totals }) => (
   </div>
 );
 
-const ModelsAndTools = () => (
+const ModelsCard = () => (
   <div className="a-card">
     <div className="a-card-head"><h2>By model</h2></div>
     <div className="a-model-block">
@@ -312,8 +320,15 @@ const ModelsAndTools = () => (
         ))}
       </div>
     </div>
-    <div className="a-card-divider" />
-    <div className="a-card-head" style={{ marginTop: 4 }}><h2>Top tools</h2></div>
+  </div>
+);
+
+const TopToolsCard = () => (
+  <div className="a-card">
+    <div className="a-card-head">
+      <h2>Top tools</h2>
+      <span className="a-card-meta">most-used tools by call count</span>
+    </div>
     <table className="a-table">
       <thead><tr><th>tool</th><th className="num">calls</th><th className="num">tokens</th></tr></thead>
       <tbody>
@@ -329,18 +344,16 @@ const ModelsAndTools = () => (
   </div>
 );
 
-const RecentSessions = () => (
-  <section className="a-card a-recent-sessions">
-    <div className="a-card-head">
-      <h2>Recent sessions</h2>
-      <span className="a-card-meta">click a row to drill in</span>
-    </div>
-    <table className="a-table">
+const RecentSessions = () => {
+  const sessions = D.sessions || [];
+  const scroll = sessions.length > 20;
+  const table = (
+    <table className="a-table a-sticky-head">
       <thead>
         <tr><th>session</th><th>project</th><th>started</th><th>model</th><th className="num">turns</th><th className="num">tokens</th><th className="num">cost</th></tr>
       </thead>
       <tbody>
-        {(D.sessions || []).map((s) => (
+        {sessions.map((s) => (
           <tr key={s.id} className="clickable" onClick={() => { window.location.hash = `/sessions/${encodeURIComponent(s.id)}`; }}>
             <td className="mono">{s.id}</td>
             <td className="mono">{s.project}</td>
@@ -353,8 +366,19 @@ const RecentSessions = () => (
         ))}
       </tbody>
     </table>
-  </section>
-);
+  );
+  return (
+    <section className="a-card a-recent-sessions">
+      <div className="a-card-head">
+        <h2>Recent sessions</h2>
+        <span className="a-card-meta">
+          {scroll ? `${sessions.length} sessions · scroll for more` : "click a row to drill in"}
+        </span>
+      </div>
+      {scroll ? <div className="a-recent-scroll">{table}</div> : table}
+    </section>
+  );
+};
 
 export const Overview = () => {
   const totals = D.totals;
@@ -368,10 +392,11 @@ export const Overview = () => {
       <DailyCharts totals={totals} />
       <section className="a-card-row">
         <ProjectsTable totals={totals} />
-        <ModelsAndTools />
+        <ModelsCard />
       </section>
       <section className="a-card-row">
         <PhaseSplitCard phase={D.phase} />
+        <TopToolsCard />
       </section>
       <RecentSessions />
     </div>

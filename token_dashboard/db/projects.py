@@ -30,6 +30,29 @@ def _walk_to_root(cwd: str, slug: str) -> Optional[str]:
     return None
 
 
+_WORKTREE_RE = re.compile(r"[\\/]\.claude[\\/]worktrees[\\/]", re.IGNORECASE)
+
+
+def worktree_parent_name(cwd: Optional[str]) -> Optional[str]:
+    """If `cwd` is inside a `.claude/worktrees/` dir, return the parent repo's basename.
+
+    The `superpowers:using-git-worktrees` skill creates worktrees at
+    `<repo>/.claude/worktrees/<adjective-name-hash>`. Without this, the
+    dashboard would show the worktree's randomized name as the project.
+    """
+    if not cwd:
+        return None
+    m = _WORKTREE_RE.search(cwd)
+    if not m:
+        return None
+    parent = cwd[: m.start()]
+    if not parent:
+        return None
+    sep = "\\" if "\\" in parent else "/"
+    name = parent.rstrip("/\\").split(sep)[-1]
+    return name or None
+
+
 def project_name_for(cwd: Optional[str], fallback_slug: str) -> str:
     """Pretty project name from a single cwd + slug (best-effort).
 
@@ -59,6 +82,10 @@ def best_project_name(cwds, slug: str) -> str:
     then to the slug's last segment.
     """
     cwds = [c for c in (cwds or []) if c]
+    for cwd in cwds:
+        parent = worktree_parent_name(cwd)
+        if parent:
+            return parent
     for cwd in cwds:
         name = _walk_to_root(cwd, slug)
         if name:

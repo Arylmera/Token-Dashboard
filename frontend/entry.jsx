@@ -22,6 +22,16 @@ const Shell = () => (
   render();
   try {
     const es = new EventSource("/api/stream");
-    es.onmessage = async () => { await window.RELOAD_DATA(); render(); };
+    es.onmessage = async (e) => {
+      let evt = null;
+      try { evt = JSON.parse(e.data); } catch { return; }
+      if (!evt || evt.type !== "scan") return;
+      if (evt.changed && window.RELOAD_DELTA) {
+        await window.RELOAD_DELTA(evt.changed);
+      } else {
+        await window.RELOAD_DATA();   // fallback for old server / missing changed
+      }
+      render();
+    };
   } catch (_) {}
 })();

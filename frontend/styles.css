@@ -236,6 +236,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 .a-kpi {
   background: var(--panel); border: 1px solid var(--iron-border);
   padding: 14px 16px;
+  container-type: inline-size;
 }
 .a-metric {
   font: 500 32px/1.05 "JetBrains Mono"; letter-spacing: -0.04em;
@@ -250,7 +251,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 .a-kpi-row .a-kpi { border: 0; border-right: 1px solid var(--iron-border); border-bottom: 1px solid var(--iron-border); min-width: 0; }
 .a-kpi-row .a-kpi:last-child { border-right: 0; }
 .a-kpi-row-tight { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom: 0; }
-.a-kpi .a-metric { overflow-wrap: anywhere; word-break: break-word; }
+.dir-a-root .a-kpi .a-metric { font-size: clamp(16px, 16cqi, 32px); white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .a-card-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-bottom: 12px; }
 
 .a-chart { width: 100%; height: 180px; display: block; }
@@ -296,9 +297,38 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 .a-table tbody tr.is-active td { background: var(--panel-2); }
 
 .a-scroll-5 { max-height: 175px; overflow-y: auto; }
+.a-recent-scroll { max-height: 588px; overflow-y: auto; }
 .a-table-scroll { overflow-x: auto; }
-.a-pricing-table { min-width: 520px; }
+.a-pricing-table { min-width: 620px; }
 .a-pricing-table td:first-child { white-space: nowrap; padding-right: 16px; }
+.dir-a-root .a-pricing-input {
+  display: inline-flex; align-items: center; gap: 2px;
+  border: 1px solid var(--iron-border-2);
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: var(--panel);
+  min-width: 86px;
+}
+.dir-a-root .a-pricing-input.is-modified {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, var(--panel));
+}
+.dir-a-root .a-pricing-currency { color: var(--gull-2); font: 500 11px "JetBrains Mono"; }
+.dir-a-root .a-pricing-input input {
+  flex: 1; min-width: 0; width: 100%;
+  background: transparent; border: 0; outline: 0;
+  color: var(--bone);
+  font: 500 12px "JetBrains Mono";
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding: 2px 0;
+  color-scheme: dark;
+}
+.dir-a-root.theme-light .a-pricing-input input,
+.dir-a-root.theme-linen .a-pricing-input input,
+.dir-a-root.theme-bb-light .a-pricing-input input,
+.dir-a-root.theme-cyber-light .a-pricing-input input { color-scheme: light; }
+.dir-a-root .a-card-meta.is-error { color: var(--bad, var(--warn, var(--accent))); }
 .a-sink-table { min-width: 640px; }
 .a-sink-table td:first-child { white-space: nowrap; padding-right: 16px; }
 .a-turn-table { min-width: 660px; }
@@ -753,6 +783,36 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
   color: var(--bone);
   font: 500 13px "JetBrains Mono";
 }
+.dir-a-root .a-budget-field input[type="datetime-local"],
+.dir-a-root .a-text-input {
+  flex: 1; min-width: 0;
+  background: var(--panel); color: var(--bone);
+  border: 1px solid var(--iron-border-2);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font: 500 12px "JetBrains Mono";
+  font-variant-numeric: tabular-nums;
+  outline: 0;
+  color-scheme: dark;
+}
+.dir-a-root.theme-light .a-budget-field input[type="datetime-local"],
+.dir-a-root.theme-linen .a-budget-field input[type="datetime-local"],
+.dir-a-root.theme-bb-light .a-budget-field input[type="datetime-local"],
+.dir-a-root.theme-cyber-light .a-budget-field input[type="datetime-local"],
+.dir-a-root.theme-light .a-text-input,
+.dir-a-root.theme-linen .a-text-input,
+.dir-a-root.theme-bb-light .a-text-input,
+.dir-a-root.theme-cyber-light .a-text-input { color-scheme: light; }
+.dir-a-root .a-budget-field input[type="datetime-local"]:focus,
+.dir-a-root .a-text-input:focus { border-color: var(--accent); }
+.dir-a-root .a-budget-field input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+.dir-a-root.theme-light .a-budget-field input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.dir-a-root.theme-linen .a-budget-field input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.dir-a-root.theme-bb-light .a-budget-field input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.dir-a-root.theme-cyber-light .a-budget-field input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: none; }
 .dir-a-root .a-budget-banner-list { display: flex; flex-direction: column; gap: 8px; }
 .dir-a-root .a-budget-banner-row {
   padding: 8px 10px;
