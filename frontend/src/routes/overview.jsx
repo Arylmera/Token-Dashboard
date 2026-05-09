@@ -336,18 +336,16 @@ const TopToolsCard = () => (
   </div>
 );
 
-const RecentSessions = () => (
-  <section className="a-card a-recent-sessions">
-    <div className="a-card-head">
-      <h2>Recent sessions</h2>
-      <span className="a-card-meta">click a row to drill in</span>
-    </div>
-    <table className="a-table">
+const RecentSessions = () => {
+  const sessions = D.sessions || [];
+  const scroll = sessions.length > 20;
+  const table = (
+    <table className="a-table a-sticky-head">
       <thead>
         <tr><th>session</th><th>project</th><th>started</th><th>model</th><th className="num">turns</th><th className="num">tokens</th><th className="num">cost</th></tr>
       </thead>
       <tbody>
-        {(D.sessions || []).map((s) => (
+        {sessions.map((s) => (
           <tr key={s.id} className="clickable" onClick={() => { window.location.hash = `/sessions/${encodeURIComponent(s.id)}`; }}>
             <td className="mono">{s.id}</td>
             <td className="mono">{s.project}</td>
@@ -360,8 +358,19 @@ const RecentSessions = () => (
         ))}
       </tbody>
     </table>
-  </section>
-);
+  );
+  return (
+    <section className="a-card a-recent-sessions">
+      <div className="a-card-head">
+        <h2>Recent sessions</h2>
+        <span className="a-card-meta">
+          {scroll ? `${sessions.length} sessions · scroll for more` : "click a row to drill in"}
+        </span>
+      </div>
+      {scroll ? <div className="a-recent-scroll">{table}</div> : table}
+    </section>
+  );
+};
 
 export const Overview = () => {
   const totals = D.totals;
