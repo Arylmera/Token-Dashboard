@@ -4,6 +4,8 @@
 // resolves window.DATA_READY before mounting and exposes window.RELOAD_DATA
 // for range switches and SSE refreshes.
 
+import { pickEntries, pickStaticEntries } from "./sse-dispatch.js";
+
 const fmtTime = (iso) => {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -156,6 +158,22 @@ async function loadAll(range) {
   if (range !== undefined && RANGE_DAYS[range] !== undefined) currentRange = range;
   const r = currentRange;
   await _fetchKeys(REG.map((e) => e.key), _ctx(r));
+  _rebuildMockData(r);
+}
+
+async function loadDelta(hint) {
+  const r = currentRange;
+  const ctx = _ctx(r);
+  const keys = pickEntries(REG, hint || {}, ctx.rangeSince);
+  if (keys.length === 0) return;          // nothing in our view changed
+  await _fetchKeys(keys, ctx);
+  _rebuildMockData(r);
+}
+
+async function loadStatic() {
+  const r = currentRange;
+  const ctx = _ctx(r);
+  await _fetchKeys(pickStaticEntries(REG), ctx);
   _rebuildMockData(r);
 }
 
@@ -321,4 +339,6 @@ window.DATA_READY = loadAll().catch((err) => {
   window.MOCK_DATA = window.MOCK_DATA || EMPTY_DATA();
 });
 
-window.RELOAD_DATA = loadAll;            // back-compat alias
+window.RELOAD_DATA   = loadAll;     // back-compat alias
+window.RELOAD_DELTA  = loadDelta;
+window.RELOAD_STATIC = loadStatic;
