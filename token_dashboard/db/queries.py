@@ -143,13 +143,22 @@ def tool_token_breakdown(db_path, since=None, until=None) -> list:
         return [dict(r) for r in c.execute(sql, args)]
 
 
-def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=None, tag=None) -> list:
+def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=None, tag=None, order_by: str = "recent") -> list:
     rng, args = _range_clause(since, until)
     tag_join, tag_filter, tag_args = "", "", []
     if tag:
         tag_join = "JOIN session_tags_all st ON st.session_id = m.session_id"
         tag_filter = "AND st.tag = ?"
         tag_args = [tag]
+    if order_by == "cost":
+        # Proxy ordering by billable tokens in SQL; re-sort by computed cost in Python.
+        # Widen the candidate pool so cheap-token / expensive-model sessions still surface.
+        order_clause = ("SUM(m.input_tokens)+SUM(m.output_tokens)"
+                        "+SUM(m.cache_create_5m_tokens)+SUM(m.cache_create_1h_tokens) DESC")
+        fetch_limit = min(max(limit * 5, 100), 500)
+    else:
+        order_clause = "ended DESC"
+        fetch_limit = limit
     sql = f"""
       SELECT m.session_id AS session_id, m.project_slug AS project_slug,
              MIN(m.timestamp) AS started, MAX(m.timestamp) AS ended,
@@ -159,11 +168,11 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=No
         {tag_join}
        WHERE 1=1 {rng} {tag_filter}
        GROUP BY m.session_id
-       ORDER BY ended DESC
+       ORDER BY {order_clause}
        LIMIT ?
     """
     with connect(db_path) as c:
-        rows = [dict(r) for r in c.execute(sql, (*args, *tag_args, limit))]
+        rows = [dict(r) for r in c.execute(sql, (*args, *tag_args, fetch_limit))]
         slug_cache = {}
         for r in rows:
             slug = r["project_slug"]
@@ -236,6 +245,9 @@ def recent_sessions(db_path, limit: int = 20, since=None, until=None, pricing=No
             tag_map = session_tags(db_path, [r["session_id"] for r in rows])
             for r in rows:
                 r["tags"] = tag_map.get(r["session_id"], [])
+    if order_by == "cost":
+        rows.sort(key=lambda r: r.get("cost_usd") or 0, reverse=True)
+        rows = rows[:limit]
     return rows
 
 
