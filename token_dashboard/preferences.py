@@ -260,6 +260,48 @@ def set_anthropic_api_key(db_path: Union[str, Path], value) -> "str | None":
     return v
 
 
+LIMIT_CAP_KEYS = ("limits_5h_cap_override", "limits_weekly_cap_override")
+
+
+def get_limit_cap_override(db_path: Union[str, Path], key: str) -> "int | None":
+    """User-supplied 5h/weekly cap (sonnet-equiv tokens). None means use pricing.json default."""
+    if key not in LIMIT_CAP_KEYS:
+        return None
+    with connect(db_path) as c:
+        row = c.execute("SELECT v FROM plan WHERE k=?", (key,)).fetchone()
+    if not row or not row["v"]:
+        return None
+    try:
+        n = int(row["v"])
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def set_limit_cap_override(db_path: Union[str, Path], key: str, value) -> "int | None":
+    """Persist a cap override; pass None/0/negative to clear."""
+    if key not in LIMIT_CAP_KEYS:
+        return None
+    if value in (None, "", 0):
+        with connect(db_path) as c:
+            c.execute("DELETE FROM plan WHERE k=?", (key,))
+            c.commit()
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0:
+        with connect(db_path) as c:
+            c.execute("DELETE FROM plan WHERE k=?", (key,))
+            c.commit()
+        return None
+    with connect(db_path) as c:
+        c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES (?, ?)", (key, str(n)))
+        c.commit()
+    return n
+
+
 def get_limits_sync_meta(db_path: Union[str, Path]) -> dict:
     out = {"last_sync_at": None, "last_sync_status": None}
     with connect(db_path) as c:

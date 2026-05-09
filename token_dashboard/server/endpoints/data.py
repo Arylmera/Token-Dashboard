@@ -32,6 +32,7 @@ from ...preferences import (
     get_badge_window_mode,
     get_glass_enabled,
     get_glass_opacity,
+    get_limit_cap_override,
     get_limit_reset_at,
     get_limits_enabled,
     get_limits_sync_meta,
@@ -214,6 +215,8 @@ def preferences(handler, db_path, pricing, qs):
         "limits_enabled": get_limits_enabled(db_path),
         "limits_five_hour_reset_at": get_limit_reset_at(db_path, "limits_five_hour_reset_at"),
         "limits_weekly_reset_at":    get_limit_reset_at(db_path, "limits_weekly_reset_at"),
+        "limits_5h_cap_override":     get_limit_cap_override(db_path, "limits_5h_cap_override"),
+        "limits_weekly_cap_override": get_limit_cap_override(db_path, "limits_weekly_cap_override"),
         "anthropic_api_key_set":     get_anthropic_api_key(db_path) is not None,
         "limits_last_sync_at":       _meta["last_sync_at"],
         "limits_last_sync_status":   _meta["last_sync_status"],
@@ -295,9 +298,12 @@ def limits(handler, db_path, pricing, qs):
             anchor_dt = datetime.fromisoformat(anchor_iso.replace("Z", "+00:00"))
             resets_at_iso = (anchor_dt + _FIVE_H).isoformat().replace("+00:00", "Z")
 
-    five_hour = _window_payload(used_5h, caps.get("five_hour"))
+    override_5h_cap = get_limit_cap_override(db_path, "limits_5h_cap_override")
+    cap_5h = override_5h_cap if override_5h_cap is not None else caps.get("five_hour")
+    five_hour = _window_payload(used_5h, cap_5h)
     five_hour["anchor"] = anchor_iso
     five_hour["resets_at"] = resets_at_iso
+    five_hour["calibrated"] = override_5h_cap is not None
 
     override_week = _resolve_override(db_path, "limits_weekly_reset_at", now, _SEVEN_D)
     if override_week is not None:
@@ -308,8 +314,11 @@ def limits(handler, db_path, pricing, qs):
         weekly_resets_at = None
 
     used_week = window_billable_tokens(db_path, since_week, pricing)
-    weekly = _window_payload(used_week, caps.get("weekly"))
+    override_weekly_cap = get_limit_cap_override(db_path, "limits_weekly_cap_override")
+    cap_weekly = override_weekly_cap if override_weekly_cap is not None else caps.get("weekly")
+    weekly = _window_payload(used_week, cap_weekly)
     weekly["resets_at"] = weekly_resets_at
+    weekly["calibrated"] = override_weekly_cap is not None
 
     send_json(handler, {
         "plan": plan_id,

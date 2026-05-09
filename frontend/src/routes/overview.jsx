@@ -94,11 +94,12 @@ const LimitWindow = ({ label, sub, win, plan }) => {
   const tone = toneFor(win.pct_used);
   const resetIn = fmtResetIn(win.resets_at);
   const idle = "anchor" in win && win.anchor == null;
+  const calBadge = win.calibrated ? " · calibrated" : "";
   const subText = idle
     ? `${sub} · idle — no active session`
     : resetIn
-      ? `${fmtTokens(win.used)} / ${fmtTokens(win.cap)} tok · ${resetIn}`
-      : `${fmtTokens(win.used)} / ${fmtTokens(win.cap)} tok · ${sub}`;
+      ? `${fmtTokens(win.used)} / ${fmtTokens(win.cap)} tok · ${resetIn}${calBadge}`
+      : `${fmtTokens(win.used)} / ${fmtTokens(win.cap)} tok · ${sub}${calBadge}`;
   return (
     <div className="a-limit">
       <div className="a-label">{label}</div>
@@ -199,7 +200,14 @@ const LimitsCard = ({ limits, enabled }) => {
   if (!limits || limits.plan === "api") return null;
   const meta = limits.meta || {};
   const verifiedSuffix = meta.last_verified ? ` · verified ${meta.last_verified}` : "";
-  const note = meta.source_note || "Anthropic doesn't publish exact token caps; treat as ±50% rough.";
+  const bothCalibrated = limits.five_hour?.calibrated && limits.weekly?.calibrated;
+  const anyCalibrated = limits.five_hour?.calibrated || limits.weekly?.calibrated;
+  const defaultNote = bothCalibrated
+    ? "Caps calibrated from your Anthropic statusbar. Re-calibrate in Settings if your plan changes."
+    : anyCalibrated
+      ? "One window is calibrated; the other uses a rough community estimate. Calibrate the rest in Settings."
+      : "Anthropic doesn't publish exact token caps; defaults are rough community estimates. Calibrate from your statusbar in Settings.";
+  const note = meta.source_note || defaultNote;
   return (
     <section className="a-card a-limits">
       <div className="a-card-head">
