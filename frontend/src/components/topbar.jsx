@@ -20,9 +20,14 @@ export const Topbar = ({ tab, setTab, range, setRange }) => {
   const version = useVersion();
   return (
   <header className="a-topbar">
-    <div className="a-brand">
+    <div className="a-brand a-prompt">
       <span className="a-brand-dot" />
-      <span className="a-brand-text">token-dashboard</span>
+      <span className="a-prompt-path">~/code/dashboard</span>
+      <span className="a-prompt-ps1">$</span>
+      <span className="a-prompt-cmd">td</span>
+      <span className="a-prompt-flag">--range=</span><span className="a-prompt-val">{range}</span>
+      <span className="a-prompt-flag">--tab=</span><span className="a-prompt-val">{(tab || "").replace(/\s+/g, "-")}</span>
+      <span className="a-prompt-cursor" aria-hidden="true" />
       {version && <span className="a-brand-sub">v{version}</span>}
     </div>
     <nav className="a-nav">

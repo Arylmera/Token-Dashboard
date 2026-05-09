@@ -4,16 +4,19 @@ export const Label = ({ children, style }) => (
   <div className="a-label" style={style}>{children}</div>
 );
 
-export const KPI = ({ label, value, sub, tone, delta }) => (
+export const KPI = ({ label, value, sub, tone, delta, spark }) => (
   <div className="a-kpi">
     <Label>{label}</Label>
     <div className={`a-metric ${tone === "good" ? "tone-good" : ""}`}>{value}</div>
     {sub && <div className="a-kpi-sub">{sub}</div>}
     {delta != null && (
-      <div className={`a-delta ${delta >= 0 ? "tone-good" : "tone-bad"}`}>
-        {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
+      <div className="a-delta-row">
+        <span className={`a-delta ${delta >= 0 ? "tone-good" : "tone-bad"}`}>
+          {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
+        </span>
       </div>
     )}
+    {spark}
   </div>
 );
 

@@ -21,11 +21,24 @@ const Shell = () => (
   const render = () => root.render(<Shell />);
   render();
   try {
+    const d = localStorage.getItem("td.density.v1");
+    if (d && d !== "comfortable") {
+      const r = document.querySelector(".dir-a-root");
+      if (r) r.setAttribute("data-density", d);
+    }
+  } catch (_) {}
+  try {
     const es = new EventSource("/api/stream");
     es.onmessage = async (e) => {
       let evt = null;
       try { evt = JSON.parse(e.data); } catch { return; }
-      if (!evt || evt.type !== "scan") return;
+      if (!evt) return;
+      if (evt.type === "bundle") {
+        // Dev mode: esbuild rebuilt dist/app.js, hard-reload to pick it up.
+        location.reload();
+        return;
+      }
+      if (evt.type !== "scan") return;
       if (evt.changed && window.RELOAD_DELTA) {
         await window.RELOAD_DELTA(evt.changed);
       } else {
