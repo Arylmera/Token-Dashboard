@@ -25,7 +25,13 @@ const Shell = () => (
     es.onmessage = async (e) => {
       let evt = null;
       try { evt = JSON.parse(e.data); } catch { return; }
-      if (!evt || evt.type !== "scan") return;
+      if (!evt) return;
+      if (evt.type === "bundle") {
+        // Dev mode: esbuild rebuilt dist/app.js, hard-reload to pick it up.
+        location.reload();
+        return;
+      }
+      if (evt.type !== "scan") return;
       if (evt.changed && window.RELOAD_DELTA) {
         await window.RELOAD_DELTA(evt.changed);
       } else {

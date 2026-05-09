@@ -8,6 +8,7 @@ import socket
 import sys
 import threading
 import time
+from pathlib import Path
 
 from ..scanner import scan_dir
 from .routes import build_handler, set_started_at
@@ -16,6 +17,29 @@ from .sse import EVENTS, active_clients, ever_connected, last_disconnect_ts
 DEFAULT_SCAN_INTERVAL = 5.0
 AUTO_EXIT_IDLE_SECONDS = 8.0
 READY_TOKEN = "TOKEN_DASHBOARD_READY"
+BUNDLE_POLL_INTERVAL = 0.5
+
+
+def _bundle_watch_loop():
+    """Dev-only: watch frontend/dist/app.js mtime, publish SSE on change."""
+    bundle = Path(__file__).resolve().parents[2] / "frontend" / "dist" / "app.js"
+    last: float | None = None
+    try:
+        last = bundle.stat().st_mtime
+    except OSError:
+        last = None
+    while True:
+        time.sleep(BUNDLE_POLL_INTERVAL)
+        try:
+            cur = bundle.stat().st_mtime
+        except OSError:
+            continue
+        if last is None:
+            last = cur
+            continue
+        if cur != last:
+            last = cur
+            EVENTS.publish({"type": "bundle", "ts": time.time()})
 
 
 def _resolve_scan_interval() -> float:
@@ -97,6 +121,8 @@ def run(host: str, port: int, db_path: str, projects_dir: str, auto_exit: bool =
     threading.Thread(
         target=_scan_loop, args=(db_path, projects_dir, interval), daemon=True
     ).start()
+    if os.environ.get("TOKEN_DASHBOARD_DEV") == "1":
+        threading.Thread(target=_bundle_watch_loop, daemon=True).start()
     H = build_handler(db_path, projects_dir)
     set_started_at(time.time())
     try:
