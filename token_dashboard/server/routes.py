@@ -28,6 +28,7 @@ from ..preferences import (
     set_badge_window_mode,
     set_glass_enabled,
     set_glass_opacity,
+    set_limit_cap_override,
     set_limit_reset_at,
     set_limits_enabled,
     set_limits_sync_meta,
@@ -215,6 +216,11 @@ def build_handler(db_path: str, projects_dir: str):
                 for k in ("limits_five_hour_reset_at", "limits_weekly_reset_at"):
                     if k in body:
                         set_limit_reset_at(db_path, k, body[k])
+                for k in ("limits_5h_cap_override", "limits_weekly_cap_override"):
+                    if k in body:
+                        v = set_limit_cap_override(db_path, k, body[k])
+                        EVENTS.publish({"type": "preferences", k: v})
+                        resp[k] = v
                 if "anthropic_api_key" in body:
                     set_anthropic_api_key(db_path, body["anthropic_api_key"])
                 return send_json(self, resp)
