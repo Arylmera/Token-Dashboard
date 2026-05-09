@@ -80,6 +80,8 @@ def tools(handler, db_path, pricing, qs):
 
 
 def sessions(handler, db_path, pricing, qs):
+    order_raw = (qs.get("order", ["recent"])[0] or "recent").lower()
+    order_by = "cost" if order_raw == "cost" else "recent"
     send_json(handler, recent_sessions(
         db_path,
         limit=clamp_limit(qs.get("limit", ["20"])[0], 20),
@@ -87,6 +89,7 @@ def sessions(handler, db_path, pricing, qs):
         until=qs.get("until", [None])[0],
         pricing=pricing,
         tag=qs.get("tag", [None])[0] or None,
+        order_by=order_by,
     ))
 
 

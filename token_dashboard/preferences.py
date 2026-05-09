@@ -7,6 +7,7 @@ overkill.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Union
 
@@ -187,3 +188,47 @@ def set_glass_opacity(db_path: Union[str, Path], opacity: int) -> int:
         )
         c.commit()
     return n
+
+
+LIMIT_RESET_KEYS = ("limits_five_hour_reset_at", "limits_weekly_reset_at")
+
+
+def _normalize_iso_utc(s: str) -> "str | None":
+    """Parse an ISO 8601 datetime; assume UTC if naive; return canonical `…Z` form or None."""
+    if not isinstance(s, str) or not s.strip():
+        return None
+    raw = s.strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def get_limit_reset_at(db_path: Union[str, Path], key: str) -> "str | None":
+    if key not in LIMIT_RESET_KEYS:
+        return None
+    with connect(db_path) as c:
+        row = c.execute("SELECT v FROM plan WHERE k=?", (key,)).fetchone()
+    if not row or not row["v"]:
+        return None
+    return row["v"]
+
+
+def set_limit_reset_at(db_path: Union[str, Path], key: str, value) -> "str | None":
+    if key not in LIMIT_RESET_KEYS:
+        return None
+    if value in (None, ""):
+        with connect(db_path) as c:
+            c.execute("DELETE FROM plan WHERE k=?", (key,))
+            c.commit()
+        return None
+    canonical = _normalize_iso_utc(value)
+    if canonical is None:
+        return None
+    with connect(db_path) as c:
+        c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES (?, ?)", (key, canonical))
+        c.commit()
+    return canonical
