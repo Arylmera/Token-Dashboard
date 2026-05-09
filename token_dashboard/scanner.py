@@ -196,6 +196,11 @@ def scan_file(path: Path, project_slug: str, conn, start_byte: int = 0) -> dict:
     """
     msgs = tools = 0
     end_offset = start_byte
+    seen_sessions: set[str] = set()
+    seen_models: set[str] = set()
+    seen_days: set[str] = set()
+    min_ts: str | None = None
+    max_ts: str | None = None
     with open(path, "rb") as fb:
         if start_byte:
             fb.seek(start_byte)
@@ -240,15 +245,53 @@ def scan_file(path: Path, project_slug: str, conn, start_byte: int = 0) -> dict:
                 conn.execute(INSERT_TOOL, t)
                 tools += 1
             msgs += 1
+            seen_sessions.add(msg["session_id"])
+            if msg["model"]:
+                seen_models.add(msg["model"])
+            ts = msg["timestamp"]
+            if ts:
+                seen_days.add(ts[:10])
+                if min_ts is None or ts < min_ts:
+                    min_ts = ts
+                if max_ts is None or ts > max_ts:
+                    max_ts = ts
             end_offset = line_end
-    return {"messages": msgs, "tools": tools, "end_offset": end_offset}
+    return {
+        "messages": msgs,
+        "tools":    tools,
+        "end_offset": end_offset,
+        "sessions": sorted(seen_sessions),
+        "models":   sorted(seen_models),
+        "days":     sorted(seen_days),
+        "min_ts":   min_ts,
+        "max_ts":   max_ts,
+    }
+
+
+def _finalize(totals: dict) -> dict:
+    return {
+        "messages": totals["messages"],
+        "tools":    totals["tools"],
+        "files":    totals["files"],
+        "sessions": sorted(totals["sessions"]) if isinstance(totals["sessions"], set) else totals["sessions"],
+        "projects": sorted(totals["projects"]) if isinstance(totals["projects"], set) else totals["projects"],
+        "days":     sorted(totals["days"])     if isinstance(totals["days"], set)     else totals["days"],
+        "models":   sorted(totals["models"])   if isinstance(totals["models"], set)   else totals["models"],
+        "min_ts":   totals["min_ts"],
+        "max_ts":   totals["max_ts"],
+    }
 
 
 def scan_dir(projects_root: Union[str, Path], db_path: Union[str, Path]) -> dict:
     root = Path(projects_root)
-    totals = {"messages": 0, "tools": 0, "files": 0}
+    totals = {
+        "messages": 0, "tools": 0, "files": 0,
+        "sessions": set(), "projects": set(),
+        "days": set(), "models": set(),
+        "min_ts": None, "max_ts": None,
+    }
     if not root.is_dir():
-        return totals
+        return _finalize(totals)
     with connect(db_path) as conn:
         for p in root.rglob("*.jsonl"):
             try:
@@ -275,5 +318,14 @@ def scan_dir(projects_root: Union[str, Path], db_path: Union[str, Path]) -> dict
             totals["messages"] += sub["messages"]
             totals["tools"]    += sub["tools"]
             totals["files"]    += 1
+            if sub["sessions"]:
+                totals["sessions"].update(sub["sessions"])
+                totals["projects"].add(slug)
+                totals["days"].update(sub["days"])
+                totals["models"].update(sub["models"])
+                if sub["min_ts"] and (totals["min_ts"] is None or sub["min_ts"] < totals["min_ts"]):
+                    totals["min_ts"] = sub["min_ts"]
+                if sub["max_ts"] and (totals["max_ts"] is None or sub["max_ts"] > totals["max_ts"]):
+                    totals["max_ts"] = sub["max_ts"]
         conn.commit()
-    return totals
+    return _finalize(totals)
