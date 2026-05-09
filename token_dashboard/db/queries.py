@@ -89,7 +89,39 @@ def project_summary(db_path, since=None, until=None) -> list:
                 (r["project_slug"],),
             )]
             r["project_name"] = best_project_name(cwds, r["project_slug"])
-    return rows
+    return _fold_worktree_rows(rows)
+
+
+_NUMERIC_COLS = (
+    "sessions", "turns", "input_tokens", "output_tokens",
+    "billable_tokens", "cache_read_tokens",
+)
+
+
+def _fold_worktree_rows(rows: list) -> list:
+    """Collapse worktree-derived rows into their parent project (same project_name).
+
+    Worktree sessions live under separate `project_slug` values (one per
+    `<repo>/.claude/worktrees/<name>`), but `best_project_name` resolves all
+    of them to the parent repo's basename. Without folding, the parent shows
+    up once plus N times for each worktree — confusing the projects view.
+    """
+    folded: dict = {}
+    for r in rows:
+        key = r.get("project_name") or r.get("project_slug")
+        if key not in folded:
+            folded[key] = dict(r)
+            continue
+        agg = folded[key]
+        for col in _NUMERIC_COLS:
+            agg[col] = (agg.get(col) or 0) + (r.get(col) or 0)
+        if "worktrees" in (agg.get("project_slug") or "").lower():
+            agg["project_slug"] = r["project_slug"]
+    return sorted(
+        folded.values(),
+        key=lambda x: x.get("billable_tokens") or 0,
+        reverse=True,
+    )
 
 
 def tool_token_breakdown(db_path, since=None, until=None) -> list:
