@@ -19,7 +19,7 @@ use axum::{
 use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use token_dashboard_core::{
-    cost_for, list_sources,
+    cost_for, list_sources, preferences,
     queries::{
         add_session_tag, all_tags, daily_token_breakdown, dismiss_tip, expensive_prompts, get_plan,
         hourly_breakdown, model_breakdown, normalise_tag, overview_totals, phase_split,
@@ -375,6 +375,293 @@ struct SessionTagsResponse {
     added: Vec<String>,
     removed: Vec<String>,
     tags: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct PreferencesResponse {
+    badge_metric: String,
+    badge_window_mode: String,
+    badge_dock_enabled: bool,
+    badge_menubar_enabled: bool,
+    limits_enabled: bool,
+    glass_enabled: bool,
+    glass_opacity: i64,
+    anthropic_api_key: Option<String>,
+    limits_five_hour_reset_at: Option<String>,
+    limits_weekly_reset_at: Option<String>,
+    limits_5h_cap_override: Option<i64>,
+    limits_weekly_cap_override: Option<i64>,
+}
+
+async fn preferences_get(State(s): State<AppState>) -> Result<Json<PreferencesResponse>, ApiError> {
+    let path = s.db_path.clone();
+    let resp = blocking(move || -> rusqlite::Result<PreferencesResponse> {
+        let p = path.as_ref();
+        Ok(PreferencesResponse {
+            badge_metric: preferences::get_badge_metric(p)?,
+            badge_window_mode: preferences::get_badge_window_mode(p)?,
+            badge_dock_enabled: preferences::get_badge_dock_enabled(p)?,
+            badge_menubar_enabled: preferences::get_badge_menubar_enabled(p)?,
+            limits_enabled: preferences::get_limits_enabled(p)?,
+            glass_enabled: preferences::get_glass_enabled(p)?,
+            glass_opacity: preferences::get_glass_opacity(p)?,
+            anthropic_api_key: preferences::get_anthropic_api_key(p)?,
+            limits_five_hour_reset_at: preferences::get_limit_reset_at(
+                p,
+                "limits_five_hour_reset_at",
+            )?,
+            limits_weekly_reset_at: preferences::get_limit_reset_at(p, "limits_weekly_reset_at")?,
+            limits_5h_cap_override: preferences::get_limit_cap_override(
+                p,
+                "limits_5h_cap_override",
+            )?,
+            limits_weekly_cap_override: preferences::get_limit_cap_override(
+                p,
+                "limits_weekly_cap_override",
+            )?,
+        })
+    })
+    .await?;
+    Ok(resp)
+}
+
+#[derive(Deserialize, Default)]
+struct PreferencesBody {
+    #[serde(default)]
+    badge_metric: Option<String>,
+    #[serde(default)]
+    badge_window_mode: Option<String>,
+    #[serde(default)]
+    glass_enabled: Option<bool>,
+    #[serde(default)]
+    glass_opacity: Option<i64>,
+    #[serde(default)]
+    badge_dock_enabled: Option<bool>,
+    #[serde(default)]
+    badge_menubar_enabled: Option<bool>,
+    #[serde(default)]
+    limits_enabled: Option<bool>,
+    #[serde(default)]
+    limits_five_hour_reset_at: Option<String>,
+    #[serde(default)]
+    limits_weekly_reset_at: Option<String>,
+    #[serde(default)]
+    limits_5h_cap_override: Option<i64>,
+    #[serde(default)]
+    limits_weekly_cap_override: Option<i64>,
+    #[serde(default)]
+    anthropic_api_key: Option<String>,
+}
+
+async fn preferences_post(
+    State(s): State<AppState>,
+    Json(body): Json<PreferencesBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let path = s.db_path.clone();
+    let events = s.events.clone();
+    let resp = blocking(move || -> rusqlite::Result<serde_json::Value> {
+        let p = path.as_ref();
+        let mut out = serde_json::Map::new();
+        out.insert("ok".into(), serde_json::Value::Bool(true));
+
+        if let Some(v) = body.badge_metric {
+            let stored = preferences::set_badge_metric(p, &v)?;
+            let _ = events.send(serde_json::json!({"type": "preferences", "badge_metric": stored}));
+            out.insert("badge_metric".into(), serde_json::Value::String(stored));
+        }
+        if let Some(v) = body.badge_window_mode {
+            let stored = preferences::set_badge_window_mode(p, &v)?;
+            let _ = events
+                .send(serde_json::json!({"type": "preferences", "badge_window_mode": stored}));
+            out.insert(
+                "badge_window_mode".into(),
+                serde_json::Value::String(stored),
+            );
+        }
+        if let Some(v) = body.glass_enabled {
+            let stored = preferences::set_glass_enabled(p, v)?;
+            let _ =
+                events.send(serde_json::json!({"type": "preferences", "glass_enabled": stored}));
+            out.insert("glass_enabled".into(), serde_json::Value::Bool(stored));
+        }
+        if let Some(v) = body.glass_opacity {
+            let stored = preferences::set_glass_opacity(p, v)?;
+            let _ =
+                events.send(serde_json::json!({"type": "preferences", "glass_opacity": stored}));
+            out.insert("glass_opacity".into(), serde_json::Value::from(stored));
+        }
+        if let Some(v) = body.badge_dock_enabled {
+            let stored = preferences::set_badge_dock_enabled(p, v)?;
+            let _ = events
+                .send(serde_json::json!({"type": "preferences", "badge_dock_enabled": stored}));
+            out.insert("badge_dock_enabled".into(), serde_json::Value::Bool(stored));
+        }
+        if let Some(v) = body.badge_menubar_enabled {
+            let stored = preferences::set_badge_menubar_enabled(p, v)?;
+            let _ = events
+                .send(serde_json::json!({"type": "preferences", "badge_menubar_enabled": stored}));
+            out.insert(
+                "badge_menubar_enabled".into(),
+                serde_json::Value::Bool(stored),
+            );
+        }
+        if let Some(v) = body.limits_enabled {
+            let stored = preferences::set_limits_enabled(p, v)?;
+            let _ =
+                events.send(serde_json::json!({"type": "preferences", "limits_enabled": stored}));
+            out.insert("limits_enabled".into(), serde_json::Value::Bool(stored));
+        }
+        for (k, v) in [
+            ("limits_five_hour_reset_at", body.limits_five_hour_reset_at),
+            ("limits_weekly_reset_at", body.limits_weekly_reset_at),
+        ] {
+            if let Some(s) = v {
+                let stored = preferences::set_limit_reset_at(p, k, Some(&s))?;
+                out.insert(
+                    k.into(),
+                    stored
+                        .map(serde_json::Value::String)
+                        .unwrap_or(serde_json::Value::Null),
+                );
+            }
+        }
+        for (k, v) in [
+            ("limits_5h_cap_override", body.limits_5h_cap_override),
+            (
+                "limits_weekly_cap_override",
+                body.limits_weekly_cap_override,
+            ),
+        ] {
+            if let Some(n) = v {
+                let stored = preferences::set_limit_cap_override(p, k, Some(n))?;
+                let _ = events.send(serde_json::json!({"type": "preferences", k: stored}));
+                out.insert(
+                    k.into(),
+                    stored
+                        .map(serde_json::Value::from)
+                        .unwrap_or(serde_json::Value::Null),
+                );
+            }
+        }
+        if let Some(v) = body.anthropic_api_key {
+            // Empty string means clear; that's how the frontend signals
+            // a deletion via the same key.
+            let raw = if v.is_empty() { None } else { Some(v.as_str()) };
+            preferences::set_anthropic_api_key(p, raw)?;
+            // Don't echo the key back — keep it out of the response shape.
+        }
+        Ok(serde_json::Value::Object(out))
+    })
+    .await?;
+    Ok(resp)
+}
+
+#[derive(Serialize)]
+struct BudgetResponse {
+    daily: Option<f64>,
+    weekly: Option<f64>,
+    monthly: Option<f64>,
+}
+
+async fn budget_get(State(s): State<AppState>) -> Result<Json<BudgetResponse>, ApiError> {
+    let path = s.db_path.clone();
+    let b = blocking(move || preferences::get_budgets(path.as_ref()))
+        .await?
+        .0;
+    Ok(Json(BudgetResponse {
+        daily: b.daily,
+        weekly: b.weekly,
+        monthly: b.monthly,
+    }))
+}
+
+#[derive(Deserialize, Default)]
+struct BudgetBody {
+    #[serde(default)]
+    daily: Option<f64>,
+    #[serde(default)]
+    weekly: Option<f64>,
+    #[serde(default)]
+    monthly: Option<f64>,
+}
+
+async fn budget_post(
+    State(s): State<AppState>,
+    Json(body): Json<BudgetBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let path = s.db_path.clone();
+    let resp = blocking(move || -> rusqlite::Result<serde_json::Value> {
+        let p = path.as_ref();
+        let mut out = serde_json::Map::new();
+        out.insert("ok".into(), serde_json::Value::Bool(true));
+        for (short, long) in [
+            ("daily", "budget_daily_usd"),
+            ("weekly", "budget_weekly_usd"),
+            ("monthly", "budget_monthly_usd"),
+        ] {
+            let v = match short {
+                "daily" => body.daily,
+                "weekly" => body.weekly,
+                "monthly" => body.monthly,
+                _ => None,
+            };
+            // Only honour keys explicitly present in the body; matches python
+            // by checking `in body`.
+            if v.is_some() {
+                let stored = preferences::set_budget(p, long, v)?;
+                out.insert(
+                    short.into(),
+                    stored
+                        .map(serde_json::Value::from)
+                        .unwrap_or(serde_json::Value::Null),
+                );
+            }
+        }
+        Ok(serde_json::Value::Object(out))
+    })
+    .await?;
+    Ok(resp)
+}
+
+#[derive(Serialize)]
+struct LimitsResponse {
+    enabled: bool,
+    limits_five_hour_reset_at: Option<String>,
+    limits_weekly_reset_at: Option<String>,
+    limits_5h_cap_override: Option<i64>,
+    limits_weekly_cap_override: Option<i64>,
+    last_sync_at: Option<String>,
+    last_sync_status: Option<String>,
+    has_api_key: bool,
+}
+
+async fn limits_get(State(s): State<AppState>) -> Result<Json<LimitsResponse>, ApiError> {
+    let path = s.db_path.clone();
+    let resp = blocking(move || -> rusqlite::Result<LimitsResponse> {
+        let p = path.as_ref();
+        let meta = preferences::get_limits_sync_meta(p)?;
+        Ok(LimitsResponse {
+            enabled: preferences::get_limits_enabled(p)?,
+            limits_five_hour_reset_at: preferences::get_limit_reset_at(
+                p,
+                "limits_five_hour_reset_at",
+            )?,
+            limits_weekly_reset_at: preferences::get_limit_reset_at(p, "limits_weekly_reset_at")?,
+            limits_5h_cap_override: preferences::get_limit_cap_override(
+                p,
+                "limits_5h_cap_override",
+            )?,
+            limits_weekly_cap_override: preferences::get_limit_cap_override(
+                p,
+                "limits_weekly_cap_override",
+            )?,
+            last_sync_at: meta.last_sync_at,
+            last_sync_status: meta.last_sync_status,
+            has_api_key: preferences::get_anthropic_api_key(p)?.is_some(),
+        })
+    })
+    .await?;
+    Ok(resp)
 }
 
 async fn session_tags_post(
@@ -751,6 +1038,12 @@ pub fn app(state: AppState) -> Router {
         // `if path == "/api/scan"`).
         .route("/api/scan", get(scan))
         .route("/api/stream", get(stream))
+        .route(
+            "/api/preferences",
+            get(preferences_get).post(preferences_post),
+        )
+        .route("/api/budget", get(budget_get).post(budget_post))
+        .route("/api/limits", get(limits_get))
         // POST endpoints
         .route("/api/plan", post(set_plan_handler))
         .route("/api/tips/dismiss", post(tips_dismiss_handler))

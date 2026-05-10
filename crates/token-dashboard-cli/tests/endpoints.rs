@@ -470,6 +470,72 @@ async fn post_tips_dismiss_writes_row() {
 }
 
 #[tokio::test]
+async fn preferences_get_defaults() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, body) = get_json(&fx.state, "/api/preferences").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["badge_metric"].as_str(), Some("tokens"));
+    assert_eq!(body["badge_window_mode"].as_str(), Some("remaining"));
+    assert_eq!(body["badge_dock_enabled"].as_bool(), Some(true));
+    assert_eq!(body["limits_enabled"].as_bool(), Some(false));
+    assert_eq!(body["glass_enabled"].as_bool(), Some(false));
+    assert_eq!(body["glass_opacity"].as_i64(), Some(25));
+    assert!(body["anthropic_api_key"].is_null());
+}
+
+#[tokio::test]
+async fn preferences_post_round_trip() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, body) = post_json(
+        &fx.state,
+        "/api/preferences",
+        &json!({"badge_metric": "cost", "glass_opacity": 60, "limits_enabled": true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["badge_metric"].as_str(), Some("cost"));
+    assert_eq!(body["glass_opacity"].as_i64(), Some(60));
+    assert_eq!(body["limits_enabled"].as_bool(), Some(true));
+
+    let (_, after) = get_json(&fx.state, "/api/preferences").await;
+    assert_eq!(after["badge_metric"].as_str(), Some("cost"));
+    assert_eq!(after["glass_opacity"].as_i64(), Some(60));
+    assert_eq!(after["limits_enabled"].as_bool(), Some(true));
+}
+
+#[tokio::test]
+async fn budget_round_trip() {
+    let fx = setup_with_jsonl(&[]);
+    let (_, body) = post_json(
+        &fx.state,
+        "/api/budget",
+        &json!({"daily": 5.0, "weekly": 35.0}),
+    )
+    .await;
+    assert_eq!(body["daily"].as_f64(), Some(5.0));
+
+    let (_, get_body) = get_json(&fx.state, "/api/budget").await;
+    assert_eq!(get_body["daily"].as_f64(), Some(5.0));
+    assert_eq!(get_body["weekly"].as_f64(), Some(35.0));
+    assert!(get_body["monthly"].is_null());
+
+    // Setting a budget to 0 clears it.
+    let (_, _) = post_json(&fx.state, "/api/budget", &json!({"daily": 0})).await;
+    let (_, after) = get_json(&fx.state, "/api/budget").await;
+    assert!(after["daily"].is_null());
+}
+
+#[tokio::test]
+async fn limits_get_returns_defaults() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, body) = get_json(&fx.state, "/api/limits").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["enabled"].as_bool(), Some(false));
+    assert_eq!(body["has_api_key"].as_bool(), Some(false));
+    assert!(body["last_sync_at"].is_null());
+}
+
+#[tokio::test]
 async fn post_session_tags_round_trip() {
     let fx = setup_with_jsonl(&[
         user("u1", "2026-04-10T00:00:00Z", "hi"),
