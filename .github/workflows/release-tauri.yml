@@ -2,6 +2,7 @@ name: release-tauri
 
 on:
   push:
+    branches: [main]
     tags: ["v4.*"]
   workflow_dispatch:
     inputs:
@@ -13,8 +14,39 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  tag:
+    name: auto-tag on version bump
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Tag if Cargo.toml version is new
+        run: |
+          ver=$(grep '^version' crates/token-dashboard-tauri/Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          tag="v$ver"
+          if [ -z "$ver" ]; then
+            echo "could not parse version" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "tag $tag already exists on origin — skipping"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Release $tag"
+          git push origin "$tag"
+          echo "pushed $tag — release-tauri will fire on the tag ref"
+
   build:
     name: build (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/v4.') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
