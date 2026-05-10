@@ -92,6 +92,20 @@ async fn health() -> Json<Health> {
     })
 }
 
+/// OpenAPI 3.1 spec for the entire HTTP surface.
+///
+/// Embedded at compile time so a binary release ships the spec
+/// without a runtime FS dependency. The frontend's API tab fetches
+/// this and renders it via Swagger UI.
+const OPENAPI_JSON: &str = include_str!("../openapi.json");
+
+async fn openapi() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        OPENAPI_JSON,
+    )
+}
+
 async fn sources(State(s): State<AppState>) -> Result<Json<Vec<Source>>, ApiError> {
     let path = s.db_path.clone();
     blocking(move || list_sources(path.as_ref())).await
@@ -1863,6 +1877,7 @@ impl IntoResponse for ApiError {
 pub fn app(state: AppState) -> Router {
     let mut router = Router::new()
         .route("/api/health", get(health))
+        .route("/api/openapi.json", get(openapi))
         .route("/api/sources", get(sources))
         .route("/api/overview", get(overview))
         .route("/api/projects", get(projects))
