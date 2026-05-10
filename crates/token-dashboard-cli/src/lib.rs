@@ -189,13 +189,76 @@ struct HourlyQs {
     hours: Option<i64>,
 }
 
+/// One slot in the hourly response — fields the frontend's
+/// `buildHourly` / `buildBurn` consume. The slot at index
+/// `hours - 1 - hour_ago` represents activity that ended N hours ago,
+/// so `arr[arr.length - 1]` is the current hour.
+#[derive(Serialize, Default)]
+struct HourlySlot {
+    hour_ago: i64,
+    cost_usd: f64,
+    input_tokens: i64,
+    output_tokens: i64,
+    cache_read_tokens: i64,
+    cache_create_5m_tokens: i64,
+    cache_create_1h_tokens: i64,
+}
+
 async fn hourly(
     State(s): State<AppState>,
     Query(q): Query<HourlyQs>,
-) -> Result<Json<Vec<HourlyRow>>, ApiError> {
+) -> Result<Json<Vec<HourlySlot>>, ApiError> {
     let path = s.db_path.clone();
-    let hours = q.hours.unwrap_or(24);
-    blocking(move || hourly_breakdown(path.as_ref(), hours)).await
+    let hours = q.hours.unwrap_or(24).max(1);
+    let rows = blocking(move || hourly_breakdown(path.as_ref(), hours))
+        .await?
+        .0;
+    // Bucket the (hour_ago, model) rows into per-hour slots, summing
+    // tokens across models and computing cost via the embedded
+    // pricing table. The frontend treats the array as oldest-first:
+    // index i → (hours - 1 - i) hours ago, so arr[arr.length - 1] is
+    // the current hour (what buildBurn keys on as "rate").
+    let pricing = s.pricing.clone();
+    let n = hours as usize;
+    let mut slots: Vec<HourlySlot> = (0..n)
+        .map(|i| HourlySlot {
+            hour_ago: (n as i64) - 1 - (i as i64),
+            ..HourlySlot::default()
+        })
+        .collect();
+    for r in rows {
+        if r.hour_ago < 0 || r.hour_ago >= hours {
+            continue;
+        }
+        let idx = (n as i64) - 1 - r.hour_ago;
+        if idx < 0 || idx as usize >= n {
+            continue;
+        }
+        let slot = &mut slots[idx as usize];
+        slot.input_tokens += r.input_tokens;
+        slot.output_tokens += r.output_tokens;
+        slot.cache_read_tokens += r.cache_read_tokens;
+        slot.cache_create_5m_tokens += r.cache_create_5m_tokens;
+        slot.cache_create_1h_tokens += r.cache_create_1h_tokens;
+        let cr = cost_for(
+            &r.model,
+            &Usage {
+                input_tokens: r.input_tokens,
+                output_tokens: r.output_tokens,
+                cache_read_tokens: r.cache_read_tokens,
+                cache_create_5m_tokens: r.cache_create_5m_tokens,
+                cache_create_1h_tokens: r.cache_create_1h_tokens,
+            },
+            &pricing,
+        );
+        if let Some(usd) = cr.usd {
+            slot.cost_usd += usd;
+        }
+    }
+    for s in &mut slots {
+        s.cost_usd = round6(s.cost_usd);
+    }
+    Ok(Json(slots))
 }
 
 #[derive(Serialize, Default, Clone, Copy)]
@@ -1528,6 +1591,17 @@ struct EnrichedSkillRow {
     #[serde(flatten)]
     base: SkillRow,
     tokens_per_call: Option<i64>,
+    /// `invocations × tokens_per_call`. None when the catalog has no
+    /// entry for this slug (project-local or subagent-dispatched
+    /// skills — see KNOWN_LIMITATIONS.md).
+    est_tokens: Option<i64>,
+    /// Sonnet-priced cost estimate. Models the typical loading
+    /// pattern: first load per session at cache-write rate, subsequent
+    /// loads at cache-read.
+    est_cost_usd: Option<f64>,
+    /// Always true when `est_tokens` is populated — the values are
+    /// derived (not billing-truthy).
+    estimated: bool,
 }
 
 async fn skills(
@@ -1539,19 +1613,46 @@ async fn skills(
         blocking(move || skill_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
             .await?
             .0;
-    // The catalog scan walks ~/.claude/{skills,scheduled-tasks,plugins};
-    // bounce it to the blocking pool so file-system stat'ing doesn't tie
-    // up the tokio worker.
     let catalog = tokio::task::spawn_blocking(token_dashboard_core::skills_catalog::cached_catalog)
         .await
         .map_err(|e| ApiError::internal(format!("join: {e}")))?;
+    let sonnet = s
+        .pricing
+        .tier_fallback
+        .get("sonnet")
+        .cloned()
+        .unwrap_or(token_dashboard_core::pricing::TierRates {
+            input: 3.0,
+            output: 15.0,
+            cache_read: 0.30,
+            cache_create_5m: 3.75,
+            cache_create_1h: 6.0,
+        });
     let enriched: Vec<EnrichedSkillRow> = rows
         .into_iter()
         .map(|r| {
-            let tokens = token_dashboard_core::skills_catalog::tokens_for(&r.skill, &catalog);
+            let tokens_per_call =
+                token_dashboard_core::skills_catalog::tokens_for(&r.skill, &catalog);
+            let (est_tokens, est_cost_usd, estimated) = match tokens_per_call {
+                Some(tpc) if tpc > 0 => {
+                    let est = tpc * r.invocations.max(0);
+                    // Help text on the Skills tab: first load per session
+                    // is cache-write, subsequent loads are cache-read.
+                    let first_loads = r.sessions.clamp(0, r.invocations);
+                    let subsequent = (r.invocations - first_loads).max(0);
+                    let cost = (first_loads as f64 * tpc as f64 * sonnet.cache_create_5m
+                        + subsequent as f64 * tpc as f64 * sonnet.cache_read)
+                        / 1_000_000.0;
+                    (Some(est), Some(round6(cost)), true)
+                }
+                _ => (None, None, false),
+            };
             EnrichedSkillRow {
                 base: r,
-                tokens_per_call: tokens,
+                tokens_per_call,
+                est_tokens,
+                est_cost_usd,
+                estimated,
             }
         })
         .collect();
