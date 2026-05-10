@@ -726,6 +726,66 @@ pub fn get_plan<P: AsRef<Path>>(db: P) -> rusqlite::Result<String> {
     }
 }
 
+/// Persist the plan label. Mirrors `pricing.set_plan`.
+pub fn set_plan<P: AsRef<Path>>(db: P, plan: &str) -> rusqlite::Result<()> {
+    let c = Connection::open(db.as_ref())?;
+    c.execute(
+        "INSERT OR REPLACE INTO plan (k, v) VALUES ('plan', ?)",
+        [plan],
+    )?;
+    Ok(())
+}
+
+/// Mark a tip as dismissed. Mirrors `tips.dismiss_tip`.
+pub fn dismiss_tip<P: AsRef<Path>>(db: P, key: &str) -> rusqlite::Result<()> {
+    let c = Connection::open(db.as_ref())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    c.execute(
+        "INSERT OR REPLACE INTO dismissed_tips (tip_key, dismissed_at) VALUES (?, ?)",
+        rusqlite::params![key, now],
+    )?;
+    Ok(())
+}
+
+/// Add a tag to a session. Idempotent — `INSERT OR IGNORE` on the
+/// composite primary key. Mirrors `db.add_session_tag`.
+pub fn add_session_tag<P: AsRef<Path>>(db: P, session_id: &str, tag: &str) -> rusqlite::Result<()> {
+    let c = Connection::open(db.as_ref())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    c.execute(
+        "INSERT OR IGNORE INTO session_tags (session_id, tag, created_at) VALUES (?, ?, ?)",
+        rusqlite::params![session_id, tag, now],
+    )?;
+    Ok(())
+}
+
+/// Remove a tag from a session. Mirrors `db.remove_session_tag`.
+pub fn remove_session_tag<P: AsRef<Path>>(
+    db: P,
+    session_id: &str,
+    tag: &str,
+) -> rusqlite::Result<()> {
+    let c = Connection::open(db.as_ref())?;
+    c.execute(
+        "DELETE FROM session_tags WHERE session_id=? AND tag=?",
+        rusqlite::params![session_id, tag],
+    )?;
+    Ok(())
+}
+
+/// Strip whitespace, collapse internal spaces, cap at 64 chars. Mirrors
+/// the python `_normalise_tag` in routes.py.
+pub fn normalise_tag(raw: &str) -> String {
+    let collapsed: String = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    collapsed.chars().take(64).collect()
+}
+
 pub fn all_tags<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<TagRow>> {
     let c = open_ro(db)?;
     let mut stmt = c.prepare(

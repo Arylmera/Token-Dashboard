@@ -10,7 +10,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{header, Method, Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -53,6 +53,24 @@ fn setup_with_jsonl(records: &[Value]) -> Fixture {
 async fn get_json(state: &AppState, path: &str) -> (StatusCode, Value) {
     let resp = app(state.clone())
         .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = resp.status();
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    (status, body)
+}
+
+async fn post_json(state: &AppState, path: &str, body: &Value) -> (StatusCode, Value) {
+    let resp = app(state.clone())
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(path)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_string(body).unwrap()))
+                .unwrap(),
+        )
         .await
         .unwrap();
     let status = resp.status();
@@ -420,6 +438,67 @@ async fn session_returns_turns_in_order() {
     assert_eq!(arr[1]["uuid"].as_str(), Some("a1"));
     assert_eq!(arr[2]["uuid"].as_str(), Some("a2"));
     assert_eq!(arr[0]["type"].as_str(), Some("user"));
+}
+
+#[tokio::test]
+async fn post_plan_persists() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, body) = post_json(&fx.state, "/api/plan", &json!({"plan": "max"})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ok"].as_bool(), Some(true));
+
+    let (_, after) = get_json(&fx.state, "/api/plan").await;
+    assert_eq!(after["plan"].as_str(), Some("max"));
+}
+
+#[tokio::test]
+async fn post_tips_dismiss_writes_row() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, body) = post_json(&fx.state, "/api/tips/dismiss", &json!({"key": "tip_x"})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ok"].as_bool(), Some(true));
+
+    let conn = rusqlite::Connection::open(fx.state.db_path.as_path()).unwrap();
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM dismissed_tips WHERE tip_key='tip_x'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 1);
+}
+
+#[tokio::test]
+async fn post_session_tags_round_trip() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "hi"),
+        assistant("a1", "2026-04-10T00:00:01Z", "claude-opus-4-7", 5),
+    ]);
+    let (status, body) = post_json(
+        &fx.state,
+        "/api/sessions/s1/tags",
+        &json!({"add": ["bug", "investigate"], "remove": []}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["added"].as_array().unwrap().len(), 2);
+    assert_eq!(body["tags"].as_array().unwrap().len(), 2);
+
+    // Remove one tag; verify the response reflects the new tag set.
+    let (_, body2) = post_json(
+        &fx.state,
+        "/api/sessions/s1/tags",
+        &json!({"add": [], "remove": ["bug"]}),
+    )
+    .await;
+    let tags: Vec<&str> = body2["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(tags, vec!["investigate"]);
 }
 
 /// Format Unix seconds as the ISO8601 shape Claude Code writes

@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 token-dashboard-core = { path = "../token-dashboard-core" }
+rusqlite = { version = "0.31", features = ["bundled"] }
 axum = "0.7"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net"] }
 tower = "0.5"

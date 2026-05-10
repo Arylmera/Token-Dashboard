@@ -13,7 +13,7 @@ use axum::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Json,
     },
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use futures::stream::{Stream, StreamExt};
@@ -21,10 +21,11 @@ use serde::{Deserialize, Serialize};
 use token_dashboard_core::{
     cost_for, list_sources,
     queries::{
-        all_tags, daily_token_breakdown, expensive_prompts, get_plan, hourly_breakdown,
-        model_breakdown, overview_totals, phase_split, project_summary, recent_sessions,
-        session_model_usage, session_tags, session_turns, skill_breakdown, tool_token_breakdown,
-        DailyRow, ExpensivePromptRow, HourlyRow, ModelRow, OverviewTotals, ProjectRow, SessionRow,
+        add_session_tag, all_tags, daily_token_breakdown, dismiss_tip, expensive_prompts, get_plan,
+        hourly_breakdown, model_breakdown, normalise_tag, overview_totals, phase_split,
+        project_summary, recent_sessions, remove_session_tag, session_model_usage, session_tags,
+        session_turns, set_plan, skill_breakdown, tool_token_breakdown, DailyRow,
+        ExpensivePromptRow, HourlyRow, ModelRow, OverviewTotals, ProjectRow, SessionRow,
         SessionTurn, SkillRow, TagRow, ToolRow,
     },
     scan_dir, Pricing, ScanStats, Source, Usage,
@@ -322,6 +323,115 @@ async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>, ApiError>
     Ok(Json(stats.into()))
 }
 
+#[derive(Deserialize)]
+struct PlanBody {
+    plan: Option<String>,
+}
+
+#[derive(Serialize)]
+struct OkResponse {
+    ok: bool,
+}
+
+async fn set_plan_handler(
+    State(s): State<AppState>,
+    Json(body): Json<PlanBody>,
+) -> Result<Json<OkResponse>, ApiError> {
+    let path = s.db_path.clone();
+    let plan = body.plan.unwrap_or_else(|| "api".into());
+    blocking_unit(move || set_plan(path.as_ref(), &plan)).await?;
+    Ok(Json(OkResponse { ok: true }))
+}
+
+#[derive(Deserialize)]
+struct TipDismissBody {
+    key: Option<String>,
+}
+
+async fn tips_dismiss_handler(
+    State(s): State<AppState>,
+    Json(body): Json<TipDismissBody>,
+) -> Result<Json<OkResponse>, ApiError> {
+    let key = match body.key {
+        Some(k) if !k.is_empty() => k,
+        _ => return Err(ApiError::bad_request("missing tip key")),
+    };
+    let path = s.db_path.clone();
+    blocking_unit(move || dismiss_tip(path.as_ref(), &key)).await?;
+    Ok(Json(OkResponse { ok: true }))
+}
+
+#[derive(Deserialize, Default)]
+struct SessionTagsBody {
+    #[serde(default)]
+    add: Vec<String>,
+    #[serde(default)]
+    remove: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct SessionTagsResponse {
+    ok: bool,
+    added: Vec<String>,
+    removed: Vec<String>,
+    tags: Vec<String>,
+}
+
+async fn session_tags_post(
+    State(s): State<AppState>,
+    AxumPath(sid): AxumPath<String>,
+    Json(body): Json<SessionTagsBody>,
+) -> Result<Json<SessionTagsResponse>, ApiError> {
+    if sid.is_empty() {
+        return Err(ApiError::bad_request("missing session id"));
+    }
+    let path = s.db_path.clone();
+    let sid_for_writes = sid.clone();
+    let body_for_writes = body;
+    let (added, removed) = blocking(move || -> rusqlite::Result<(Vec<String>, Vec<String>)> {
+        let mut added = Vec::new();
+        let mut removed = Vec::new();
+        for raw in &body_for_writes.add {
+            let t = normalise_tag(raw);
+            if t.is_empty() {
+                continue;
+            }
+            add_session_tag(path.as_ref(), &sid_for_writes, &t)?;
+            added.push(t);
+        }
+        for raw in &body_for_writes.remove {
+            let t = normalise_tag(raw);
+            if t.is_empty() {
+                continue;
+            }
+            remove_session_tag(path.as_ref(), &sid_for_writes, &t)?;
+            removed.push(t);
+        }
+        Ok((added, removed))
+    })
+    .await?
+    .0;
+
+    let path_for_read = s.db_path.clone();
+    let sid_for_read = sid.clone();
+    let mut tag_map =
+        blocking(move || session_tags(path_for_read.as_ref(), &[sid_for_read.as_str()]))
+            .await?
+            .0;
+    let tags = tag_map.remove(&sid).unwrap_or_default();
+
+    let _ = s
+        .events
+        .send(serde_json::json!({"type": "tags", "session_id": sid}));
+
+    Ok(Json(SessionTagsResponse {
+        ok: true,
+        added,
+        removed,
+        tags,
+    }))
+}
+
 /// `/api/stream` — server-sent events.
 ///
 /// Wraps the AppState broadcast channel into an SSE response. axum
@@ -574,6 +684,19 @@ where
     Ok(Json(v))
 }
 
+/// Same as `blocking` but for write paths that don't return a body —
+/// the caller emits its own response (typically `Json(OkResponse)`).
+async fn blocking_unit<F, E>(f: F) -> Result<(), ApiError>
+where
+    F: FnOnce() -> Result<(), E> + Send + 'static,
+    E: std::fmt::Display + Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| ApiError::internal(format!("join: {e}")))?
+        .map_err(|e| ApiError::internal(format!("db: {e}")))
+}
+
 #[derive(Debug)]
 struct ApiError {
     status: StatusCode,
@@ -584,6 +707,12 @@ impl ApiError {
     fn internal(msg: impl Into<String>) -> Self {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
+            msg: msg.into(),
+        }
+    }
+    fn bad_request(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
             msg: msg.into(),
         }
     }
@@ -622,6 +751,10 @@ pub fn app(state: AppState) -> Router {
         // `if path == "/api/scan"`).
         .route("/api/scan", get(scan))
         .route("/api/stream", get(stream))
+        // POST endpoints
+        .route("/api/plan", post(set_plan_handler))
+        .route("/api/tips/dismiss", post(tips_dismiss_handler))
+        .route("/api/sessions/:sid/tags", post(session_tags_post))
         .with_state(state);
 
     // Static bundle is opt-in via TOKEN_DASHBOARD_STATIC env var so the
