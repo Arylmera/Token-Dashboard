@@ -1,79 +1,73 @@
 #!/usr/bin/env bash
-# Token Dashboard installer for macOS.
+# Token Dashboard — macOS installer (Apple Silicon).
 #
-# Usage:
+# Pulls the latest v4.x .dmg from the GitHub releases API, copies the .app
+# into /Applications, ad-hoc re-signs it (the bundle is unsigned, so macOS
+# 14+ refuses to load the embedded WebKit/Tauri frameworks otherwise), and
+# launches it.
+#
 #   curl -fsSL https://raw.githubusercontent.com/Arylmera/Token-Dashboard/main/scripts/install.sh | bash
-#
-# What it does:
-#   1. If Homebrew is present, install the cask. Otherwise download the latest
-#      DMG from the GitHub releases API and copy the .app to /Applications.
-#   2. Re-sign the bundle ad-hoc so macOS doesn't reject it for Team-ID
-#      mismatch on first launch (the embedded Electron Framework is signed by
-#      Electron's team while the outer bundle is unsigned).
-#   3. Launch the app.
 
 set -euo pipefail
 
 REPO="Arylmera/Token-Dashboard"
-CASK="arylmera/token-dashboard/token-dashboard"
 APP_NAME="Token Dashboard"
 APP_PATH="/Applications/${APP_NAME}.app"
 
-info() { printf '\033[36m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[33mwarn:\033[0m %s\n' "$*" >&2; }
-err()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; }
-
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  err "This installer is macOS-only. For Linux/Windows see https://github.com/${REPO}#readme"
+  echo "error: install.sh is macOS-only. On Windows, download the .msi from"
+  echo "       https://github.com/${REPO}/releases/latest"
   exit 1
 fi
 
-if [[ "$(uname -m)" != "arm64" ]]; then
-  warn "Detected $(uname -m); only Apple Silicon (arm64) builds are published. Continuing anyway."
-fi
+arch="$(uname -m)"
+case "$arch" in
+  arm64)  asset_filter='aarch64.*\.dmg$' ;;
+  x86_64) asset_filter='x64.*\.dmg$|x86_64.*\.dmg$' ;;
+  *) echo "error: unsupported arch $arch"; exit 1 ;;
+esac
 
-if command -v brew >/dev/null 2>&1; then
-  info "Homebrew detected — installing the cask"
-  brew install --cask "${CASK}"
-else
-  info "Homebrew not found — downloading latest DMG from GitHub Releases"
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "${tmp}"; [[ -n "${mount_point:-}" ]] && hdiutil detach "${mount_point}" -quiet >/dev/null 2>&1 || true' EXIT
+echo "==> resolving latest v4 release"
+api_url="https://api.github.com/repos/${REPO}/releases/latest"
+dmg_url="$(curl -fsSL "$api_url" \
+  | grep -Eo '"browser_download_url": *"[^"]+"' \
+  | sed -E 's/.*"([^"]+)"/\1/' \
+  | grep -E "$asset_filter" \
+  | head -1)"
 
-  dmg_url="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-    | grep -oE 'https://[^"]*macos-arm64[^"]*\.dmg' | head -n 1)"
-
-  if [[ -z "${dmg_url}" ]]; then
-    err "Could not find a macOS DMG in the latest release of ${REPO}."
-    exit 1
-  fi
-
-  info "Downloading ${dmg_url}"
-  curl -fL --progress-bar -o "${tmp}/td.dmg" "${dmg_url}"
-
-  info "Mounting DMG"
-  mount_point="$(hdiutil attach -nobrowse -noautoopen "${tmp}/td.dmg" \
-    | grep -oE '/Volumes/.+$' | tail -n 1)"
-
-  if [[ -z "${mount_point}" || ! -d "${mount_point}/${APP_NAME}.app" ]]; then
-    err "DMG mounted but ${APP_NAME}.app was not found inside."
-    exit 1
-  fi
-
-  info "Copying ${APP_NAME}.app to /Applications"
-  rm -rf "${APP_PATH}"
-  cp -R "${mount_point}/${APP_NAME}.app" "${APP_PATH}"
-fi
-
-if [[ ! -d "${APP_PATH}" ]]; then
-  err "${APP_PATH} not found after install."
+if [[ -z "${dmg_url:-}" ]]; then
+  echo "error: no .dmg matching '$asset_filter' on the latest release"
   exit 1
 fi
 
-info "Re-signing bundle ad-hoc (fixes Team-ID mismatch on first launch)"
-codesign --force --deep --sign - "${APP_PATH}"
+echo "==> downloading $(basename "$dmg_url")"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+dmg="${tmp}/td.dmg"
+curl -fsSL -o "$dmg" "$dmg_url"
 
-info "Launching ${APP_NAME}"
-open -a "${APP_NAME}"
+echo "==> mounting"
+mount_point="$(hdiutil attach -nobrowse -readonly "$dmg" \
+  | tail -1 | awk '{ for (i=3; i<=NF; i++) printf "%s ", $i }' | sed 's/ *$//')"
 
-info "Done. ${APP_NAME} is installed and running."
+src_app="${mount_point}/${APP_NAME}.app"
+if [[ ! -d "$src_app" ]]; then
+  hdiutil detach "$mount_point" >/dev/null || true
+  echo "error: ${APP_NAME}.app not found inside dmg"
+  exit 1
+fi
+
+echo "==> copying to /Applications"
+rm -rf "$APP_PATH"
+cp -R "$src_app" "$APP_PATH"
+hdiutil detach "$mount_point" >/dev/null
+
+echo "==> ad-hoc re-signing (fixes Team-ID dyld mismatch on unsigned bundles)"
+codesign --force --deep --sign - "$APP_PATH"
+xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null || true
+
+echo "==> launching"
+open -a "$APP_NAME"
+
+echo
+echo "Installed to ${APP_PATH}"

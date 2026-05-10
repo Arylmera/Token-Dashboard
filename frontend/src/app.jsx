@@ -6,6 +6,7 @@ import { Sessions } from "./routes/sessions.jsx";
 import { Settings } from "./routes/settings.jsx";
 import { Tips } from "./routes/tips.jsx";
 import { Work } from "./routes/work.jsx";
+import { ApiRoute } from "./routes/api.jsx";
 import { applyThemeClass, persistThemeIndex, themeIndexFromStorage } from "./theme.js";
 
 const ROUTES = {
@@ -14,6 +15,7 @@ const ROUTES = {
   sessions: Sessions,
   "token sink": Work,
   tips: Tips,
+  api: ApiRoute,
   settings: Settings,
 };
 

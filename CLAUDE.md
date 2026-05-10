@@ -4,32 +4,50 @@ Guidance for Claude Code when working in this repository.
 
 ## Project overview
 
-**Token Dashboard** — a local dashboard for tracking Claude Code token usage, costs, and session history. Reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
+**Token Dashboard** — a local desktop dashboard for tracking Claude Code token usage, costs, and session history. Reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
 
-Inspired by [phuryn/claude-usage](https://github.com/phuryn/claude-usage) but diverges in UI (React 18 bundled with esbuild, dark theme, hash router, SSE refresh) and scope (expensive-prompt drill-down, skills view, tips engine, streaming-snapshot dedup). See `docs/inspiration.md` for the original's feature set and known limitations.
+Inspired by [phuryn/claude-usage](https://github.com/phuryn/claude-usage) but diverges in UI (React 18 bundled with esbuild, dark theme, hash router, SSE refresh) and scope (expensive-prompt drill-down, skills view, tips engine, streaming-snapshot dedup). See `docs/inspiration.md` for the original's feature set.
 
 ## Status
 
-Working codebase. 68 Python unit tests (`python3 -m unittest discover tests`). Seven UI tabs wired up (Overview, Prompts, Sessions, Projects, Skills, Tips, Settings). Runs on macOS, Windows, and Linux.
+**4.0 line — Rust + Tauri.** The 3.x Python + Electron stack is no longer in the tree; existing 3.x users keep their installed builds, future development targets v4 only. Workspace builds clean on `cargo build --workspace`; 62 tests across `core` + `cli`. Tauri shell verified on Windows; macOS and Linux QA happens via the release-tauri pipeline.
 
 ## Architecture
 
-- `cli.py` → `token_dashboard/scanner.py` → `~/.claude/token-dashboard.db` (SQLite)
-- `token_dashboard/server/` exposes JSON APIs (`/api/*`) + SSE stream (`/api/stream`) + static frontend under `/web/`. Split into `routes.py` (dispatch + build_handler), `endpoints/{state,data,budget,sources,io}.py` (one endpoint per function), `sse.py`, `scan_loop.py`, and `http_utils.py`.
-- `frontend/` is a React 18 app bundled by esbuild (`entry.jsx` → `dist/app.js`). Sources live under `frontend/src/`: `app.jsx` (shell + hash router), `routes/*.jsx` (one per tab; `settings.jsx` is the root that imports from `routes/settings/{atoms,theme-card,plan-card,badge-card,limits-card,budget-card,backup-card,sources-card,glass-card,misc-cards}.jsx`), `components/*.jsx` (atoms + charts), `api-client.js` (fetches `/api/*` into `window.MOCK_DATA`), plus `data-store.js`, `format.js`, `theme.js`, `clipboard.js`. Charts are inline SVG (no ECharts).
-- `electron/main.js` is the orchestrator only. Backend lifecycle, window creation, tray + dock-badge controller, and the SSE refresh client live in `electron/src/{backend,window,tray,sse-client}.js`.
+```
+crates/
+  token-dashboard-core/   scanner, db, queries, pricing, preferences,
+                          tips, skills_catalog, anthropic_sync, sources.
+                          No process model — just a library.
+  token-dashboard-cli/    axum router + tokio bin (`token-dashboard`).
+                          Owns the /api/* surface and the SSE bus.
+  token-dashboard-tauri/  Tauri 2 desktop shell. Links the cli as a
+                          library and calls app(state) directly inside
+                          the tauri runtime — single process, no
+                          subprocess to spawn or kill.
+
+frontend/                 React 18 + esbuild (`entry.jsx` →
+                          `frontend/dist/app.js`). The webview talks
+                          directly to /api/* through the embedded
+                          server; the SSE consumer in api-client.js
+                          drives view refreshes.
+docs/                     plan, design, roadmap, inspiration.
+```
 
 ## Data source
 
-Claude Code writes one JSONL file per session to `~/.claude/projects/<project-slug>/<session-id>.jsonl`. Each line is a message record; usage fields live at `message.usage` and model identifier at `message.model`. The scanner is incremental — it tracks each file's mtime and byte offset in the `files` table and only reads new bytes on subsequent scans.
+Claude Code writes one JSONL file per session to `~/.claude/projects/<project-slug>/<session-id>.jsonl`. Each line is a message record; usage fields live at `message.usage` and model identifier at `message.model`. The scanner (`crates/token-dashboard-core/src/scanner.rs`) is incremental — it tracks each file's mtime and byte offset in the `files` table and only reads new bytes on subsequent scans.
 
 ## Conventions
 
 - **Fully local.** No telemetry, no remote calls for user data. Tests run offline. **Exception:** the user-initiated `POST /api/limits/sync` route makes one Anthropic API call with the user's saved key to read rate-limit headers; this is opt-in, never automatic, and disabled until the user saves a key in Settings.
-- **Stdlib only.** No `pip install`. If a new feature needs a third-party library, argue for it first — we're willing to pay ergonomics cost to keep install friction at zero.
-- **SQLite parameter binding always.** Any f-string in a SQL statement must interpolate only internal, caller-controlled values (column names, placeholder lists). User-reachable values go through `?`.
-- **Small files with clear responsibilities.** If a file grows past ~400 lines or accretes three distinct concerns, split it.
-- **Streaming-snapshot dedup.** When adding scanner logic that joins the `messages` table, remember `(session_id, message_id)` is the dedup key, not `uuid`. See `scanner._evict_prior_snapshots` and the migration note in `db._migrate_add_message_id`.
+- **rusqlite parameter binding always.** Any `format!()` in a SQL statement must interpolate only internal, caller-controlled values (column names, placeholder lists). User-reachable values go through `?` via `params!` or `params_from_iter`.
+- **Streaming-snapshot dedup.** When adding scanner logic that joins the `messages` table, remember `(session_id, message_id)` is the dedup key, not `uuid`. See `scanner::evict_prior_snapshots` and the migration note in `db::migrate_add_message_id`.
+- **Small files with clear responsibilities.** If a file grows past ~600 lines or accretes three distinct concerns, split it.
+
+## Tauri build prereqs
+
+The frontend bundle must exist at `frontend/dist/app.js` before `cargo run -p token-dashboard-tauri` or `cargo tauri build`. Run `cd frontend && npm install && npm run build` once. (Tauri's `beforeBuildCommand` hook is intentionally omitted: Tauri 2 picks `frontend_dir` by walking up from `tauri.conf.json` for a `package.json`; this repo has none at the workspace root, so the hook resolves outside the tree. CI's `release-tauri` workflow pre-builds the frontend explicitly.) The shell walks upward from the binary to find `frontend/index.html`; override with `TOKEN_DASHBOARD_STATIC` when bundling for distribution.
 
 ## Frontend cache (avoid re-reading hot files)
 
@@ -46,16 +64,28 @@ Claude Code writes one JSONL file per session to `~/.claude/projects/<project-sl
 
 ## Customizing
 
-Env vars: `PORT` (default 8080), `HOST` (default 127.0.0.1), `CLAUDE_PROJECTS_DIR`, `TOKEN_DASHBOARD_DB`. Pricing lives in `pricing.json`. See README.md § Environment variables for details.
+Env vars (Tauri shell uses sensible defaults; the headless cli respects `PORT` + `HOST`):
 
-## Known limitations
-
-See `docs/KNOWN_LIMITATIONS.md`. Current summary: Skills `tokens_per_call` is populated only for skills installed under the three scanned roots (`~/.claude/skills/`, `~/.claude/scheduled-tasks/`, `~/.claude/plugins/`); project-local skills and subagent-dispatched skills show invocation counts but blank token counts.
+| Variable                     | Default                              |
+|------------------------------|--------------------------------------|
+| `PORT`                       | `8080` (cli only — tauri picks free) |
+| `HOST`                       | `127.0.0.1`                          |
+| `TOKEN_DASHBOARD_DB`         | `~/.claude/token-dashboard.db`       |
+| `CLAUDE_PROJECTS_DIR`        | `~/.claude/projects`                 |
+| `TOKEN_DASHBOARD_PRICING`    | (embedded copy of `pricing.json`)    |
+| `TOKEN_DASHBOARD_STATIC`     | (auto-detected, points at `frontend/`) |
 
 ## Verifying changes
 
 ```bash
-python3 -m unittest discover tests        # all tests
-python3 cli.py dashboard --no-open        # start the server
-curl http://127.0.0.1:8080/api/overview   # sanity-check an endpoint
+cargo test --workspace
+cargo fmt --check
+cargo clippy --all-targets --workspace -- -D warnings
+```
+
+Frontend smoke check:
+
+```bash
+cd frontend && npm install && npm run build && cd ..
+cargo run --release -p token-dashboard-tauri
 ```

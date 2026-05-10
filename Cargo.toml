@@ -1,0 +1,20 @@
+[workspace]
+members = [
+    "crates/token-dashboard-core",
+    "crates/token-dashboard-cli",
+    "crates/token-dashboard-tauri",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Arylmera/Token-Dashboard"
+authors = ["Arylmera <guillaume@lemer.be>"]
+homepage = "https://github.com/Arylmera/Token-Dashboard"
+rust-version = "1.82"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

@@ -12,3 +12,10 @@ build/
 dist/
 dist-py/
 
+# Rust
+target/
+Cargo.lock
+
+# Tauri build-time generated files
+crates/token-dashboard-tauri/gen/
+

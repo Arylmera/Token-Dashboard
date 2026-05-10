@@ -1,0 +1,695 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Token Dashboard API",
+    "version": "4.0.0",
+    "description": "Local HTTP API for the Token Dashboard. Reads `~/.claude/projects/` JSONL transcripts into SQLite, exposes per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine. Everything runs locally; no auth, no telemetry. The only outbound network call is the user-initiated `POST /api/limits/sync` probe to api.anthropic.com.",
+    "license": { "name": "MIT" }
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:8080", "description": "Headless cli default" },
+    { "url": "/", "description": "Tauri shell (port chosen at startup)" }
+  ],
+  "tags": [
+    { "name": "system", "description": "Health, scan triggers, SSE bus" },
+    { "name": "read", "description": "Aggregations the React tabs render" },
+    { "name": "write", "description": "User actions (settings, tags, sources, pricing)" },
+    { "name": "io", "description": "Bulk import/export" }
+  ],
+  "components": {
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "version": { "type": "string", "example": "4.0.0" }
+        },
+        "required": ["ok", "version"]
+      },
+      "Overview": {
+        "type": "object",
+        "properties": {
+          "sessions": { "type": "integer", "format": "int64" },
+          "turns": { "type": "integer", "format": "int64" },
+          "input_tokens": { "type": "integer", "format": "int64" },
+          "output_tokens": { "type": "integer", "format": "int64" },
+          "cache_read_tokens": { "type": "integer", "format": "int64" },
+          "cache_create_5m_tokens": { "type": "integer", "format": "int64" },
+          "cache_create_1h_tokens": { "type": "integer", "format": "int64" },
+          "cost_usd": { "type": "number", "format": "double" }
+        }
+      },
+      "ProjectRow": {
+        "type": "object",
+        "properties": {
+          "project_slug": { "type": "string" },
+          "project_name": { "type": "string" },
+          "sessions": { "type": "integer", "format": "int64" },
+          "turns": { "type": "integer", "format": "int64" },
+          "input_tokens": { "type": "integer", "format": "int64" },
+          "output_tokens": { "type": "integer", "format": "int64" },
+          "billable_tokens": { "type": "integer", "format": "int64" },
+          "cache_read_tokens": { "type": "integer", "format": "int64" }
+        }
+      },
+      "ToolRow": {
+        "type": "object",
+        "properties": {
+          "tool_name": { "type": "string" },
+          "calls": { "type": "integer", "format": "int64" },
+          "result_tokens": { "type": "integer", "format": "int64" }
+        }
+      },
+      "DailyRow": {
+        "type": "object",
+        "properties": {
+          "day": { "type": "string", "example": "2026-04-10" },
+          "input_tokens": { "type": "integer", "format": "int64" },
+          "output_tokens": { "type": "integer", "format": "int64" },
+          "cache_read_tokens": { "type": "integer", "format": "int64" },
+          "cache_create_tokens": { "type": "integer", "format": "int64" }
+        }
+      },
+      "ModelRow": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string" },
+          "turns": { "type": "integer", "format": "int64" },
+          "input_tokens": { "type": "integer", "format": "int64" },
+          "output_tokens": { "type": "integer", "format": "int64" },
+          "cache_read_tokens": { "type": "integer", "format": "int64" },
+          "cache_create_5m_tokens": { "type": "integer", "format": "int64" },
+          "cache_create_1h_tokens": { "type": "integer", "format": "int64" }
+        }
+      },
+      "HourlySlot": {
+        "type": "object",
+        "description": "One hour bucket. The endpoint returns a length-N array oldest-first, so arr[arr.length - 1] is the current hour.",
+        "properties": {
+          "hour_ago": { "type": "integer", "format": "int64" },
+          "cost_usd": { "type": "number", "format": "double" },
+          "input_tokens": { "type": "integer", "format": "int64" },
+          "output_tokens": { "type": "integer", "format": "int64" },
+          "cache_read_tokens": { "type": "integer", "format": "int64" },
+          "cache_create_5m_tokens": { "type": "integer", "format": "int64" },
+          "cache_create_1h_tokens": { "type": "integer", "format": "int64" }
+        }
+      },
+      "PhaseSplit": {
+        "type": "object",
+        "properties": {
+          "plan":    { "$ref": "#/components/schemas/PhaseBin" },
+          "execute": { "$ref": "#/components/schemas/PhaseBin" },
+          "other":   { "$ref": "#/components/schemas/PhaseBin" }
+        }
+      },
+      "PhaseBin": {
+        "type": "object",
+        "properties": {
+          "turns": { "type": "integer", "format": "int64" },
+          "billable_tokens": { "type": "integer", "format": "int64" },
+          "cache_read_tokens": { "type": "integer", "format": "int64" },
+          "cost_usd": { "type": "number", "format": "double" },
+          "cost_estimated": { "type": "boolean" }
+        }
+      },
+      "PromptRow": {
+        "type": "object",
+        "properties": {
+          "user_uuid": { "type": "string" },
+          "session_id": { "type": "string" },
+          "project_slug": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "prompt_text": { "type": ["string", "null"] },
+          "prompt_chars": { "type": ["integer", "null"], "format": "int64" },
+          "assistant_uuid": { "type": "string" },
+          "model": { "type": ["string", "null"] },
+          "billable_tokens": { "type": "integer", "format": "int64" },
+          "cache_read_tokens": { "type": "integer", "format": "int64" },
+          "estimated_cost_usd": { "type": ["number", "null"], "format": "double" }
+        }
+      },
+      "SkillRow": {
+        "type": "object",
+        "properties": {
+          "skill": { "type": "string" },
+          "invocations": { "type": "integer", "format": "int64" },
+          "sessions": { "type": "integer", "format": "int64" },
+          "last_used": { "type": ["string", "null"] },
+          "tokens_per_call": { "type": ["integer", "null"], "format": "int64" },
+          "est_tokens": { "type": ["integer", "null"], "format": "int64" },
+          "est_cost_usd": { "type": ["number", "null"], "format": "double" },
+          "estimated": { "type": "boolean" }
+        }
+      },
+      "SessionRow": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": "string" },
+          "project_slug": { "type": "string" },
+          "project_name": { "type": "string" },
+          "started": { "type": ["string", "null"] },
+          "ended": { "type": ["string", "null"] },
+          "turns": { "type": "integer", "format": "int64" },
+          "tokens": { "type": "integer", "format": "int64" },
+          "cost_usd": { "type": "number", "format": "double" },
+          "cost_estimated": { "type": "boolean" },
+          "model": { "type": ["string", "null"] },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "SessionTurn": {
+        "type": "object",
+        "properties": {
+          "uuid": { "type": "string" },
+          "parent_uuid": { "type": ["string", "null"] },
+          "type": { "type": "string", "enum": ["user", "assistant"] },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "model": { "type": ["string", "null"] },
+          "is_sidechain": { "type": "integer" },
+          "agent_id": { "type": ["string", "null"] },
+          "input_tokens": { "type": "integer", "format": "int64" },
+          "output_tokens": { "type": "integer", "format": "int64" },
+          "cache_read_tokens": { "type": "integer", "format": "int64" },
+          "cache_create_5m_tokens": { "type": "integer", "format": "int64" },
+          "cache_create_1h_tokens": { "type": "integer", "format": "int64" },
+          "prompt_text": { "type": ["string", "null"] },
+          "prompt_chars": { "type": ["integer", "null"] },
+          "tool_calls_json": { "type": ["string", "null"] },
+          "project_slug": { "type": "string" },
+          "cwd": { "type": ["string", "null"] }
+        }
+      },
+      "TagRow": {
+        "type": "object",
+        "properties": {
+          "tag": { "type": "string" },
+          "sessions": { "type": "integer", "format": "int64" }
+        }
+      },
+      "Tip": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "category": { "type": "string", "example": "cache" },
+          "title": { "type": "string" },
+          "body": { "type": "string" },
+          "scope": { "type": "string" },
+          "project_slug": { "type": ["string", "null"] },
+          "project_cwd": { "type": ["string", "null"] }
+        },
+        "additionalProperties": true
+      },
+      "Source": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "added_at": { "type": "number", "format": "double" },
+          "size_bytes": { "type": ["integer", "null"], "format": "int64" },
+          "exists": { "type": "boolean" }
+        }
+      },
+      "Preferences": {
+        "type": "object",
+        "properties": {
+          "badge_metric": { "type": "string", "enum": ["tokens", "cost", "burn", "5h", "weekly"] },
+          "badge_window_mode": { "type": "string", "enum": ["remaining", "used"] },
+          "badge_dock_enabled": { "type": "boolean" },
+          "badge_menubar_enabled": { "type": "boolean" },
+          "limits_enabled": { "type": "boolean" },
+          "glass_enabled": { "type": "boolean" },
+          "glass_opacity": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "anthropic_api_key": { "type": ["string", "null"] },
+          "limits_five_hour_reset_at": { "type": ["string", "null"] },
+          "limits_weekly_reset_at": { "type": ["string", "null"] },
+          "limits_5h_cap_override": { "type": ["integer", "null"] },
+          "limits_weekly_cap_override": { "type": ["integer", "null"] }
+        }
+      },
+      "Limits": {
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "limits_five_hour_reset_at": { "type": ["string", "null"] },
+          "limits_weekly_reset_at": { "type": ["string", "null"] },
+          "limits_5h_cap_override": { "type": ["integer", "null"] },
+          "limits_weekly_cap_override": { "type": ["integer", "null"] },
+          "last_sync_at": { "type": ["string", "null"] },
+          "last_sync_status": { "type": ["string", "null"] },
+          "has_api_key": { "type": "boolean" }
+        }
+      },
+      "Budget": {
+        "type": "object",
+        "properties": {
+          "daily": { "type": ["number", "null"], "format": "double" },
+          "weekly": { "type": ["number", "null"], "format": "double" },
+          "monthly": { "type": ["number", "null"], "format": "double" }
+        }
+      },
+      "Pricing": {
+        "type": "object",
+        "properties": {
+          "defaults": { "type": "object", "additionalProperties": { "$ref": "#/components/schemas/ModelRates" } },
+          "overrides": { "type": "object", "additionalProperties": { "type": "object" } },
+          "effective": { "type": "object", "additionalProperties": { "$ref": "#/components/schemas/ModelRates" } }
+        }
+      },
+      "ModelRates": {
+        "type": "object",
+        "properties": {
+          "tier": { "type": ["string", "null"] },
+          "input": { "type": "number", "format": "double" },
+          "output": { "type": "number", "format": "double" },
+          "cache_read": { "type": "number", "format": "double" },
+          "cache_create_5m": { "type": "number", "format": "double" },
+          "cache_create_1h": { "type": "number", "format": "double" }
+        }
+      },
+      "PlanResp": {
+        "type": "object",
+        "properties": {
+          "plan": { "type": "string", "enum": ["api", "pro", "max", "max-20x"] }
+        }
+      },
+      "ScanStats": {
+        "type": "object",
+        "properties": {
+          "messages": { "type": "integer", "format": "int64" },
+          "tools": { "type": "integer", "format": "int64" },
+          "files": { "type": "integer", "format": "int64" },
+          "sessions": { "type": "array", "items": { "type": "string" } },
+          "projects": { "type": "array", "items": { "type": "string" } },
+          "days": { "type": "array", "items": { "type": "string" } },
+          "models": { "type": "array", "items": { "type": "string" } },
+          "min_ts": { "type": ["string", "null"] },
+          "max_ts": { "type": ["string", "null"] }
+        }
+      },
+      "OkResponse": {
+        "type": "object",
+        "properties": { "ok": { "type": "boolean" } }
+      },
+      "Error": {
+        "type": "object",
+        "properties": { "error": { "type": "string" } }
+      }
+    },
+    "parameters": {
+      "Since": {
+        "name": "since",
+        "in": "query",
+        "schema": { "type": "string", "format": "date-time" },
+        "description": "Inclusive lower-bound timestamp filter"
+      },
+      "Until": {
+        "name": "until",
+        "in": "query",
+        "schema": { "type": "string", "format": "date-time" },
+        "description": "Exclusive upper-bound timestamp filter"
+      }
+    }
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["system"],
+        "summary": "Liveness probe",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } } } }
+      }
+    },
+    "/api/overview": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Top-line totals + cost",
+        "parameters": [
+          { "$ref": "#/components/parameters/Since" },
+          { "$ref": "#/components/parameters/Until" }
+        ],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Overview" } } } } }
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Per-project aggregation",
+        "parameters": [{ "$ref": "#/components/parameters/Since" }, { "$ref": "#/components/parameters/Until" }],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ProjectRow" } } } } } }
+      }
+    },
+    "/api/tools": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Per-tool calls + result-token estimates",
+        "parameters": [{ "$ref": "#/components/parameters/Since" }, { "$ref": "#/components/parameters/Until" }],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ToolRow" } } } } } }
+      }
+    },
+    "/api/daily": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Per-day token stack",
+        "parameters": [{ "$ref": "#/components/parameters/Since" }, { "$ref": "#/components/parameters/Until" }],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/DailyRow" } } } } } }
+      }
+    },
+    "/api/by-model": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Per-model totals",
+        "parameters": [{ "$ref": "#/components/parameters/Since" }, { "$ref": "#/components/parameters/Until" }],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ModelRow" } } } } } }
+      }
+    },
+    "/api/hourly": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Per-hour token + cost slots, oldest-first",
+        "parameters": [
+          { "name": "hours", "in": "query", "schema": { "type": "integer", "default": 24, "minimum": 1 } }
+        ],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/HourlySlot" } } } } } }
+      }
+    },
+    "/api/phase-split": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Plan / execute / other apportionment",
+        "parameters": [{ "$ref": "#/components/parameters/Since" }, { "$ref": "#/components/parameters/Until" }],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PhaseSplit" } } } } }
+      }
+    },
+    "/api/prompts": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Expensive user prompts joined to assistant turn",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["tokens", "recent"], "default": "tokens" } }
+        ],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PromptRow" } } } } } }
+      }
+    },
+    "/api/skills": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Per-skill invocation + cost estimates",
+        "parameters": [{ "$ref": "#/components/parameters/Since" }, { "$ref": "#/components/parameters/Until" }],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SkillRow" } } } } } }
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Recent sessions with cost / model / tags",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "$ref": "#/components/parameters/Since" },
+          { "$ref": "#/components/parameters/Until" },
+          { "name": "tag", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SessionRow" } } } } } }
+      }
+    },
+    "/api/sessions/{sid}": {
+      "get": {
+        "tags": ["read"],
+        "summary": "All turns for one session",
+        "parameters": [
+          { "name": "sid", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SessionTurn" } } } } } }
+      }
+    },
+    "/api/sessions/{sid}/tags": {
+      "post": {
+        "tags": ["write"],
+        "summary": "Add / remove session tags",
+        "parameters": [{ "name": "sid", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "properties": {
+              "add":    { "type": "array", "items": { "type": "string" } },
+              "remove": { "type": "array", "items": { "type": "string" } }
+            }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": {
+            "type": "object",
+            "properties": {
+              "ok": { "type": "boolean" },
+              "added": { "type": "array", "items": { "type": "string" } },
+              "removed": { "type": "array", "items": { "type": "string" } },
+              "tags": { "type": "array", "items": { "type": "string" } }
+            }
+          } } } },
+          "400": { "description": "Bad Request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/tags": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Tag → session-count",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TagRow" } } } } } }
+      }
+    },
+    "/api/tips": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Rule-based tips (cache, retry storms, right-size, outliers, waste)",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Tip" } } } } } }
+      }
+    },
+    "/api/tips/dismiss": {
+      "post": {
+        "tags": ["write"],
+        "summary": "Dismiss a tip for 14 days",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "properties": { "key": { "type": "string" } },
+            "required": ["key"]
+          } } }
+        },
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } } } }
+      }
+    },
+    "/api/plan": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Current saved plan label",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlanResp" } } } } }
+      },
+      "post": {
+        "tags": ["write"],
+        "summary": "Persist plan label",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlanResp" } } }
+        },
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } } } }
+      }
+    },
+    "/api/preferences": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Settings snapshot",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Preferences" } } } } }
+      },
+      "post": {
+        "tags": ["write"],
+        "summary": "Sparse preferences update",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Preferences" } } } },
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } } }
+      }
+    },
+    "/api/budget": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Current budgets",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Budget" } } } } }
+      },
+      "post": {
+        "tags": ["write"],
+        "summary": "Set budgets (0 or null clears a slot)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Budget" } } } },
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } } }
+      }
+    },
+    "/api/limits": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Limit reset state + last sync",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Limits" } } } } }
+      }
+    },
+    "/api/limits/sync": {
+      "post": {
+        "tags": ["write"],
+        "summary": "User-initiated Anthropic API probe (only when an API key is saved)",
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
+          "400": { "description": "no api key saved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/pricing": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Pricing defaults + overrides + effective rates",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pricing" } } } } }
+      }
+    },
+    "/api/pricing/{model}": {
+      "post": {
+        "tags": ["write"],
+        "summary": "Set per-model pricing override",
+        "parameters": [{ "name": "model", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "properties": {
+              "input":           { "type": "number", "format": "double", "minimum": 0 },
+              "output":          { "type": "number", "format": "double", "minimum": 0 },
+              "cache_read":      { "type": "number", "format": "double", "minimum": 0 },
+              "cache_create_5m": { "type": "number", "format": "double", "minimum": 0 },
+              "cache_create_1h": { "type": "number", "format": "double", "minimum": 0 }
+            }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pricing" } } } },
+          "400": { "description": "invalid value or empty body" },
+          "404": { "description": "unknown model" }
+        }
+      }
+    },
+    "/api/pricing/{model}/clear": {
+      "post": {
+        "tags": ["write"],
+        "summary": "Drop the override for one model",
+        "parameters": [{ "name": "model", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pricing" } } } },
+          "404": { "description": "unknown model" }
+        }
+      }
+    },
+    "/api/pricing/clear-all": {
+      "post": {
+        "tags": ["write"],
+        "summary": "Drop every override",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pricing" } } } } }
+      }
+    },
+    "/api/sources": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Attached external SQLite sources",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Source" } } } } } }
+      }
+    },
+    "/api/sources/add": {
+      "post": {
+        "tags": ["write"],
+        "summary": "Upload a SQLite blob and register it as a source",
+        "parameters": [
+          { "name": "X-Source-Filename", "in": "header", "schema": { "type": "string" }, "description": "Optional filename. Falls back to source-<unix>.db." }
+        ],
+        "requestBody": { "required": true, "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } } },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Source" } } } },
+          "400": { "description": "not SQLite / no messages table / empty body" },
+          "413": { "description": "upload too large" }
+        }
+      }
+    },
+    "/api/sources/{name}/toggle": {
+      "post": {
+        "tags": ["write"],
+        "summary": "Toggle a source's enabled flag",
+        "parameters": [{ "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "enabled": { "type": "boolean" } }, "required": ["enabled"] } } } },
+        "responses": {
+          "200": { "description": "OK" },
+          "404": { "description": "unknown source" }
+        }
+      }
+    },
+    "/api/sources/{name}/delete": {
+      "post": {
+        "tags": ["write"],
+        "summary": "Remove a source (registry row + on-disk file)",
+        "parameters": [{ "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "OK" },
+          "404": { "description": "unknown source" }
+        }
+      }
+    },
+    "/api/scan": {
+      "get": {
+        "tags": ["system"],
+        "summary": "Trigger an incremental scan; returns the run summary",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScanStats" } } } } }
+      }
+    },
+    "/api/stream": {
+      "get": {
+        "tags": ["system"],
+        "summary": "Server-Sent Events bus",
+        "description": "Emits typed events: `hello`, `scan_complete`, `preferences`, `plan`, `sources`, `tags`, `lagged`. 15s keep-alives keep webkit2gtk happy.",
+        "responses": { "200": { "description": "text/event-stream", "content": { "text/event-stream": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/api/export.csv": {
+      "get": {
+        "tags": ["io"],
+        "summary": "Sessions CSV download",
+        "responses": { "200": { "description": "OK", "content": { "text/csv": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/api/export.db": {
+      "get": {
+        "tags": ["io"],
+        "summary": "SQLite snapshot download",
+        "responses": { "200": { "description": "OK", "content": { "application/x-sqlite3": { "schema": { "type": "string", "format": "binary" } } } } }
+      }
+    },
+    "/api/import.db": {
+      "post": {
+        "tags": ["io"],
+        "summary": "Merge an uploaded SQLite snapshot into the local DB",
+        "requestBody": { "required": true, "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } } },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": {
+            "type": "object",
+            "properties": {
+              "ok": { "type": "boolean" },
+              "messages_added": { "type": "integer", "format": "int64" },
+              "tool_calls_imported": { "type": "integer", "format": "int64" },
+              "tags_added": { "type": "integer", "format": "int64" }
+            }
+          } } } },
+          "400": { "description": "not SQLite / missing required tables" },
+          "413": { "description": "upload too large" }
+        }
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "tags": ["system"],
+        "summary": "This OpenAPI spec",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object" } } } } }
+      }
+    }
+  }
+}
