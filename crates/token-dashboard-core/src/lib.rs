@@ -1,7 +1,13 @@
 //! Token Dashboard 4.0 core.
 //!
-//! Phase 1 surface: SQLite schema + migrations and the JSONL transcript
-//! scanner. Endpoints, tips, and HTTP wiring land in later phases.
+//! Library for ingesting Claude Code session transcripts (JSONL files in
+//! `~/.claude/projects/`) into a local SQLite store and querying them for
+//! cost, usage, and session analytics.
+//!
+//! See the [`scanner`], [`db`], [`queries`], and [`pricing`] modules for the
+//! main entry points.
+
+#![warn(rustdoc::broken_intra_doc_links)]
 
 pub mod anthropic_sync;
 pub mod db;
