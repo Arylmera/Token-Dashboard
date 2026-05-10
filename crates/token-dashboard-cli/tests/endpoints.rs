@@ -330,8 +330,16 @@ async fn hourly_returns_assistant_rows() {
     let (status, body) = get_json(&fx.state, "/api/hourly?hours=1").await;
     assert_eq!(status, StatusCode::OK);
     let arr = body.as_array().expect("array");
-    assert!(!arr.is_empty(), "expected at least one hourly row");
-    assert_eq!(arr[0]["model"].as_str(), Some("claude-opus-4-7"));
+    // The endpoint reshapes into a length-N array (N = `hours` query
+    // param) where index N-1 represents the current hour. A single
+    // `hours=1` response holds exactly one slot.
+    assert_eq!(arr.len(), 1);
+    let slot = &arr[0];
+    assert_eq!(slot["hour_ago"].as_i64(), Some(0));
+    assert_eq!(slot["output_tokens"].as_i64(), Some(50));
+    // The cost field always exists; with opus rates and 50 output
+    // tokens we expect a small but non-zero number.
+    assert!(slot["cost_usd"].as_f64().unwrap() > 0.0);
 }
 
 #[tokio::test]

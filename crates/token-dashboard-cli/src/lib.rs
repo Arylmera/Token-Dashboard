@@ -27,8 +27,8 @@ use token_dashboard_core::{
         hourly_breakdown, model_breakdown, normalise_tag, overview_totals, phase_split,
         project_summary, recent_sessions, remove_session_tag, session_model_usage, session_tags,
         session_turns, set_plan, skill_breakdown, tool_token_breakdown, DailyRow,
-        ExpensivePromptRow, HourlyRow, ModelRow, OverviewTotals, ProjectRow, SessionRow,
-        SessionTurn, SkillRow, TagRow, ToolRow,
+        ExpensivePromptRow, ModelRow, OverviewTotals, ProjectRow, SessionRow, SessionTurn,
+        SkillRow, TagRow, ToolRow,
     },
     scan_dir, Pricing, ScanStats, Source, Usage,
 };
@@ -1616,18 +1616,15 @@ async fn skills(
     let catalog = tokio::task::spawn_blocking(token_dashboard_core::skills_catalog::cached_catalog)
         .await
         .map_err(|e| ApiError::internal(format!("join: {e}")))?;
-    let sonnet = s
-        .pricing
-        .tier_fallback
-        .get("sonnet")
-        .cloned()
-        .unwrap_or(token_dashboard_core::pricing::TierRates {
+    let sonnet = s.pricing.tier_fallback.get("sonnet").cloned().unwrap_or(
+        token_dashboard_core::pricing::TierRates {
             input: 3.0,
             output: 15.0,
             cache_read: 0.30,
             cache_create_5m: 3.75,
             cache_create_1h: 6.0,
-        });
+        },
+    );
     let enriched: Vec<EnrichedSkillRow> = rows
         .into_iter()
         .map(|r| {
