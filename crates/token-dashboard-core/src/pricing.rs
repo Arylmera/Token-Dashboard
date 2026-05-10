@@ -13,7 +13,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-const EMBEDDED_PRICING_JSON: &str = include_str!("../../../token_dashboard/pricing.json");
+const EMBEDDED_PRICING_JSON: &str = include_str!("../pricing.json");
 
 pub const PRICING_FIELDS: &[&str] = &[
     "input",
