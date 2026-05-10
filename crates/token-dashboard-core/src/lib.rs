@@ -11,6 +11,7 @@
 
 pub mod anthropic_sync;
 pub mod db;
+pub mod limits;
 pub mod preferences;
 pub mod pricing;
 pub mod queries;
@@ -20,6 +21,7 @@ pub mod sources;
 pub mod tips;
 
 pub use db::{default_db_path, init_db, open};
+pub use limits::{compute_limits, LimitWindow, LimitsSnapshot};
 pub use pricing::{cost_for, CostResult, Pricing, Usage};
 pub use scanner::{scan_dir, scan_file, ScanStats};
 pub use sources::{list_sources, Source};

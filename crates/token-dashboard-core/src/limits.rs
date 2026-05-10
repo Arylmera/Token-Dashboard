@@ -1,0 +1,310 @@
+//! Plan-limits computation: sonnet-equivalent token usage in the 5h
+//! session window and the rolling weekly window, paired with the
+//! per-plan caps in `pricing.json` (or the user's calibrated overrides).
+//!
+//! The frontend's "Plan limits remaining" card on Overview consumes the
+//! shape this module emits; the Settings calibrator reads `used` to
+//! back-solve a cap from a percentage shown in Anthropic's statusbar.
+//!
+//! Window semantics:
+//! - 5h: anchored. If the user set `limits_five_hour_reset_at` we
+//!   honour it (anchor = reset - 5h). Otherwise we anchor to the first
+//!   assistant message in the last 5h; with no recent activity the
+//!   window is idle (anchor = null) and the frontend renders the idle
+//!   sub-label.
+//! - Weekly: anchored when `limits_weekly_reset_at` is set; otherwise
+//!   rolling over the last 7 days.
+
+use std::path::Path;
+
+use rusqlite::{params, OptionalExtension};
+use serde::Serialize;
+
+use crate::preferences;
+use crate::pricing::{tier_from_name, Pricing};
+use crate::queries;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LimitWindow {
+    /// Plan cap, sonnet-equivalent tokens. `None` when the plan has no
+    /// configured cap (e.g. `api`) or pricing has no entry for the plan.
+    pub cap: Option<i64>,
+    pub used: i64,
+    /// 0.0..1.0; 0 when cap is unknown.
+    pub pct_used: f64,
+    pub pct_remaining: f64,
+    pub resets_at: Option<String>,
+    /// ISO timestamp the window opens from. `None` signals "idle — no
+    /// active session" to the frontend (it inspects `"anchor" in win`).
+    pub anchor: Option<String>,
+    /// True when the cap came from a user-calibrated override rather
+    /// than the embedded pricing defaults.
+    pub calibrated: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LimitsMetaOut {
+    pub last_verified: Option<String>,
+    pub source_note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LimitsSnapshot {
+    pub plan: String,
+    pub meta: LimitsMetaOut,
+    pub five_hour: LimitWindow,
+    pub weekly: LimitWindow,
+}
+
+/// Compute the live 5h + weekly snapshot for the dashboard. The
+/// connection is opened read-only; callers responsible for thread/blocking.
+pub fn compute_limits<P: AsRef<Path>>(
+    db: P,
+    pricing: &Pricing,
+) -> rusqlite::Result<LimitsSnapshot> {
+    let plan = queries::get_plan(db.as_ref())?;
+    let reset_5h = preferences::get_limit_reset_at(db.as_ref(), "limits_five_hour_reset_at")?;
+    let reset_wk = preferences::get_limit_reset_at(db.as_ref(), "limits_weekly_reset_at")?;
+    let cap_5h_over = preferences::get_limit_cap_override(db.as_ref(), "limits_5h_cap_override")?;
+    let cap_wk_over =
+        preferences::get_limit_cap_override(db.as_ref(), "limits_weekly_cap_override")?;
+
+    let plan_caps = pricing.limits.get(&plan).cloned().unwrap_or_default();
+    let cap_5h = cap_5h_over.or(plan_caps.five_hour);
+    let cap_wk = cap_wk_over.or(plan_caps.weekly);
+
+    let conn = queries::open_ro(db.as_ref())?;
+
+    let (anchor_5h, resets_5h) = resolve_5h_window(&conn, reset_5h.as_deref())?;
+    let used_5h = if let Some(ref a) = anchor_5h {
+        used_since(&conn, a, pricing)?
+    } else {
+        0
+    };
+
+    let (anchor_wk, resets_wk) = resolve_weekly_window(&conn, reset_wk.as_deref())?;
+    let used_wk = used_since(&conn, &anchor_wk, pricing)?;
+
+    Ok(LimitsSnapshot {
+        plan,
+        meta: LimitsMetaOut {
+            last_verified: pricing.limits_meta.last_verified.clone(),
+            source_note: pricing.limits_meta.source_note.clone(),
+        },
+        five_hour: build_window(used_5h, cap_5h, resets_5h, anchor_5h, cap_5h_over.is_some()),
+        weekly: build_window(
+            used_wk,
+            cap_wk,
+            resets_wk,
+            Some(anchor_wk),
+            cap_wk_over.is_some(),
+        ),
+    })
+}
+
+fn build_window(
+    used: i64,
+    cap: Option<i64>,
+    resets_at: Option<String>,
+    anchor: Option<String>,
+    calibrated: bool,
+) -> LimitWindow {
+    let (pct_used, pct_remaining) = match cap {
+        Some(c) if c > 0 => {
+            let u = (used as f64 / c as f64).clamp(0.0, 1.0);
+            (u, 1.0 - u)
+        }
+        _ => (0.0, 0.0),
+    };
+    LimitWindow {
+        cap,
+        used,
+        pct_used,
+        pct_remaining,
+        resets_at,
+        anchor,
+        calibrated,
+    }
+}
+
+/// Returns `(anchor, resets_at)`. `anchor = None` signals idle.
+fn resolve_5h_window(
+    conn: &rusqlite::Connection,
+    reset_at: Option<&str>,
+) -> rusqlite::Result<(Option<String>, Option<String>)> {
+    if let Some(r) = reset_at {
+        let anchor: String =
+            conn.query_row("SELECT datetime(?, '-5 hours')", params![r], |row| {
+                row.get(0)
+            })?;
+        return Ok((Some(anchor), Some(r.to_string())));
+    }
+    let first: Option<String> = conn
+        .query_row(
+            "SELECT MIN(timestamp) FROM messages \
+             WHERE type='assistant' AND timestamp >= datetime('now', '-5 hours')",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten();
+    match first {
+        Some(t) => {
+            let resets: String =
+                conn.query_row("SELECT datetime(?, '+5 hours')", params![t], |row| {
+                    row.get(0)
+                })?;
+            Ok((Some(t), Some(resets)))
+        }
+        None => Ok((None, None)),
+    }
+}
+
+/// Weekly window is always defined: rolling last-7-days when no
+/// `reset_at` is set, anchored when it is. Returns `(anchor, resets_at)`.
+fn resolve_weekly_window(
+    conn: &rusqlite::Connection,
+    reset_at: Option<&str>,
+) -> rusqlite::Result<(String, Option<String>)> {
+    if let Some(r) = reset_at {
+        let anchor: String =
+            conn.query_row("SELECT datetime(?, '-7 days')", params![r], |row| {
+                row.get(0)
+            })?;
+        return Ok((anchor, Some(r.to_string())));
+    }
+    let anchor: String =
+        conn.query_row("SELECT datetime('now', '-7 days')", [], |row| row.get(0))?;
+    Ok((anchor, None))
+}
+
+/// Sum sonnet-equivalent billable tokens emitted by assistant messages
+/// since `anchor`. Billable = input + output + cache_create_5m +
+/// cache_create_1h (cache reads are not billed by Anthropic for the
+/// quota window). Each model's contribution is scaled by the tier
+/// weight in pricing.json (opus 5x, sonnet 1x, haiku 0.33x).
+fn used_since(
+    conn: &rusqlite::Connection,
+    anchor: &str,
+    pricing: &Pricing,
+) -> rusqlite::Result<i64> {
+    let mut stmt = conn.prepare(
+        "SELECT model, \
+                SUM(input_tokens + output_tokens + cache_create_5m_tokens + cache_create_1h_tokens) \
+         FROM messages \
+         WHERE type='assistant' AND timestamp >= ? AND model IS NOT NULL \
+         GROUP BY model",
+    )?;
+    let mut total: f64 = 0.0;
+    let mut rows = stmt.query(params![anchor])?;
+    while let Some(row) = rows.next()? {
+        let model: String = row.get(0)?;
+        let billable: i64 = row.get::<_, Option<i64>>(1)?.unwrap_or(0);
+        if billable <= 0 {
+            continue;
+        }
+        let weight = tier_from_name(&model)
+            .and_then(|t| pricing.tier_weight.get(t).copied())
+            .unwrap_or(1.0);
+        total += billable as f64 * weight;
+    }
+    Ok(total.round() as i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init_db;
+    use rusqlite::Connection;
+    use tempfile::NamedTempFile;
+
+    fn fresh_db() -> NamedTempFile {
+        let f = NamedTempFile::new().expect("tempfile");
+        init_db(f.path()).expect("init");
+        f
+    }
+
+    fn insert_assistant(
+        conn: &Connection,
+        ts: &str,
+        model: &str,
+        input: i64,
+        output: i64,
+        cache_5m: i64,
+    ) {
+        conn.execute(
+            "INSERT INTO messages (uuid, session_id, project_slug, type, timestamp, model, \
+              input_tokens, output_tokens, cache_create_5m_tokens) \
+             VALUES (?,?,?,?,?,?,?,?,?)",
+            params![
+                format!("u-{}-{}", ts, model),
+                "s1",
+                "proj",
+                "assistant",
+                ts,
+                model,
+                input,
+                output,
+                cache_5m,
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn used_since_weights_by_tier() {
+        let f = fresh_db();
+        let conn = Connection::open(f.path()).unwrap();
+        // 100 billable opus tokens, 100 billable sonnet tokens.
+        insert_assistant(&conn, "2026-05-10T10:00:00Z", "claude-opus-4-7", 50, 30, 20);
+        insert_assistant(
+            &conn,
+            "2026-05-10T10:00:01Z",
+            "claude-sonnet-4-6",
+            60,
+            40,
+            0,
+        );
+        drop(conn);
+        let conn = queries::open_ro(f.path()).unwrap();
+        let pricing = Pricing::embedded();
+        let n = used_since(&conn, "2026-05-10T00:00:00Z", &pricing).unwrap();
+        // opus 100 * 5 + sonnet 100 * 1 = 600
+        assert_eq!(n, 600);
+    }
+
+    #[test]
+    fn five_hour_idle_when_no_recent_activity() {
+        let f = fresh_db();
+        let pricing = Pricing::embedded();
+        // No reset_at, no messages → idle.
+        let snap = compute_limits(f.path(), &pricing).unwrap();
+        assert!(snap.five_hour.anchor.is_none());
+        assert_eq!(snap.five_hour.used, 0);
+    }
+
+    #[test]
+    fn cap_override_marks_calibrated() {
+        let f = fresh_db();
+        queries::set_plan(f.path(), "pro").unwrap();
+        preferences::set_limit_cap_override(f.path(), "limits_5h_cap_override", Some(123_456))
+            .unwrap();
+        let pricing = Pricing::embedded();
+        let snap = compute_limits(f.path(), &pricing).unwrap();
+        assert_eq!(snap.plan, "pro");
+        assert_eq!(snap.five_hour.cap, Some(123_456));
+        assert!(snap.five_hour.calibrated);
+        assert!(!snap.weekly.calibrated);
+        assert_eq!(snap.weekly.cap, Some(90_000_000));
+    }
+
+    #[test]
+    fn api_plan_has_no_caps() {
+        let f = fresh_db();
+        let pricing = Pricing::embedded();
+        let snap = compute_limits(f.path(), &pricing).unwrap();
+        assert_eq!(snap.plan, "api");
+        assert!(snap.five_hour.cap.is_none());
+        assert!(snap.weekly.cap.is_none());
+    }
+}

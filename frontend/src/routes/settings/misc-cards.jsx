@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { SettingRow } from "./atoms.jsx";
 
 const DENSITY_KEY = "td.density.v1";
 const DENSITY_OPTIONS = [
@@ -44,6 +45,21 @@ export const DensityCard = () => {
   );
 };
 
+export const AdvancedModeCard = ({ enabled, onChange, loaded, saving }) => (
+  <section className="a-card">
+    <div className="a-card-head">
+      <h2>Advanced mode</h2>
+      <span className="a-card-meta">{saving ? "saving…" : (loaded ? "extra tabs and editable internals" : "loading…")}</span>
+    </div>
+    <SettingRow
+      title="Show advanced settings and tabs"
+      description="Reveals the API tab, the editable pricing table, and the plan limit estimates. Leave off if you only want overview-level numbers."
+      checked={enabled}
+      onChange={onChange}
+    />
+  </section>
+);
+
 export const DeveloperCard = () => {
   if (!window.td || typeof window.td.toggleDevTools !== "function") return null;
   return (
@@ -85,6 +101,27 @@ export const AboutCard = () => {
         <dd>token-dashboard</dd>
         <dt>Version</dt>
         <dd className="mono">{version ? `v${version}` : "—"}</dd>
+        <dt>Repository</dt>
+        <dd>
+          <a
+            className="a-link is-mono"
+            href="https://github.com/Arylmera/Token-Dashboard"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              const url = "https://github.com/Arylmera/Token-Dashboard";
+              const tauri = typeof window !== "undefined" ? window.__TAURI__ : null;
+              const invoke = tauri && tauri.core && tauri.core.invoke;
+              if (invoke) {
+                e.preventDefault();
+                invoke("open_external", { url }).catch(() => {});
+              }
+            }}
+          >
+            github.com/Arylmera/Token-Dashboard
+            <span className="a-link-icon" aria-hidden="true">↗</span>
+          </a>
+        </dd>
       </dl>
     </section>
   );

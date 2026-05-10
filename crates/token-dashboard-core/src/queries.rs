@@ -36,6 +36,7 @@ pub struct ProjectRow {
     pub output_tokens: i64,
     pub billable_tokens: i64,
     pub cache_read_tokens: i64,
+    pub last_active: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,7 +93,7 @@ fn range_clause(since: Option<&str>, until: Option<&str>, col: &str) -> (String,
     (clause, args)
 }
 
-fn open_ro<P: AsRef<Path>>(db: P) -> rusqlite::Result<Connection> {
+pub(crate) fn open_ro<P: AsRef<Path>>(db: P) -> rusqlite::Result<Connection> {
     let c = Connection::open(db.as_ref())?;
     c.busy_timeout(std::time::Duration::from_secs(30))?;
     Ok(c)
@@ -183,7 +184,8 @@ pub fn project_summary<P: AsRef<Path>>(
                 COALESCE(SUM(output_tokens), 0) AS output_tokens, \
                 COALESCE(SUM(input_tokens),0)+COALESCE(SUM(output_tokens),0) \
                   +COALESCE(SUM(cache_create_5m_tokens),0)+COALESCE(SUM(cache_create_1h_tokens),0) AS billable_tokens, \
-                COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens \
+                COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens, \
+                MAX(timestamp) AS last_active \
          FROM messages \
          WHERE 1=1 {rng} \
          GROUP BY project_slug \
@@ -204,6 +206,7 @@ pub fn project_summary<P: AsRef<Path>>(
             output_tokens: r.get(4)?,
             billable_tokens: r.get(5)?,
             cache_read_tokens: r.get(6)?,
+            last_active: r.get(7)?,
         })
     })?;
     rows.collect()
@@ -415,6 +418,10 @@ pub struct ExpensivePromptRow {
     pub assistant_uuid: String,
     pub model: Option<String>,
     pub billable_tokens: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_create_5m_tokens: i64,
+    pub cache_create_1h_tokens: i64,
     pub cache_read_tokens: i64,
 }
 
@@ -425,28 +432,49 @@ pub fn expensive_prompts<P: AsRef<Path>>(
     db: P,
     limit: i64,
     sort: &str,
+    since: Option<&str>,
+    until: Option<&str>,
 ) -> rusqlite::Result<Vec<ExpensivePromptRow>> {
     let order = if sort == "recent" {
         "u.timestamp DESC"
     } else {
         "billable_tokens DESC"
     };
+    let (rng, args) = range_clause(since, until, "u.timestamp");
+    // Pair each user prompt with the *first* assistant turn after it in the
+    // same session and sidechain. The earlier `a.parent_uuid = u.uuid` join
+    // is unreliable because streaming-snapshot dedup evicts uuids that later
+    // messages still reference (see CLAUDE.md note on dedup keys).
     let sql = format!(
         "SELECT u.uuid AS user_uuid, u.session_id, u.project_slug, u.timestamp, \
                 u.prompt_text, u.prompt_chars, \
                 a.uuid AS assistant_uuid, a.model, \
                 COALESCE(a.input_tokens,0)+COALESCE(a.output_tokens,0) \
                   +COALESCE(a.cache_create_5m_tokens,0)+COALESCE(a.cache_create_1h_tokens,0) AS billable_tokens, \
+                COALESCE(a.input_tokens,0) AS input_tokens, \
+                COALESCE(a.output_tokens,0) AS output_tokens, \
+                COALESCE(a.cache_create_5m_tokens,0) AS cache_create_5m_tokens, \
+                COALESCE(a.cache_create_1h_tokens,0) AS cache_create_1h_tokens, \
                 COALESCE(a.cache_read_tokens,0) AS cache_read_tokens \
            FROM messages u \
-           JOIN messages a ON a.parent_uuid = u.uuid AND a.type='assistant' \
-          WHERE u.type='user' AND u.prompt_text IS NOT NULL \
+           JOIN messages a \
+             ON a.session_id = u.session_id \
+            AND a.type = 'assistant' \
+            AND a.is_sidechain = u.is_sidechain \
+            AND a.timestamp = ( \
+                  SELECT MIN(a2.timestamp) FROM messages a2 \
+                   WHERE a2.session_id = u.session_id \
+                     AND a2.type = 'assistant' \
+                     AND a2.is_sidechain = u.is_sidechain \
+                     AND a2.timestamp > u.timestamp \
+                ) \
+          WHERE u.type='user' AND u.prompt_text IS NOT NULL {rng} \
           ORDER BY {order} \
-          LIMIT ?"
+          LIMIT {limit}"
     );
     let c = open_ro(db)?;
     let mut stmt = c.prepare(&sql)?;
-    let rows = stmt.query_map([limit], |r| {
+    let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
         Ok(ExpensivePromptRow {
             user_uuid: r.get(0)?,
             session_id: r.get(1)?,
@@ -457,7 +485,11 @@ pub fn expensive_prompts<P: AsRef<Path>>(
             assistant_uuid: r.get(6)?,
             model: r.get(7)?,
             billable_tokens: r.get(8)?,
-            cache_read_tokens: r.get(9)?,
+            input_tokens: r.get(9)?,
+            output_tokens: r.get(10)?,
+            cache_create_5m_tokens: r.get(11)?,
+            cache_create_1h_tokens: r.get(12)?,
+            cache_read_tokens: r.get(13)?,
         })
     })?;
     rows.collect()
@@ -683,6 +715,39 @@ pub fn session_model_usage<P: AsRef<Path>>(
         })
     })?;
     rows.collect()
+}
+
+/// `{session_id: first_prompt}` — earliest non-empty user `prompt_text`
+/// per session. Used to populate the "first prompt" column in the
+/// sessions list and CSV export.
+pub fn first_prompts<P: AsRef<Path>>(
+    db: P,
+    session_ids: &[&str],
+) -> rusqlite::Result<std::collections::HashMap<String, String>> {
+    if session_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders = vec!["?"; session_ids.len()].join(",");
+    let sql = format!(
+        "SELECT session_id, prompt_text FROM ( \
+             SELECT session_id, prompt_text, timestamp, \
+                    ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY timestamp ASC) AS rn \
+             FROM messages \
+             WHERE type='user' AND prompt_text IS NOT NULL AND TRIM(prompt_text) <> '' \
+               AND session_id IN ({placeholders}) \
+         ) WHERE rn = 1"
+    );
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(&sql)?;
+    let mut out: std::collections::HashMap<String, String> =
+        std::collections::HashMap::with_capacity(session_ids.len());
+    let mut rows = stmt.query(rusqlite::params_from_iter(session_ids))?;
+    while let Some(r) = rows.next()? {
+        let sid: String = r.get(0)?;
+        let txt: String = r.get(1)?;
+        out.insert(sid, txt);
+    }
+    Ok(out)
 }
 
 /// `{session_id: [tag, ...]}` lookup. Mirrors python `session_tags`.

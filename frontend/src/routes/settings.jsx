@@ -9,7 +9,9 @@ import { BudgetCard } from "./settings/budget-card.jsx";
 import { BackupCard } from "./settings/backup-card.jsx";
 import { SourcesCard } from "./settings/sources-card.jsx";
 import { GlassCard } from "./settings/glass-card.jsx";
-import { DensityCard, DeveloperCard, AboutCard, Glossary } from "./settings/misc-cards.jsx";
+import { WidgetCard } from "./settings/widget-card.jsx";
+import { AdvancedModeCard, DensityCard, DeveloperCard, AboutCard, Glossary } from "./settings/misc-cards.jsx";
+import { broadcastAdvancedMode } from "../use-advanced-mode.js";
 
 export const Settings = ({ themeIdx, onPickTheme }) => {
   const [plan, setPlan] = useState((D.plan && D.plan.plan) || "api");
@@ -17,6 +19,9 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
   const [limitsEnabled, setLimitsEnabled] = useState(false);
   const [limitsSaving, setLimitsSaving] = useState(false);
   const [limitsLoaded, setLimitsLoaded] = useState(false);
+  const [advancedMode, setAdvancedMode] = useState(false);
+  const [advancedSaving, setAdvancedSaving] = useState(false);
+  const [advancedLoaded, setAdvancedLoaded] = useState(false);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/preferences")
@@ -24,11 +29,30 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
       .then((d) => {
         if (cancelled || !d) return;
         if (typeof d.limits_enabled === "boolean") setLimitsEnabled(d.limits_enabled);
+        if (typeof d.advanced_mode === "boolean") setAdvancedMode(d.advanced_mode);
       })
       .catch(() => {})
-      .finally(() => { if (!cancelled) setLimitsLoaded(true); });
+      .finally(() => {
+        if (cancelled) return;
+        setLimitsLoaded(true);
+        setAdvancedLoaded(true);
+      });
     return () => { cancelled = true; };
   }, []);
+  const onToggleAdvanced = async (next) => {
+    setAdvancedMode(next);
+    setAdvancedSaving(true);
+    broadcastAdvancedMode(next);
+    try {
+      await fetch("/api/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ advanced_mode: next }),
+      });
+      if (window.RELOAD_STATIC) window.RELOAD_STATIC();
+    } catch (_) {}
+    setAdvancedSaving(false);
+  };
   const onToggleLimits = async (next) => {
     setLimitsEnabled(next);
     setLimitsSaving(true);
@@ -61,18 +85,17 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
         <ThemeCard themeIdx={themeIdx} onPickTheme={onPickTheme} />
         <DensityCard />
         <GlassCard />
+        <WidgetCard />
       </SettingsGroup>
 
       <SettingsGroup title="Pricing &amp; budgets" description="how cost and quotas are calculated">
         <PlanCard plan={plan} saving={saving} onPick={onPick} />
         <BudgetCard />
-        <PricingTable />
+        <PricingTable readOnly={!advancedMode} />
       </SettingsGroup>
 
-      <SettingsGroup title="Limits &amp; alerts" description="rolling-window estimates and the dock/menubar indicator">
-        <LimitsToggleCard enabled={limitsEnabled} onChange={onToggleLimits} loaded={limitsLoaded} saving={limitsSaving} />
-        <BadgeCard limitsEnabled={limitsEnabled} />
-        {limitsEnabled && <LimitResetCard />}
+      <SettingsGroup title="Limits &amp; alerts" description="dock/menubar indicator">
+        <BadgeCard limitsEnabled={advancedMode && limitsEnabled} />
       </SettingsGroup>
 
       <SettingsGroup title="Data" description="export, portability, and external sources">
@@ -80,11 +103,19 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
         <SourcesCard />
       </SettingsGroup>
 
-      {showDev && (
-        <SettingsGroup title="Advanced">
-          <DeveloperCard />
-        </SettingsGroup>
-      )}
+      <SettingsGroup title="Advanced" description="reveal extra tabs and editable internals">
+        <AdvancedModeCard
+          enabled={advancedMode}
+          onChange={onToggleAdvanced}
+          loaded={advancedLoaded}
+          saving={advancedSaving}
+        />
+        {advancedMode && (
+          <LimitsToggleCard enabled={limitsEnabled} onChange={onToggleLimits} loaded={limitsLoaded} saving={limitsSaving} />
+        )}
+        {advancedMode && limitsEnabled && <LimitResetCard />}
+        {showDev && <DeveloperCard />}
+      </SettingsGroup>
 
       <SettingsGroup title="Reference">
         <Glossary />

@@ -290,6 +290,20 @@ fn right_size_tips<P: AsRef<Path>>(db: P, today: &str) -> rusqlite::Result<Vec<T
         if is_dismissed(&conn, &k)? {
             continue;
         }
+        let mut extras = serde_json::Map::new();
+        extras.insert("count".into(), serde_json::Value::from(n));
+        extras.insert(
+            "api_opus".into(),
+            serde_json::Value::from((api_opus * 100.0).round() as i64),
+        );
+        extras.insert(
+            "api_sonnet".into(),
+            serde_json::Value::from((api_sonnet * 100.0).round() as i64),
+        );
+        extras.insert(
+            "savings".into(),
+            serde_json::Value::from((savings * 100.0).round() as i64),
+        );
         out.push(Tip {
             key: k,
             category: "right-size".into(),
@@ -300,7 +314,7 @@ fn right_size_tips<P: AsRef<Path>>(db: P, today: &str) -> rusqlite::Result<Vec<T
             scope: format!("{slug}:opus-short-turns-7d"),
             project_slug: slug_o,
             project_cwd: None,
-            extras: serde_json::Map::new(),
+            extras,
         });
     }
     Ok(out)

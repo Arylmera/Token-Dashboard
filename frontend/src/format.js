@@ -1,7 +1,13 @@
 // Display formatters used by the React UI. Distinct from shared/format.js,
 // which serves the Electron tray with its own compact rules.
 
-export const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
+export const fmtCost = (n) => {
+  const v = n || 0;
+  const a = Math.abs(v);
+  if (a > 0 && a < 0.01) return `$${v.toFixed(4)}`;
+  if (a < 1) return `$${v.toFixed(3)}`;
+  return `$${v.toFixed(2)}`;
+};
 
 export const fmtCostWhole = (n) => `$${Math.round(n || 0).toLocaleString("de-DE")}`;
 

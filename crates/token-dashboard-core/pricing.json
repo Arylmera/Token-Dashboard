@@ -30,14 +30,14 @@
     "max-20x": { "monthly": 200, "label": "Max 20x" }
   },
   "limits": {
-    "api":     { "five_hour": null,   "weekly": null       },
-    "pro":     { "five_hour":  88000, "weekly":   2500000  },
-    "max":     { "five_hour": 176000, "weekly":  10000000  },
-    "max-20x": { "five_hour": 440000, "weekly":  15000000  }
+    "api":     { "five_hour": null,        "weekly": null         },
+    "pro":     { "five_hour":   36000000,  "weekly":    90000000  },
+    "max":     { "five_hour":   72000000,  "weekly":   180000000  },
+    "max-20x": { "five_hour":  360000000,  "weekly":   900000000  }
   },
   "limits_meta": {
-    "last_verified": "2026-05-08",
+    "last_verified": "2026-05-10",
     "unit": "sonnet-equivalent billable tokens (input + output + cache writes), with opus weighted 5x and haiku 0.33x",
-    "source_note": "Anthropic does not publish exact token caps. 5h values reflect community estimates after the May 6 2026 5h-cap doubling. Weekly values are derived from Anthropic's published 'Sonnet/Opus hours per week' bands, assuming ~30k Sonnet-eq tokens per active hour. Treat as ±50% rough."
+    "source_note": "Anthropic does not publish exact token caps. Defaults reflect observed Max-plan calibration (5h ≈ 72M, weekly ≈ 180M, ratio ~2.5x). Pro halved, Max-20x scaled 5x. Treat as ±30% rough — calibrate from the Anthropic statusbar for accuracy."
   }
 }

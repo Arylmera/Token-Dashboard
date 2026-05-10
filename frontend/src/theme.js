@@ -33,16 +33,35 @@ export const THEMES = [
 
 const THEME_KEY = "td.theme.v2";
 
+export const themeIndexFromId = (id) => {
+  const i = THEMES.findIndex((t) => t.id === id);
+  return i >= 0 ? i : -1;
+};
+
 export const themeIndexFromStorage = () => {
   try {
-    const id = localStorage.getItem(THEME_KEY);
-    const i = THEMES.findIndex((t) => t.id === id);
+    const i = themeIndexFromId(localStorage.getItem(THEME_KEY));
     return i >= 0 ? i : 0;
   } catch (_) { return 0; }
 };
 
 export const persistThemeIndex = (idx) => {
   try { localStorage.setItem(THEME_KEY, THEMES[idx].id); } catch (_) {}
+};
+
+// Tauri picks a free port per launch, so the webview origin changes and
+// localStorage is not portable across runs. Mirror the choice into the
+// backend preferences DB so the next launch can rehydrate it.
+export const persistThemeBackend = (idx) => {
+  const id = THEMES[idx]?.id;
+  if (!id) return;
+  try {
+    fetch("/api/preferences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: id }),
+    }).catch(() => {});
+  } catch (_) {}
 };
 
 export const applyThemeClass = (idx) => {

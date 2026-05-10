@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default permissions for the Token Dashboard tauri shell",
-  "windows": ["main"],
+  "windows": ["main", "widget"],
   "remote": {
     "urls": ["http://127.0.0.1:*", "http://localhost:*"]
   },
@@ -14,6 +14,10 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-is-maximized",
     "core:window:allow-close",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-scale-factor",
     "core:webview:default",
     "core:event:default",
     "core:tray:default"

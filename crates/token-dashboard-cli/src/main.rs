@@ -5,9 +5,12 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::Duration;
 
-use token_dashboard_cli::{app, AppState};
+use token_dashboard_cli::{app, spawn_scan_loop, AppState};
 use token_dashboard_core::{default_db_path, Pricing};
+
+const SCAN_INTERVAL: Duration = Duration::from_secs(10);
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
     std::env::var(key)
@@ -55,6 +58,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("listening on http://{addr}");
+
+    spawn_scan_loop(state.clone(), SCAN_INTERVAL);
 
     axum::serve(listener, app(state))
         .with_graceful_shutdown(shutdown_signal())

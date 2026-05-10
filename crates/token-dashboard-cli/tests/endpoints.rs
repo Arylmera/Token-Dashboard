@@ -373,8 +373,8 @@ async fn scan_endpoint_picks_up_new_jsonl() {
 async fn prompts_returns_user_assistant_pairs() {
     let fx = setup_with_jsonl(&[
         user("u1", "2026-04-10T00:00:00Z", "what is 2+2?"),
-        // a1 is the assistant turn that follows u1; expensive_prompts joins
-        // a.parent_uuid = u.uuid, so the user's actual uuid must match.
+        // expensive_prompts pairs each user prompt with the first assistant
+        // turn after it in the same session/sidechain.
         json!({
             "type": "assistant", "uuid": "a1", "parentUuid": "u1",
             "sessionId": "s1", "timestamp": "2026-04-10T00:00:01Z",
@@ -394,6 +394,43 @@ async fn prompts_returns_user_assistant_pairs() {
     assert_eq!(arr[0]["assistant_uuid"].as_str(), Some("a1"));
     assert_eq!(arr[0]["billable_tokens"].as_i64(), Some(105));
     assert_eq!(arr[0]["prompt_text"].as_str(), Some("what is 2+2?"));
+}
+
+#[tokio::test]
+async fn prompts_pair_through_attachment_chain() {
+    // Recent Claude Code sessions interleave attachment messages between the
+    // user prompt and the assistant reply, so `assistant.parent_uuid` no longer
+    // points at the user's uuid. The pairing must fall back to timestamp order
+    // within the same session/sidechain.
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "summarize this file"),
+        json!({
+            "type": "attachment", "uuid": "att1", "parentUuid": "u1",
+            "sessionId": "s1", "timestamp": "2026-04-10T00:00:00.500Z",
+            "isSidechain": false
+        }),
+        json!({
+            "type": "assistant", "uuid": "a1", "parentUuid": "att1",
+            "sessionId": "s1", "timestamp": "2026-04-10T00:00:01Z",
+            "isSidechain": false,
+            "message": {
+                "id": "msg_a1", "model": "claude-opus-4-7",
+                "content": [{"type": "text", "text": "ok"}],
+                "usage": {"input_tokens": 200, "output_tokens": 10}
+            }
+        }),
+    ]);
+    let (status, body) = get_json(&fx.state, "/api/prompts").await;
+    assert_eq!(status, StatusCode::OK);
+    let arr = body.as_array().expect("array");
+    assert_eq!(
+        arr.len(),
+        1,
+        "user must still pair with assistant despite attachment"
+    );
+    assert_eq!(arr[0]["user_uuid"].as_str(), Some("u1"));
+    assert_eq!(arr[0]["assistant_uuid"].as_str(), Some("a1"));
+    assert_eq!(arr[0]["billable_tokens"].as_i64(), Some(210));
 }
 
 #[tokio::test]
@@ -514,6 +551,7 @@ async fn preferences_get_defaults() {
     assert_eq!(body["badge_window_mode"].as_str(), Some("remaining"));
     assert_eq!(body["badge_dock_enabled"].as_bool(), Some(true));
     assert_eq!(body["limits_enabled"].as_bool(), Some(false));
+    assert_eq!(body["advanced_mode"].as_bool(), Some(false));
     assert_eq!(body["glass_enabled"].as_bool(), Some(false));
     assert_eq!(body["glass_opacity"].as_i64(), Some(25));
     assert!(body["anthropic_api_key"].is_null());
@@ -525,18 +563,20 @@ async fn preferences_post_round_trip() {
     let (status, body) = post_json(
         &fx.state,
         "/api/preferences",
-        &json!({"badge_metric": "cost", "glass_opacity": 60, "limits_enabled": true}),
+        &json!({"badge_metric": "cost", "glass_opacity": 60, "limits_enabled": true, "advanced_mode": true}),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["badge_metric"].as_str(), Some("cost"));
     assert_eq!(body["glass_opacity"].as_i64(), Some(60));
     assert_eq!(body["limits_enabled"].as_bool(), Some(true));
+    assert_eq!(body["advanced_mode"].as_bool(), Some(true));
 
     let (_, after) = get_json(&fx.state, "/api/preferences").await;
     assert_eq!(after["badge_metric"].as_str(), Some("cost"));
     assert_eq!(after["glass_opacity"].as_i64(), Some(60));
     assert_eq!(after["limits_enabled"].as_bool(), Some(true));
+    assert_eq!(after["advanced_mode"].as_bool(), Some(true));
 }
 
 #[tokio::test]

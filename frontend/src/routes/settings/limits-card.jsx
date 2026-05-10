@@ -16,6 +16,25 @@ export const LimitsToggleCard = ({ enabled, onChange, loaded, saving }) => (
   </section>
 );
 
+const _isoToParts = (iso) => {
+  const empty = { h: "", m: "" };
+  if (!iso) return empty;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return empty;
+  let secs = Math.max(0, Math.round((t - Date.now()) / 1000));
+  const h = Math.floor(secs / 3600); secs -= h * 3600;
+  const m = Math.floor(secs / 60);
+  return { h: String(h), m: String(m) };
+};
+
+const _partsToIso = (parts) => {
+  const h = parseInt(parts.h || "0", 10) || 0;
+  const m = parseInt(parts.m || "0", 10) || 0;
+  if (h === 0 && m === 0) return null;
+  const ms = (h * 60 + m) * 60 * 1000;
+  return new Date(Date.now() + ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+};
+
 const _isoToLocalInput = (iso) => {
   if (!iso) return "";
   const d = new Date(iso);
@@ -31,13 +50,18 @@ const _localInputToIso = (local) => {
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");
 };
 
-const RESET_FIELDS = [
-  { key: "limits_five_hour_reset_at", label: "Next 5h reset",     note: "datetime when your active 5h window ends" },
-  { key: "limits_weekly_reset_at",    label: "Next weekly reset", note: "datetime when your weekly window ends" },
-];
+const _formatResolved = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+};
 
 export const LimitResetCard = () => {
-  const [drafts, setDrafts] = useState({ limits_five_hour_reset_at: "", limits_weekly_reset_at: "" });
+  const [drafts, setDrafts] = useState({
+    limits_five_hour_reset_at: { h: "", m: "" },
+    limits_weekly_reset_at:    "",
+  });
   const [server, setServer] = useState({ limits_five_hour_reset_at: null, limits_weekly_reset_at: null });
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -52,6 +76,16 @@ export const LimitResetCard = () => {
   const [pctDrafts, setPctDrafts] = useState({ five_hour: "", weekly: "" });
   const [calibrating, setCalibrating] = useState(false);
   const [calibrateMsg, setCalibrateMsg] = useState(null);
+  const [liveLimits, setLiveLimits] = useState({ five_hour: null, weekly: null });
+
+  const reloadLive = async () => {
+    try {
+      const r = await fetch("/api/limits", { cache: "no-store" });
+      if (!r.ok) return;
+      const d = await r.json();
+      setLiveLimits({ five_hour: d.five_hour || null, weekly: d.weekly || null });
+    } catch (_) {}
+  };
 
   const reload = async () => {
     try {
@@ -63,7 +97,7 @@ export const LimitResetCard = () => {
       };
       setServer(next);
       setDrafts({
-        limits_five_hour_reset_at: _isoToLocalInput(next.limits_five_hour_reset_at),
+        limits_five_hour_reset_at: _isoToParts(next.limits_five_hour_reset_at),
         limits_weekly_reset_at:    _isoToLocalInput(next.limits_weekly_reset_at),
       });
       setCapOverrides({
@@ -77,7 +111,13 @@ export const LimitResetCard = () => {
     setLoaded(true);
   };
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    reload();
+    reloadLive();
+    const onFocus = () => reloadLive();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   const persist = async (key, value) => {
     setSaving(true);
@@ -93,16 +133,33 @@ export const LimitResetCard = () => {
     setSaving(false);
   };
 
-  const onCommit = (key) => {
-    const draft = drafts[key];
-    const iso = draft ? _localInputToIso(draft) : null;
-    if (iso === server[key]) return;
-    persist(key, iso);
+  const onCommit5h = () => {
+    const iso = _partsToIso(drafts.limits_five_hour_reset_at || {});
+    if (iso === server.limits_five_hour_reset_at) return;
+    persist("limits_five_hour_reset_at", iso);
   };
 
-  const onClear = (key) => {
-    setDrafts((d) => ({ ...d, [key]: "" }));
-    persist(key, null);
+  const onCommitWeekly = () => {
+    const iso = drafts.limits_weekly_reset_at ? _localInputToIso(drafts.limits_weekly_reset_at) : null;
+    if (iso === server.limits_weekly_reset_at) return;
+    persist("limits_weekly_reset_at", iso);
+  };
+
+  const onClear5h = () => {
+    setDrafts((d) => ({ ...d, limits_five_hour_reset_at: { h: "", m: "" } }));
+    persist("limits_five_hour_reset_at", null);
+  };
+
+  const onClearWeekly = () => {
+    setDrafts((d) => ({ ...d, limits_weekly_reset_at: "" }));
+    persist("limits_weekly_reset_at", null);
+  };
+
+  const onPartChange = (part, value) => {
+    setDrafts((d) => ({
+      ...d,
+      limits_five_hour_reset_at: { ...d.limits_five_hour_reset_at, [part]: value.replace(/\D+/g, "") },
+    }));
   };
 
   const onSaveKey = async () => {
@@ -154,6 +211,7 @@ export const LimitResetCard = () => {
       setCalibrateMsg({ tone: "good", text: `Cap set to ${cap.toLocaleString()} sonnet-equiv tokens.` });
       if (window.RELOAD_STATIC) window.RELOAD_STATIC();
       await reload();
+      await reloadLive();
     } catch (_) {
       setCalibrateMsg({ tone: "bad", text: "Calibration failed." });
     }
@@ -171,6 +229,7 @@ export const LimitResetCard = () => {
       setCalibrateMsg(null);
       if (window.RELOAD_STATIC) window.RELOAD_STATIC();
       await reload();
+      await reloadLive();
     } catch (_) {}
     setCalibrating(false);
   };
@@ -199,26 +258,54 @@ export const LimitResetCard = () => {
         <span className="a-card-meta">{saving ? "saving…" : (loaded ? "override the dashboard's auto estimate" : "loading…")}</span>
       </div>
       <div className="a-budget-grid">
-        {RESET_FIELDS.map((f) => (
-          <label key={f.key} className="a-budget-field">
-            <div className="a-plan-title">{f.label}</div>
-            <div className="a-plan-note">{f.note}</div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-              <input
-                type="datetime-local"
-                value={drafts[f.key]}
-                onChange={(e) => setDrafts((d) => ({ ...d, [f.key]: e.target.value }))}
-                onBlur={() => onCommit(f.key)}
-                onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-              />
-              {server[f.key] && (
-                <button type="button" className="a-pill-btn" onClick={() => onClear(f.key)}>
-                  Clear
-                </button>
-              )}
+        <div className="a-budget-field">
+          <div className="a-plan-title">Next 5h reset</div>
+          <div className="a-plan-note">how long until your active 5h window resets</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+            {[{ k: "h", label: "hours" }, { k: "m", label: "min" }].map((p) => (
+              <label key={p.k} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  className="a-text-input"
+                  style={{ width: 64 }}
+                  placeholder="0"
+                  value={drafts.limits_five_hour_reset_at?.[p.k] ?? ""}
+                  onChange={(e) => onPartChange(p.k, e.target.value)}
+                  onBlur={onCommit5h}
+                  onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                />
+                <span className="a-card-meta" style={{ fontSize: 11 }}>{p.label}</span>
+              </label>
+            ))}
+            {server.limits_five_hour_reset_at && (
+              <button type="button" className="a-pill-btn" onClick={onClear5h}>Clear</button>
+            )}
+          </div>
+          {server.limits_five_hour_reset_at && (
+            <div className="a-card-meta" style={{ marginTop: 6 }}>
+              → resets {_formatResolved(server.limits_five_hour_reset_at)}
             </div>
-          </label>
-        ))}
+          )}
+        </div>
+
+        <label className="a-budget-field">
+          <div className="a-plan-title">Next weekly reset</div>
+          <div className="a-plan-note">datetime when your weekly window ends</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+            <input
+              type="datetime-local"
+              value={drafts.limits_weekly_reset_at}
+              onChange={(e) => setDrafts((d) => ({ ...d, limits_weekly_reset_at: e.target.value }))}
+              onBlur={onCommitWeekly}
+              onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+            />
+            {server.limits_weekly_reset_at && (
+              <button type="button" className="a-pill-btn" onClick={onClearWeekly}>Clear</button>
+            )}
+          </div>
+        </label>
       </div>
       <div className="a-card-divider" />
       <div className="a-label" style={{ marginBottom: 8 }}>Sync from Anthropic (optional)</div>
@@ -259,54 +346,74 @@ export const LimitResetCard = () => {
 
       <div className="a-card-divider" />
       <div className="a-label" style={{ marginBottom: 8 }}>Calibrate caps from Anthropic statusbar</div>
-      <div className="a-card-meta" style={{ marginBottom: 8 }}>
-        Default caps are rough community estimates. To match what Claude Code shows, type in a current % from the statusbar — the dashboard back-solves your real cap from observed usage.
+      <div className="a-card-meta" style={{ marginBottom: 12 }}>
+        Default caps are rough community estimates. To match what Claude Code shows, type the current <strong>% used</strong> from the Anthropic statusbar — the dashboard back-solves your real cap from observed usage. Re-calibrate whenever the dashboard drifts from the statusbar.
       </div>
-      <div className="a-budget-grid">
+      <div className="a-cal-grid">
         {[
-          { window: "five_hour", prefKey: "limits_5h_cap_override", label: "5h window — % used per Anthropic" },
-          { window: "weekly",    prefKey: "limits_weekly_cap_override", label: "Weekly window — % used per Anthropic" },
-        ].map((f) => (
-          <label key={f.window} className="a-budget-field">
-            <div className="a-plan-title">{f.label}</div>
-            <div className="a-plan-note">
-              {capOverrides[f.prefKey]
-                ? `calibrated cap: ${capOverrides[f.prefKey].toLocaleString()} tok`
-                : "using pricing.json default"}
+          { window: "five_hour", prefKey: "limits_5h_cap_override", label: "5h window", hint: "5-hour limit" },
+          { window: "weekly",    prefKey: "limits_weekly_cap_override", label: "Weekly window", hint: "Weekly · all models" },
+        ].map((f) => {
+          const live = liveLimits[f.window];
+          const used = live?.used ?? 0;
+          const dashPct = live ? (live.pct_used || 0) * 100 : 0;
+          const cap = capOverrides[f.prefKey];
+          return (
+            <div key={f.window} className="a-cal-cell">
+              <div className="a-cal-head">
+                <span className="a-plan-title">{f.label}</span>
+                <span className="a-cal-tag">{f.hint}</span>
+              </div>
+              <dl className="a-cal-stats">
+                <div><dt>cap</dt><dd>{cap ? `${cap.toLocaleString()} tok` : (
+                  <span className="a-card-meta">
+                    pricing.json default{live?.cap ? ` · ${live.cap.toLocaleString()} tok` : ""}
+                  </span>
+                )}</dd></div>
+                <div><dt>used</dt><dd>{used.toLocaleString()} tok</dd></div>
+                <div><dt>dashboard reads</dt><dd className={dashPct >= 90 ? "tone-bad" : dashPct >= 70 ? "tone-warn" : ""}>{dashPct.toFixed(1)}% used</dd></div>
+              </dl>
+              <div className="a-cal-input-row">
+                <label className="a-cal-input-label">
+                  <span>% used per Anthropic</span>
+                  <div className="a-cal-input">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      placeholder="e.g. 22"
+                      value={pctDrafts[f.window]}
+                      onChange={(e) => setPctDrafts((p) => ({ ...p, [f.window]: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") onCalibrate(f.window); }}
+                    />
+                    <span className="a-cal-input-suffix">%</span>
+                  </div>
+                </label>
+                <div className="a-cal-actions">
+                  <button
+                    type="button"
+                    className="a-pill-btn"
+                    onClick={() => onCalibrate(f.window)}
+                    disabled={calibrating || !pctDrafts[f.window]}
+                  >
+                    {calibrating ? "…" : "Calibrate"}
+                  </button>
+                  {cap && (
+                    <button
+                      type="button"
+                      className="a-pill-btn"
+                      onClick={() => onClearCap(f.prefKey)}
+                      disabled={calibrating}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                placeholder="e.g. 94"
-                value={pctDrafts[f.window]}
-                onChange={(e) => setPctDrafts((p) => ({ ...p, [f.window]: e.target.value }))}
-                style={{ width: 100 }}
-              />
-              <span className="a-card-meta">%</span>
-              <button
-                type="button"
-                className="a-pill-btn"
-                onClick={() => onCalibrate(f.window)}
-                disabled={calibrating || !pctDrafts[f.window]}
-              >
-                Calibrate
-              </button>
-              {capOverrides[f.prefKey] && (
-                <button
-                  type="button"
-                  className="a-pill-btn"
-                  onClick={() => onClearCap(f.prefKey)}
-                  disabled={calibrating}
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-          </label>
-        ))}
+          );
+        })}
       </div>
       {calibrateMsg && (
         <div className={`a-card-meta ${calibrateMsg.tone === "good" ? "tone-good" : "tone-bad"}`} style={{ marginTop: 8 }}>

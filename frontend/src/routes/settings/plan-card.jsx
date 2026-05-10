@@ -48,7 +48,7 @@ const FIELDS = [
 
 const fmtCell = (v) => (typeof v === "number" ? v.toFixed(2) : "");
 
-export const PricingTable = () => {
+export const PricingTable = ({ readOnly = false } = {}) => {
   const [data, setData] = useState(null);     // { defaults, overrides, effective }
   const [drafts, setDrafts] = useState({});   // { [model]: { [field]: string } }
   const [saving, setSaving] = useState(false);
@@ -76,6 +76,7 @@ export const PricingTable = () => {
   }, []);
 
   const persistField = async (model, field, raw) => {
+    if (readOnly) return;
     const trimmed = String(raw || "").trim();
     if (trimmed === "") {
       // empty → restore current effective into draft, no save
@@ -110,6 +111,7 @@ export const PricingTable = () => {
   };
 
   const resetModel = async (model) => {
+    if (readOnly) return;
     setError("");
     setSaving(true);
     try {
@@ -123,6 +125,7 @@ export const PricingTable = () => {
   };
 
   const resetAll = async () => {
+    if (readOnly) return;
     setError("");
     setSaving(true);
     try {
@@ -146,7 +149,9 @@ export const PricingTable = () => {
       ? "saving…"
       : error
         ? error
-        : "USD per 1M tokens · edit any cell to override";
+        : readOnly
+          ? "USD per 1M tokens · enable advanced mode to override"
+          : "USD per 1M tokens · edit any cell to override";
 
   return (
     <section className="a-card">
@@ -154,7 +159,7 @@ export const PricingTable = () => {
         <h2>Pricing table</h2>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span className={`a-card-meta${error ? " is-error" : ""}`}>{meta}</span>
-          {hasAnyOverride && (
+          {hasAnyOverride && !readOnly && (
             <button type="button" className="a-pill-btn" onClick={resetAll} disabled={saving}>
               Reset all
             </button>
@@ -193,6 +198,8 @@ export const PricingTable = () => {
                             min="0"
                             step="0.01"
                             value={(drafts[id] && drafts[id][f.id]) ?? ""}
+                            readOnly={readOnly}
+                            disabled={readOnly}
                             onChange={(e) => setDrafts((d) => ({
                               ...d,
                               [id]: { ...d[id], [f.id]: e.target.value },
@@ -205,7 +212,7 @@ export const PricingTable = () => {
                     );
                   })}
                   <td className="num">
-                    {isOverridden && (
+                    {isOverridden && !readOnly && (
                       <button type="button" className="a-pill-btn" onClick={() => resetModel(id)} disabled={saving}>
                         Reset
                       </button>

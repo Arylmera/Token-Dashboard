@@ -18,10 +18,11 @@ use tauri::{
     tray::{TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
 };
-use token_dashboard_cli::{app as build_router, AppState};
+use token_dashboard_cli::{app as build_router, spawn_scan_loop, AppState};
 use token_dashboard_core::{default_db_path, Pricing};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
+const SCAN_INTERVAL: Duration = Duration::from_secs(10);
 
 fn projects_dir_default() -> PathBuf {
     let mut p = default_db_path();
@@ -101,10 +102,20 @@ async fn wait_for_ready(port: u16) -> Result<(), String> {
 
 fn build_tray(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "show", "Show Dashboard", true, None::<&str>)?;
+    let widget_item = MenuItem::with_id(app, "widget", "Show Widget", true, None::<&str>)?;
     let scan_item = MenuItem::with_id(app, "scan", "Scan now", true, None::<&str>)?;
     let browser_item = MenuItem::with_id(app, "browser", "Open in Browser", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show_item, &scan_item, &browser_item, &quit_item])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &show_item,
+            &widget_item,
+            &scan_item,
+            &browser_item,
+            &quit_item,
+        ],
+    )?;
 
     let url = base_url.to_string();
     let _tray = TrayIconBuilder::with_id("main")
@@ -126,6 +137,9 @@ fn build_tray(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
                         let _ = w.unminimize();
                         let _ = w.set_focus();
                     }
+                }
+                "widget" => {
+                    let _ = spawn_widget(app, &url);
                 }
                 "scan" => {
                     let scan_url = format!("{url}/api/scan");
@@ -188,7 +202,16 @@ fn apply_glass(win: &tauri::WebviewWindow, on: bool) {
     {
         use window_vibrancy::{apply_acrylic, clear_acrylic};
         if on {
-            let _ = apply_acrylic(win, Some((10, 10, 10, 200)));
+            // Acrylic shows what's behind the window (other apps, not just
+            // the wallpaper). Microsoft throttles it for non-system apps
+            // on Win11 22H2+, so it can degrade to a flat tint on some
+            // builds — accepted trade-off vs Mica's wallpaper-only blur.
+            // No tint — let the acrylic blur the actual content behind
+            // the window. Any non-zero alpha here becomes a permanent
+            // floor that the panel-opacity slider can't see past.
+            if let Err(e) = apply_acrylic(win, Some((0, 0, 0, 0))) {
+                eprintln!("apply_acrylic failed: {e}");
+            }
         } else {
             let _ = clear_acrylic(win);
         }
@@ -314,6 +337,146 @@ fn format_metric(metric: &str, overview: &serde_json::Value) -> String {
     }
 }
 
+/// Persist whether the widget window is currently open. Best-effort:
+/// errors are logged but not propagated — failing to write the flag
+/// just means the widget won't auto-restore next launch.
+fn persist_widget_open(app: &AppHandle, open: bool) {
+    if let Some(state) = app.try_state::<DbPath>() {
+        if let Err(e) = token_dashboard_core::preferences::set_widget_open(state.0.as_path(), open)
+        {
+            eprintln!("persist widget_open={open}: {e}");
+        }
+    }
+}
+
+/// Compact always-on-top widget window. Reuses the same web bundle as
+/// the main shell — `entry.jsx` branches on `widget.html` and mounts the
+/// Widget component instead of the full dashboard.
+fn spawn_widget(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
+    if let Some(existing) = app.get_webview_window("widget") {
+        let _ = existing.show();
+        let _ = existing.unminimize();
+        let _ = existing.set_focus();
+        persist_widget_open(app, true);
+        return Ok(());
+    }
+    // ServeDir is mounted at /web (the bare `/` route only matches the
+    // root index). Hit the nest so the file resolves.
+    let url = format!("{base_url}/web/widget.html");
+    let parsed: tauri::Url = url.parse().expect("widget url parse");
+    let glass_on = app
+        .try_state::<GlassState>()
+        .and_then(|s| s.0.lock().ok().map(|g| *g))
+        .unwrap_or(false);
+    // Bg color must match the glass state at build time — set_background_color
+    // doesn't always repaint a hidden initial frame on Windows.
+    let bg = if glass_on {
+        tauri::utils::config::Color(0, 0, 0, 0)
+    } else {
+        tauri::utils::config::Color(0x0a, 0x0a, 0x0a, 0xff)
+    };
+    #[allow(unused_mut)]
+    let mut builder = WebviewWindowBuilder::new(app, "widget", WebviewUrl::External(parsed))
+        .title("Token Dashboard")
+        .inner_size(280.0, 180.0)
+        .min_inner_size(220.0, 120.0)
+        .max_inner_size(480.0, 900.0)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(true)
+        .background_color(bg)
+        .visible(true);
+    // macOS transparency requires `app.macOSPrivateApi: true` in
+    // tauri.conf.json (not set here), so we only enable it when glass is on
+    // — otherwise WebView2/macOS render an opaque window as before.
+    #[cfg(target_os = "macos")]
+    {
+        if glass_on {
+            builder = builder.transparent(true);
+        }
+    }
+    let win = builder.build().map_err(|e| {
+        eprintln!("spawn_widget: build failed: {e}");
+        e
+    })?;
+    if glass_on {
+        apply_glass(&win, true);
+    }
+    let _ = win.set_focus();
+    persist_widget_open(app, true);
+    // Listen for the widget being closed so the auto-restore flag flips
+    // back to false. Destroyed fires after the OS-level window is gone,
+    // which covers both the in-page close button and any future tray
+    // toggle.
+    let app_handle = app.clone();
+    win.on_window_event(move |event| {
+        if let tauri::WindowEvent::Destroyed = event {
+            persist_widget_open(&app_handle, false);
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn open_widget(app: AppHandle, base_url: tauri::State<'_, BaseUrl>) -> Result<(), String> {
+    spawn_widget(&app, &base_url.0).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_glass(app: AppHandle, on: bool) -> Result<(), String> {
+    let bg = if on {
+        tauri::utils::config::Color(0, 0, 0, 0)
+    } else {
+        tauri::utils::config::Color(0x0a, 0x0a, 0x0a, 0xff)
+    };
+    for label in ["main", "widget"] {
+        if let Some(win) = app.get_webview_window(label) {
+            let _ = win.set_background_color(Some(bg));
+            apply_glass(&win, on);
+        }
+    }
+    if let Some(state) = app.try_state::<GlassState>() {
+        if let Ok(mut g) = state.0.lock() {
+            *g = on;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn show_main(app: AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+    Ok(())
+}
+
+struct BaseUrl(String);
+
+/// Path to the sqlite db. Stashed in tauri state so window lifecycle
+/// callbacks (widget spawn/close) can write the `widget_open` pref
+/// without reaching back into AppState (which is owned by the router).
+struct DbPath(PathBuf);
+
+/// Live mirror of the `glass_enabled` preference. Updated by `set_glass`
+/// so newly-spawned windows (widget) inherit the current state without
+/// re-reading sqlite. The DB remains the source of truth across launches.
+struct GlassState(std::sync::Mutex<bool>);
+
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    // Allowlist: only http/https URLs may be opened from the webview.
+    // Anything else is rejected to prevent shell-execution surprises.
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("only http/https urls are allowed".into());
+    }
+    open_browser(&url);
+    Ok(())
+}
+
 fn open_browser(url: &str) {
     #[cfg(target_os = "windows")]
     {
@@ -382,8 +545,14 @@ async fn main() {
     // /api/preferences POST; the tray-update loop re-applies on change.
     let glass_enabled =
         token_dashboard_core::preferences::get_glass_enabled(&db_path).unwrap_or(false);
+    // Was the widget open at last shutdown? If so, re-spawn it once the
+    // main window is up. Persisted via `persist_widget_open`.
+    let widget_was_open =
+        token_dashboard_core::preferences::get_widget_open(&db_path).unwrap_or(false);
+    let db_path_for_state = db_path.clone();
 
     let state = AppState::new(db_path, Pricing::embedded(), projects_dir);
+    spawn_scan_loop(state.clone(), SCAN_INTERVAL);
     let router = build_router(state);
 
     let server = tokio::spawn(async move {
@@ -407,6 +576,15 @@ async fn main() {
     let load_url = format!("{base_url}/");
 
     tauri::Builder::default()
+        .manage(BaseUrl(base_url.clone()))
+        .manage(DbPath(db_path_for_state))
+        .manage(GlassState(std::sync::Mutex::new(glass_enabled)))
+        .invoke_handler(tauri::generate_handler![
+            open_external,
+            open_widget,
+            show_main,
+            set_glass
+        ])
         .setup({
             let load_url = load_url.clone();
             let base_url = base_url.clone();
@@ -431,6 +609,11 @@ async fn main() {
                 let _ = win.set_focus();
                 build_tray(app.handle(), &base_url)?;
                 spawn_tray_updater(app.handle().clone(), base_url.clone());
+                if widget_was_open {
+                    if let Err(e) = spawn_widget(app.handle(), &base_url) {
+                        eprintln!("restore widget: {e}");
+                    }
+                }
                 Ok(())
             }
         })

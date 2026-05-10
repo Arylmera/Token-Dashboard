@@ -49,6 +49,26 @@ pub struct Plan {
     pub label: String,
 }
 
+/// Per-plan sonnet-equivalent token caps for the 5h session and the
+/// rolling weekly window. `None` means "no cap" (api/pay-per-token).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PlanLimits {
+    #[serde(default)]
+    pub five_hour: Option<i64>,
+    #[serde(default)]
+    pub weekly: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LimitsMeta {
+    #[serde(default)]
+    pub last_verified: Option<String>,
+    #[serde(default)]
+    pub unit: Option<String>,
+    #[serde(default)]
+    pub source_note: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Pricing {
     #[serde(default)]
@@ -59,6 +79,10 @@ pub struct Pricing {
     pub tier_weight: HashMap<String, f64>,
     #[serde(default)]
     pub plans: HashMap<String, Plan>,
+    #[serde(default)]
+    pub limits: HashMap<String, PlanLimits>,
+    #[serde(default)]
+    pub limits_meta: LimitsMeta,
 }
 
 impl Pricing {
@@ -118,7 +142,7 @@ fn strip_date_suffix(model: &str) -> &str {
     }
 }
 
-fn tier_from_name(model: &str) -> Option<&'static str> {
+pub(crate) fn tier_from_name(model: &str) -> Option<&'static str> {
     let lower = model.to_lowercase();
     ["opus", "sonnet", "haiku"]
         .into_iter()

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 
 const TABS = ["overview", "prompts", "sessions", "token sink", "tips", "api", "settings"];
+const ADVANCED_TABS = new Set(["api"]);
 const RANGES = ["1d", "7d", "30d", "90d", "all"];
 
 const useVersion = () => {
@@ -54,8 +55,9 @@ const WindowControls = () => {
   );
 };
 
-export const Topbar = ({ tab, setTab, range, setRange }) => {
+export const Topbar = ({ tab, setTab, range, setRange, advancedMode = false }) => {
   const version = useVersion();
+  const visibleTabs = TABS.filter((t) => advancedMode || !ADVANCED_TABS.has(t));
   return (
   <header className="a-topbar" data-tauri-drag-region>
     <div className="a-brand a-prompt" data-tauri-drag-region>
@@ -68,7 +70,7 @@ export const Topbar = ({ tab, setTab, range, setRange }) => {
       <span className="a-prompt-cursor" aria-hidden="true">▍</span>
     </div>
     <nav className="a-nav" data-tauri-drag-region="false">
-      {TABS.map((t) => (
+      {visibleTabs.map((t) => (
         <button
           key={t}
           data-tab={t}
