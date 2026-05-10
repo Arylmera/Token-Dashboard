@@ -820,6 +820,219 @@ async fn pricing_clear(
     Ok(payload)
 }
 
+async fn export_csv(
+    State(s): State<AppState>,
+    Query(q): Query<SessionsQs>,
+) -> Result<axum::response::Response, ApiError> {
+    let path = s.db_path.clone();
+    let pricing = s.pricing.clone();
+    let tag = q.tag.clone();
+    let csv_text = blocking(move || -> rusqlite::Result<String> {
+        let rows = recent_sessions(
+            path.as_ref(),
+            10_000,
+            q.since.as_deref(),
+            q.until.as_deref(),
+            tag.as_deref(),
+        )?;
+        let ids: Vec<String> = rows.iter().map(|r| r.session_id.clone()).collect();
+        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let usage = session_model_usage(path.as_ref(), &id_refs)?;
+        let tags_map = session_tags(path.as_ref(), &id_refs)?;
+
+        use std::collections::HashMap;
+        let mut cost: HashMap<String, f64> = ids.iter().map(|s| (s.clone(), 0.0)).collect();
+        let mut top_model: HashMap<String, (Option<String>, i64)> =
+            ids.iter().map(|s| (s.clone(), (None, -1))).collect();
+        for u in &usage {
+            let cr = cost_for(
+                &u.model,
+                &Usage {
+                    input_tokens: u.input_tokens,
+                    output_tokens: u.output_tokens,
+                    cache_read_tokens: u.cache_read_tokens,
+                    cache_create_5m_tokens: u.cache_create_5m_tokens,
+                    cache_create_1h_tokens: u.cache_create_1h_tokens,
+                },
+                &pricing,
+            );
+            if let Some(usd) = cr.usd {
+                *cost.entry(u.session_id.clone()).or_default() += usd;
+            }
+            let billable = u.input_tokens
+                + u.output_tokens
+                + u.cache_create_5m_tokens
+                + u.cache_create_1h_tokens;
+            let entry = top_model
+                .entry(u.session_id.clone())
+                .or_insert((None, -1));
+            if billable > entry.1 {
+                *entry = (Some(u.model.clone()), billable);
+            }
+        }
+
+        let mut buf = String::new();
+        buf.push_str("session_id,project_slug,project_name,started,ended,turns,tokens,cost_usd,model,tags,first_prompt\n");
+        for r in &rows {
+            let model = top_model
+                .get(&r.session_id)
+                .and_then(|(m, _)| m.clone())
+                .unwrap_or_default();
+            let cost_str = format!("{:.6}", cost.get(&r.session_id).copied().unwrap_or(0.0));
+            let tags = tags_map
+                .get(&r.session_id)
+                .map(|v| v.join(","))
+                .unwrap_or_default();
+            // first_prompt deferred — recent_sessions in core doesn't fetch it
+            // yet (Phase 2 follow-up); python's CSV column stays empty.
+            let first_prompt = "";
+            push_csv_row(
+                &mut buf,
+                &[
+                    &r.session_id,
+                    &r.project_slug,
+                    &r.project_name,
+                    r.started.as_deref().unwrap_or(""),
+                    r.ended.as_deref().unwrap_or(""),
+                    &r.turns.to_string(),
+                    &r.tokens.to_string(),
+                    &cost_str,
+                    &model,
+                    &tags,
+                    first_prompt,
+                ],
+            );
+        }
+        Ok(buf)
+    })
+    .await?
+    .0;
+
+    let mut resp = axum::response::Response::new(axum::body::Body::from(csv_text));
+    let headers = resp.headers_mut();
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        "text/csv; charset=utf-8".parse().unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        "attachment; filename=\"token-dashboard-sessions.csv\""
+            .parse()
+            .unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        "no-store".parse().unwrap(),
+    );
+    Ok(resp)
+}
+
+/// Append one CSV row using RFC 4180 minimal quoting. Mirrors python's
+/// `csv.QUOTE_MINIMAL` — fields containing comma, quote, or newline get
+/// quoted; embedded quotes are doubled.
+fn push_csv_row(buf: &mut String, fields: &[&str]) {
+    for (i, f) in fields.iter().enumerate() {
+        if i > 0 {
+            buf.push(',');
+        }
+        let needs_quote = f.contains(',') || f.contains('"') || f.contains('\n');
+        if needs_quote {
+            buf.push('"');
+            for c in f.chars() {
+                if c == '"' {
+                    buf.push_str("\"\"");
+                } else {
+                    buf.push(c);
+                }
+            }
+            buf.push('"');
+        } else {
+            buf.push_str(f);
+        }
+    }
+    buf.push('\n');
+}
+
+async fn export_db(State(s): State<AppState>) -> Result<axum::response::Response, ApiError> {
+    let path = s.db_path.clone();
+    let body = tokio::task::spawn_blocking(move || -> rusqlite::Result<Vec<u8>> {
+        // Backup to a tempfile (sqlite handles locking cleanly that way),
+        // read into memory, then return. Mirrors the python helper.
+        let tmp = tempfile_path()?;
+        {
+            let src = rusqlite::Connection::open(path.as_ref())?;
+            let mut dst = rusqlite::Connection::open(&tmp)?;
+            let backup = rusqlite::backup::Backup::new(&src, &mut dst)?;
+            backup.run_to_completion(64, std::time::Duration::from_millis(0), None)?;
+        }
+        let bytes = std::fs::read(&tmp)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        let _ = std::fs::remove_file(&tmp);
+        Ok(bytes)
+    })
+    .await
+    .map_err(|e| ApiError::internal(format!("join: {e}")))?
+    .map_err(|e| ApiError::internal(format!("backup: {e}")))?;
+
+    let stamp = unix_compact_stamp();
+    let mut resp = axum::response::Response::new(axum::body::Body::from(body));
+    let headers = resp.headers_mut();
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        "application/x-sqlite3".parse().unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        format!("attachment; filename=\"token-dashboard-{stamp}.db\"")
+            .parse()
+            .unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        "no-store".parse().unwrap(),
+    );
+    Ok(resp)
+}
+
+fn tempfile_path() -> rusqlite::Result<std::path::PathBuf> {
+    use std::time::SystemTime;
+    let nanos = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let mut p = std::env::temp_dir();
+    p.push(format!("td-export-{nanos}.db"));
+    Ok(p)
+}
+
+fn unix_compact_stamp() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let days = secs / 86_400;
+    let s = secs % 86_400;
+    let h = s / 3600;
+    let m = (s % 3600) / 60;
+    let sec = s % 60;
+    let (y, mo, d) = days_to_ymd(days);
+    format!("{y:04}{mo:02}{d:02}-{h:02}{m:02}{sec:02}")
+}
+
+fn days_to_ymd(mut days: i64) -> (i64, i64, i64) {
+    days += 719_468;
+    let era = days.div_euclid(146_097);
+    let doe = days.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
 async fn pricing_clear_all(State(s): State<AppState>) -> Result<Json<PricingPayload>, ApiError> {
     let path = s.db_path.clone();
     let pricing = s.pricing.clone();
@@ -1233,6 +1446,8 @@ pub fn app(state: AppState) -> Router {
         .route("/api/sources/:name/toggle", post(sources_toggle))
         .route("/api/sources/:name/delete", post(sources_delete))
         .route("/api/pricing", get(pricing_get))
+        .route("/api/export.csv", get(export_csv))
+        .route("/api/export.db", get(export_db))
         .route("/api/pricing/clear-all", post(pricing_clear_all))
         .route("/api/pricing/:model", post(pricing_set))
         .route("/api/pricing/:model/clear", post(pricing_clear))

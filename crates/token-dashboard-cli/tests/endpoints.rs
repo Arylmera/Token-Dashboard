@@ -540,6 +540,73 @@ fn insert_synthetic_source(state: &AppState, name: &str) {
 }
 
 #[tokio::test]
+async fn export_csv_returns_valid_csv() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "hi"),
+        assistant("a1", "2026-04-10T00:00:01Z", "claude-opus-4-7", 50),
+    ]);
+
+    let resp = app(fx.state.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/export.csv")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "text/csv; charset=utf-8"
+    );
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let body = std::str::from_utf8(&bytes).unwrap();
+    let lines: Vec<&str> = body.lines().collect();
+    assert!(
+        lines[0].starts_with("session_id,project_slug,project_name,started,ended,turns,tokens,cost_usd,model,tags,first_prompt"),
+        "header: {:?}",
+        lines[0]
+    );
+    // One data row for s1.
+    assert_eq!(lines.len(), 2);
+    assert!(lines[1].starts_with("s1,C--work-sample,"));
+}
+
+#[tokio::test]
+async fn export_db_serves_sqlite_blob() {
+    let fx = setup_with_jsonl(&[]);
+    let resp = app(fx.state.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/export.db")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "application/x-sqlite3"
+    );
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        bytes.starts_with(b"SQLite format 3\0"),
+        "must be SQLite blob"
+    );
+    assert!(bytes.len() > 16);
+}
+
+#[tokio::test]
 async fn pricing_round_trip() {
     let fx = setup_with_jsonl(&[]);
     let (status, body) = get_json(&fx.state, "/api/pricing").await;

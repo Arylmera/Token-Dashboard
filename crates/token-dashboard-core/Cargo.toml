@@ -7,7 +7,7 @@ repository.workspace = true
 description = "Token Dashboard 4.0 core: scanner, db, endpoints"
 
 [dependencies]
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 walkdir = "2.5"
