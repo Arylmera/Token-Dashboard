@@ -12,6 +12,10 @@ Inspired by [phuryn/claude-usage](https://github.com/phuryn/claude-usage) but di
 
 Working codebase. 68 Python unit tests (`python3 -m unittest discover tests`). Seven UI tabs wired up (Overview, Prompts, Sessions, Projects, Skills, Tips, Settings). Runs on macOS, Windows, and Linux.
 
+## v4 Rust + Tauri rewrite (in progress)
+
+A 4.0 rewrite is underway on the `v4-rust` branch. See [docs/V4_RUST_TAURI_PLAN.md](docs/V4_RUST_TAURI_PLAN.md). Phase 1 (scanner + db) lives at `crates/token-dashboard-core/`. The 3.x Python codebase below stays canonical until 4.0 reaches feature parity. **R6 invariant:** any commit that touches `token_dashboard/db/schema.py` `_migrate_*` must mirror the change into `crates/token-dashboard-core/src/db.rs`. The parity binary at `crates/token-dashboard-core/examples/parity.rs` is the CI gate.
+
 ## Architecture
 
 - `cli.py` → `token_dashboard/scanner.py` → `~/.claude/token-dashboard.db` (SQLite)

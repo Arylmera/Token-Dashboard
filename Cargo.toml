@@ -1,0 +1,13 @@
+[workspace]
+members = ["crates/token-dashboard-core"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Arylmera/Token-Dashboard"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

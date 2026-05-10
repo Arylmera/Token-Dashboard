@@ -1,0 +1,16 @@
+[package]
+name = "token-dashboard-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Token Dashboard 4.0 core: scanner, db, endpoints"
+
+[dependencies]
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2.5"
+
+[dev-dependencies]
+tempfile = "3"

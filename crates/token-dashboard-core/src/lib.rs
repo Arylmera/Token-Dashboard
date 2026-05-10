@@ -1,0 +1,10 @@
+//! Token Dashboard 4.0 core.
+//!
+//! Phase 1 surface: SQLite schema + migrations and the JSONL transcript
+//! scanner. Endpoints, tips, and HTTP wiring land in later phases.
+
+pub mod db;
+pub mod scanner;
+
+pub use db::{default_db_path, init_db, open};
+pub use scanner::{scan_dir, scan_file, ScanStats};
