@@ -18,6 +18,7 @@ use axum::{
 };
 use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
+use token_dashboard_core::sources as src;
 use token_dashboard_core::{
     cost_for, list_sources, preferences,
     queries::{
@@ -664,6 +665,69 @@ async fn limits_get(State(s): State<AppState>) -> Result<Json<LimitsResponse>, A
     Ok(resp)
 }
 
+#[derive(Deserialize, Default)]
+struct SourceToggleBody {
+    #[serde(default)]
+    enabled: bool,
+}
+
+#[derive(Serialize)]
+struct SourceToggleResponse {
+    ok: bool,
+    name: String,
+    enabled: bool,
+}
+
+async fn sources_toggle(
+    State(s): State<AppState>,
+    AxumPath(name): AxumPath<String>,
+    Json(body): Json<SourceToggleBody>,
+) -> Result<Json<SourceToggleResponse>, ApiError> {
+    if name.is_empty() {
+        return Err(ApiError::bad_request("missing source name"));
+    }
+    let path = s.db_path.clone();
+    let n_for_blocking = name.clone();
+    let exists =
+        blocking(move || src::set_source_enabled(path.as_ref(), &n_for_blocking, body.enabled))
+            .await?
+            .0;
+    if !exists {
+        return Err(ApiError::not_found("source not found"));
+    }
+    let _ = s.events.send(serde_json::json!({"type": "sources"}));
+    Ok(Json(SourceToggleResponse {
+        ok: true,
+        name,
+        enabled: body.enabled,
+    }))
+}
+
+#[derive(Serialize)]
+struct SourceDeleteResponse {
+    ok: bool,
+    name: String,
+}
+
+async fn sources_delete(
+    State(s): State<AppState>,
+    AxumPath(name): AxumPath<String>,
+) -> Result<Json<SourceDeleteResponse>, ApiError> {
+    if name.is_empty() {
+        return Err(ApiError::bad_request("missing source name"));
+    }
+    let path = s.db_path.clone();
+    let n_for_blocking = name.clone();
+    let removed = blocking(move || src::remove_source(path.as_ref(), &n_for_blocking))
+        .await?
+        .0;
+    if !removed {
+        return Err(ApiError::not_found("source not found"));
+    }
+    let _ = s.events.send(serde_json::json!({"type": "sources"}));
+    Ok(Json(SourceDeleteResponse { ok: true, name }))
+}
+
 async fn session_tags_post(
     State(s): State<AppState>,
     AxumPath(sid): AxumPath<String>,
@@ -1003,6 +1067,12 @@ impl ApiError {
             msg: msg.into(),
         }
     }
+    fn not_found(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            msg: msg.into(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -1048,6 +1118,8 @@ pub fn app(state: AppState) -> Router {
         .route("/api/plan", post(set_plan_handler))
         .route("/api/tips/dismiss", post(tips_dismiss_handler))
         .route("/api/sessions/:sid/tags", post(session_tags_post))
+        .route("/api/sources/:name/toggle", post(sources_toggle))
+        .route("/api/sources/:name/delete", post(sources_delete))
         .with_state(state);
 
     // Static bundle is opt-in via TOKEN_DASHBOARD_STATIC env var so the

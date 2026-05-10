@@ -25,6 +25,47 @@ pub struct Source {
     pub exists: bool,
 }
 
+/// Toggle the `enabled` flag for a registered source. Returns true when
+/// the row exists. Mirrors python `set_source_enabled`.
+pub fn set_source_enabled<P: AsRef<Path>>(
+    db_path: P,
+    name: &str,
+    enabled: bool,
+) -> rusqlite::Result<bool> {
+    let conn = Connection::open(db_path.as_ref())?;
+    let n = conn.execute(
+        "UPDATE attached_sources SET enabled=? WHERE name=?",
+        rusqlite::params![if enabled { 1 } else { 0 }, name],
+    )?;
+    Ok(n > 0)
+}
+
+/// Remove a source from the registry and its on-disk file. The unlink
+/// happens AFTER the connection drops — when the python port lands the
+/// ATTACH layer it'll need to release the file lock the same way.
+/// Returns true when a row was deleted.
+pub fn remove_source<P: AsRef<Path>>(db_path: P, name: &str) -> rusqlite::Result<bool> {
+    let conn = Connection::open(db_path.as_ref())?;
+    let path: Option<String> = conn
+        .query_row(
+            "SELECT path FROM attached_sources WHERE name=?",
+            [name],
+            |r| r.get(0),
+        )
+        .ok();
+    let Some(path_str) = path else {
+        return Ok(false);
+    };
+    let removed = conn.execute("DELETE FROM attached_sources WHERE name=?", [name])?;
+    drop(conn);
+    if removed > 0 {
+        let _ = std::fs::remove_file(&path_str);
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 pub fn list_sources<P: AsRef<Path>>(db_path: P) -> rusqlite::Result<Vec<Source>> {
     let conn = Connection::open(db_path.as_ref())?;
     let mut stmt = conn.prepare(

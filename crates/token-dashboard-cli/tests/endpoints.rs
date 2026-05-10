@@ -525,6 +525,65 @@ async fn budget_round_trip() {
     assert!(after["daily"].is_null());
 }
 
+/// Insert a synthetic attached_sources row directly so toggle/delete
+/// have something to act on. Skips the on-disk file (the python add
+/// flow validates SQLite magic bytes and writes the blob; that path is
+/// deferred to a later commit).
+fn insert_synthetic_source(state: &AppState, name: &str) {
+    let conn = rusqlite::Connection::open(state.db_path.as_path()).unwrap();
+    conn.execute(
+        "INSERT INTO attached_sources (name, path, enabled, added_at, size_bytes) \
+         VALUES (?, ?, 1, 0, 0)",
+        rusqlite::params![name, format!("/nonexistent/{name}.db")],
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn sources_toggle_round_trip() {
+    let fx = setup_with_jsonl(&[]);
+    insert_synthetic_source(&fx.state, "extra.db");
+
+    let (status, body) = post_json(
+        &fx.state,
+        "/api/sources/extra.db/toggle",
+        &json!({"enabled": false}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["enabled"].as_bool(), Some(false));
+
+    let (_, after) = get_json(&fx.state, "/api/sources").await;
+    let arr = after.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["enabled"].as_bool(), Some(false));
+}
+
+#[tokio::test]
+async fn sources_toggle_404_for_unknown_source() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, _) = post_json(
+        &fx.state,
+        "/api/sources/missing.db/toggle",
+        &json!({"enabled": true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn sources_delete_removes_row() {
+    let fx = setup_with_jsonl(&[]);
+    insert_synthetic_source(&fx.state, "doomed.db");
+
+    let (status, body) = post_json(&fx.state, "/api/sources/doomed.db/delete", &json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["ok"].as_bool(), Some(true));
+
+    let (_, after) = get_json(&fx.state, "/api/sources").await;
+    assert_eq!(after.as_array().map(|a| a.len()), Some(0));
+}
+
 #[tokio::test]
 async fn limits_get_returns_defaults() {
     let fx = setup_with_jsonl(&[]);
