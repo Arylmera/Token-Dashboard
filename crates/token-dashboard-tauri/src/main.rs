@@ -199,6 +199,30 @@ fn apply_glass(win: &tauri::WebviewWindow, on: bool) {
     }
 }
 
+/// Spawn a tokio task that periodically pokes `/api/scan` so the DB
+/// reflects new JSONL writes from in-flight Claude Code sessions.
+/// The route already broadcasts `scan_complete` over SSE, so the
+/// frontend refetches automatically — no extra wiring needed.
+fn spawn_scan_loop(base_url: String) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(10));
+        // First tick fires immediately — skip it so we don't double up
+        // with the initial frontend load that already triggers fetches.
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            let scan_url = format!("{base_url}/api/scan");
+            let _ = tokio::task::spawn_blocking(move || {
+                ureq::get(&scan_url)
+                    .timeout(Duration::from_secs(30))
+                    .call()
+                    .ok();
+            })
+            .await;
+        }
+    });
+}
+
 /// Spawn a tokio task that refreshes the tray tooltip every 5s with the
 /// currently-selected badge metric. The `badge_metric` preference picks
 /// which value to show (tokens, cost, burn, 5h, weekly); /api/overview
@@ -431,6 +455,7 @@ async fn main() {
                 let _ = win.set_focus();
                 build_tray(app.handle(), &base_url)?;
                 spawn_tray_updater(app.handle().clone(), base_url.clone());
+                spawn_scan_loop(base_url.clone());
                 Ok(())
             }
         })
