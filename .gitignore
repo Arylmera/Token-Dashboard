@@ -16,3 +16,6 @@ dist-py/
 target/
 Cargo.lock
 
+# Tauri build-time generated files
+crates/token-dashboard-tauri/gen/
+
