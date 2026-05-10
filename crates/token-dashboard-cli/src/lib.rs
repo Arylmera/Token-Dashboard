@@ -15,16 +15,20 @@ use serde::{Deserialize, Serialize};
 use token_dashboard_core::{
     cost_for, list_sources,
     queries::{
-        all_tags, daily_token_breakdown, model_breakdown, overview_totals, project_summary,
-        tool_token_breakdown, DailyRow, ModelRow, OverviewTotals, ProjectRow, TagRow, ToolRow,
+        all_tags, daily_token_breakdown, hourly_breakdown, model_breakdown, overview_totals,
+        phase_split, project_summary, tool_token_breakdown, DailyRow, HourlyRow, ModelRow,
+        OverviewTotals, ProjectRow, TagRow, ToolRow,
     },
-    Pricing, Source, Usage,
+    scan_dir, Pricing, ScanStats, Source, Usage,
 };
 
 #[derive(Clone)]
 pub struct AppState {
     pub db_path: Arc<PathBuf>,
     pub pricing: Arc<Pricing>,
+    /// Path passed to `scan_dir` when `/api/scan` fires. Defaults to
+    /// `~/.claude/projects` in `main.rs` but tests override it.
+    pub projects_dir: Arc<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -147,6 +151,140 @@ async fn tags(State(s): State<AppState>) -> Result<Json<Vec<TagRow>>, ApiError> 
     blocking(move || all_tags(path.as_ref())).await
 }
 
+#[derive(Deserialize, Default)]
+struct HourlyQs {
+    #[serde(default)]
+    hours: Option<i64>,
+}
+
+async fn hourly(
+    State(s): State<AppState>,
+    Query(q): Query<HourlyQs>,
+) -> Result<Json<Vec<HourlyRow>>, ApiError> {
+    let path = s.db_path.clone();
+    let hours = q.hours.unwrap_or(24);
+    blocking(move || hourly_breakdown(path.as_ref(), hours)).await
+}
+
+#[derive(Serialize, Default, Clone, Copy)]
+struct PhaseBin {
+    turns: i64,
+    billable_tokens: i64,
+    cache_read_tokens: i64,
+    cost_usd: f64,
+    cost_estimated: bool,
+}
+
+#[derive(Serialize)]
+struct PhaseSplitResponse {
+    plan: PhaseBin,
+    execute: PhaseBin,
+    other: PhaseBin,
+}
+
+async fn phase_split_endpoint(
+    State(s): State<AppState>,
+    Query(q): Query<RangeQs>,
+) -> Result<Json<PhaseSplitResponse>, ApiError> {
+    let path = s.db_path.clone();
+    let rows = blocking(move || phase_split(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
+        .await?
+        .0;
+    let pricing = s.pricing.clone();
+    let mut plan = PhaseBin::default();
+    let mut execute = PhaseBin::default();
+    let mut other = PhaseBin::default();
+    for r in rows {
+        // Apportionment rule (mirrors python data.phase_split_endpoint):
+        // ties between plan and execute fall to plan; turns with no
+        // recognised tools drop into 'other'.
+        let bin = if r.plan_n == 0 && r.exec_n == 0 && r.other_n == 0 {
+            &mut other
+        } else if r.plan_n >= r.exec_n && r.plan_n >= r.other_n {
+            &mut plan
+        } else if r.exec_n >= r.other_n {
+            &mut execute
+        } else {
+            &mut other
+        };
+        let billable =
+            r.input_tokens + r.output_tokens + r.cache_create_5m_tokens + r.cache_create_1h_tokens;
+        bin.turns += 1;
+        bin.billable_tokens += billable;
+        bin.cache_read_tokens += r.cache_read_tokens;
+        if let Some(model) = r.model.as_deref() {
+            let cr = cost_for(
+                model,
+                &Usage {
+                    input_tokens: r.input_tokens,
+                    output_tokens: r.output_tokens,
+                    cache_read_tokens: r.cache_read_tokens,
+                    cache_create_5m_tokens: r.cache_create_5m_tokens,
+                    cache_create_1h_tokens: r.cache_create_1h_tokens,
+                },
+                &pricing,
+            );
+            if let Some(usd) = cr.usd {
+                bin.cost_usd += usd;
+            }
+            if cr.estimated {
+                bin.cost_estimated = true;
+            }
+        }
+    }
+    plan.cost_usd = round6(plan.cost_usd);
+    execute.cost_usd = round6(execute.cost_usd);
+    other.cost_usd = round6(other.cost_usd);
+    Ok(Json(PhaseSplitResponse {
+        plan,
+        execute,
+        other,
+    }))
+}
+
+fn round6(v: f64) -> f64 {
+    (v * 1_000_000.0).round() / 1_000_000.0
+}
+
+#[derive(Serialize)]
+struct ScanResponse {
+    messages: u64,
+    tools: u64,
+    files: u64,
+    sessions: Vec<String>,
+    projects: Vec<String>,
+    days: Vec<String>,
+    models: Vec<String>,
+    min_ts: Option<String>,
+    max_ts: Option<String>,
+}
+
+impl From<ScanStats> for ScanResponse {
+    fn from(s: ScanStats) -> Self {
+        Self {
+            messages: s.messages,
+            tools: s.tools,
+            files: s.files,
+            sessions: s.sessions,
+            projects: s.projects,
+            days: s.days,
+            models: s.models,
+            min_ts: s.min_ts,
+            max_ts: s.max_ts,
+        }
+    }
+}
+
+async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>, ApiError> {
+    let db = s.db_path.clone();
+    let proj = s.projects_dir.clone();
+    let stats = tokio::task::spawn_blocking(move || scan_dir(proj.as_ref(), db.as_ref()))
+        .await
+        .map_err(|e| ApiError::internal(format!("join: {e}")))?
+        .map_err(|e| ApiError::internal(format!("scan: {e}")))?;
+    Ok(Json(stats.into()))
+}
+
 /// Run a blocking rusqlite call on tokio's blocking pool and wrap the
 /// result/error in a `Json<T>` response. The closure is `Send + 'static`
 /// because spawn_blocking runs it on a worker thread.
@@ -195,6 +333,12 @@ pub fn app(state: AppState) -> Router {
         .route("/api/daily", get(daily))
         .route("/api/by-model", get(by_model))
         .route("/api/tags", get(tags))
+        .route("/api/hourly", get(hourly))
+        .route("/api/phase-split", get(phase_split_endpoint))
+        // The 3.x server accepts both GET and POST for /api/scan; we keep
+        // GET for parity with `routes.py` (where it's wired in
+        // `if path == "/api/scan"`).
+        .route("/api/scan", get(scan))
         .with_state(state)
         .layer(tower_http::trace::TraceLayer::new_for_http())
 }

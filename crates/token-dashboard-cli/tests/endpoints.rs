@@ -23,6 +23,8 @@ use token_dashboard_core::{init_db, scan_dir, Pricing};
 struct Fixture {
     _tmp: TempDir,
     state: AppState,
+    proj_root: PathBuf,
+    proj_dir: PathBuf,
 }
 
 fn setup_with_jsonl(records: &[Value]) -> Fixture {
@@ -46,7 +48,10 @@ fn setup_with_jsonl(records: &[Value]) -> Fixture {
         state: AppState {
             db_path: Arc::new(db),
             pricing: Arc::new(Pricing::embedded()),
+            projects_dir: Arc::new(proj_root.clone()),
         },
+        proj_root,
+        proj_dir,
     }
 }
 
@@ -226,4 +231,117 @@ async fn sources_empty_for_clean_db() {
     let (status, body) = get_json(&fx.state, "/api/sources").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.as_array().map(|a| a.len()), Some(0));
+}
+
+fn assistant_with_tool(
+    uuid: &str,
+    ts: &str,
+    tool: &str,
+    target_field: &str,
+    target: &str,
+) -> Value {
+    json!({
+        "type": "assistant", "uuid": uuid, "parentUuid": "u1",
+        "sessionId": "s1", "timestamp": ts, "isSidechain": false,
+        "message": {
+            "id": format!("msg_{uuid}"),
+            "model": "claude-opus-4-7",
+            "content": [
+                {"type": "tool_use", "id": format!("tu_{uuid}"),
+                 "name": tool, "input": { target_field: target }}
+            ],
+            "usage": {"input_tokens": 1, "output_tokens": 1}
+        }
+    })
+}
+
+#[tokio::test]
+async fn phase_split_classifies_turns() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "hi"),
+        // 1 plan turn (Read)
+        assistant_with_tool("a1", "2026-04-10T00:00:01Z", "Read", "file_path", "x.py"),
+        // 1 execute turn (Bash)
+        assistant_with_tool("a2", "2026-04-10T00:00:02Z", "Bash", "command", "ls"),
+        // 1 other turn (no tool)
+        assistant("a3", "2026-04-10T00:00:03Z", "claude-opus-4-7", 5),
+    ]);
+    let (status, body) = get_json(&fx.state, "/api/phase-split").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["plan"]["turns"].as_i64(), Some(1));
+    assert_eq!(body["execute"]["turns"].as_i64(), Some(1));
+    assert_eq!(body["other"]["turns"].as_i64(), Some(1));
+}
+
+#[tokio::test]
+async fn hourly_returns_assistant_rows() {
+    // Cap at fresh data so SQLite's `datetime('now', '-N hours')` keeps
+    // the row in scope.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let secs = now.as_secs() as i64;
+    let ts = chrono_like_rfc3339(secs);
+    let fx = setup_with_jsonl(&[
+        user("u1", &ts, "hi"),
+        assistant("a1", &ts, "claude-opus-4-7", 50),
+    ]);
+    let (status, body) = get_json(&fx.state, "/api/hourly?hours=1").await;
+    assert_eq!(status, StatusCode::OK);
+    let arr = body.as_array().expect("array");
+    assert!(!arr.is_empty(), "expected at least one hourly row");
+    assert_eq!(arr[0]["model"].as_str(), Some("claude-opus-4-7"));
+}
+
+#[tokio::test]
+async fn scan_endpoint_picks_up_new_jsonl() {
+    let fx = setup_with_jsonl(&[]);
+    // Append a record after fixture setup; /api/scan should see it.
+    let path = fx.proj_dir.join("late.jsonl");
+    let mut f = fs::File::create(&path).unwrap();
+    writeln!(
+        f,
+        "{}",
+        serde_json::to_string(&assistant(
+            "a1",
+            "2026-04-10T00:00:00Z",
+            "claude-opus-4-7",
+            5
+        ))
+        .unwrap()
+    )
+    .unwrap();
+    drop(f);
+    let _ = &fx.proj_root; // suppress unused warning when scan test is the only consumer
+
+    let (status, body) = get_json(&fx.state, "/api/scan").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["messages"].as_i64(), Some(1));
+    assert_eq!(body["files"].as_i64(), Some(1));
+}
+
+/// Format Unix seconds as the ISO8601 shape Claude Code writes
+/// (UTC + trailing Z). Avoids pulling in the chrono crate just for tests.
+fn chrono_like_rfc3339(secs: i64) -> String {
+    let days_from_epoch = secs / 86_400;
+    let seconds_today = secs - days_from_epoch * 86_400;
+    let h = seconds_today / 3600;
+    let m = (seconds_today % 3600) / 60;
+    let s = seconds_today % 60;
+    let (y, mo, d) = days_to_ymd(days_from_epoch);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+fn days_to_ymd(mut days: i64) -> (i64, i64, i64) {
+    days += 719_468; // shift epoch to 0000-03-01
+    let era = days.div_euclid(146_097);
+    let doe = days.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
 }

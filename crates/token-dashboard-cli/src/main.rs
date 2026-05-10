@@ -42,9 +42,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => Pricing::embedded(),
     };
 
+    let projects_dir: PathBuf = std::env::var_os("CLAUDE_PROJECTS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            // Same default as the python __main__: ~/.claude/projects.
+            let mut p = token_dashboard_core::default_db_path();
+            p.pop(); // drop "token-dashboard.db"
+            p.join("projects")
+        });
+
     let state = AppState {
         db_path: Arc::new(db_path),
         pricing: Arc::new(pricing),
+        projects_dir: Arc::new(projects_dir),
     };
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;

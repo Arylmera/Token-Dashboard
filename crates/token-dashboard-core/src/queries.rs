@@ -272,6 +272,138 @@ pub fn daily_token_breakdown<P: AsRef<Path>>(
     rows.collect()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HourlyRow {
+    pub hour_ago: i64,
+    pub model: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_create_5m_tokens: i64,
+    pub cache_create_1h_tokens: i64,
+}
+
+pub fn hourly_breakdown<P: AsRef<Path>>(db: P, hours: i64) -> rusqlite::Result<Vec<HourlyRow>> {
+    let c = open_ro(db)?;
+    let cutoff = format!("-{} hours", hours.max(1));
+    let mut stmt = c.prepare(
+        "SELECT CAST((strftime('%s','now') - strftime('%s', timestamp)) / 3600 AS INT) AS hour_ago, \
+                COALESCE(model, 'unknown') AS model, \
+                COALESCE(SUM(input_tokens),0)            AS input_tokens, \
+                COALESCE(SUM(output_tokens),0)           AS output_tokens, \
+                COALESCE(SUM(cache_read_tokens),0)       AS cache_read_tokens, \
+                COALESCE(SUM(cache_create_5m_tokens),0)  AS cache_create_5m_tokens, \
+                COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens \
+         FROM messages \
+         WHERE type='assistant' AND timestamp IS NOT NULL \
+           AND timestamp >= datetime('now', ?) \
+         GROUP BY hour_ago, model",
+    )?;
+    let rows = stmt.query_map([cutoff], |r| {
+        Ok(HourlyRow {
+            hour_ago: r.get(0)?,
+            model: r.get(1)?,
+            input_tokens: r.get(2)?,
+            output_tokens: r.get(3)?,
+            cache_read_tokens: r.get(4)?,
+            cache_create_5m_tokens: r.get(5)?,
+            cache_create_1h_tokens: r.get(6)?,
+        })
+    })?;
+    rows.collect()
+}
+
+pub const PLAN_TOOLS: &[&str] = &[
+    "Read",
+    "Grep",
+    "Glob",
+    "WebSearch",
+    "WebFetch",
+    "Task",
+    "Skill",
+];
+pub const EXECUTE_TOOLS: &[&str] = &["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"];
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhaseSplitRow {
+    pub uuid: String,
+    pub model: Option<String>,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_create_5m_tokens: i64,
+    pub cache_create_1h_tokens: i64,
+    pub plan_n: i64,
+    pub exec_n: i64,
+    pub other_n: i64,
+}
+
+pub fn phase_split<P: AsRef<Path>>(
+    db: P,
+    since: Option<&str>,
+    until: Option<&str>,
+) -> rusqlite::Result<Vec<PhaseSplitRow>> {
+    let (rng, args) = range_clause(since, until, "m.timestamp");
+    let plan_in = vec!["?"; PLAN_TOOLS.len()].join(",");
+    let exec_in = vec!["?"; EXECUTE_TOOLS.len()].join(",");
+    let sql = format!(
+        "SELECT m.uuid, m.model, \
+                COALESCE(m.input_tokens,0) AS input_tokens, \
+                COALESCE(m.output_tokens,0) AS output_tokens, \
+                COALESCE(m.cache_read_tokens,0) AS cache_read_tokens, \
+                COALESCE(m.cache_create_5m_tokens,0) AS cache_create_5m_tokens, \
+                COALESCE(m.cache_create_1h_tokens,0) AS cache_create_1h_tokens, \
+                SUM(CASE WHEN tc.tool_name IN ({plan_in}) THEN 1 ELSE 0 END) AS plan_n, \
+                SUM(CASE WHEN tc.tool_name IN ({exec_in}) THEN 1 ELSE 0 END) AS exec_n, \
+                SUM(CASE WHEN tc.tool_name IS NOT NULL \
+                          AND tc.tool_name != '_tool_result' \
+                          AND tc.tool_name NOT IN ({plan_in}) \
+                          AND tc.tool_name NOT IN ({exec_in}) \
+                         THEN 1 ELSE 0 END) AS other_n \
+         FROM messages m \
+         LEFT JOIN tool_calls tc \
+                ON tc.message_uuid = m.uuid AND tc.tool_name != '_tool_result' \
+         WHERE m.type='assistant' AND m.is_sidechain = 0 {rng} \
+         GROUP BY m.uuid"
+    );
+
+    // Param order: PLAN_TOOLS, EXECUTE_TOOLS, PLAN_TOOLS, EXECUTE_TOOLS, then range args.
+    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
+    for s in PLAN_TOOLS {
+        params.push(s);
+    }
+    for s in EXECUTE_TOOLS {
+        params.push(s);
+    }
+    for s in PLAN_TOOLS {
+        params.push(s);
+    }
+    for s in EXECUTE_TOOLS {
+        params.push(s);
+    }
+    let arg_refs: Vec<&dyn rusqlite::ToSql> =
+        args.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    params.extend(arg_refs);
+
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(&sql)?;
+    let rows = stmt.query_map(params.as_slice(), |r| {
+        Ok(PhaseSplitRow {
+            uuid: r.get(0)?,
+            model: r.get(1)?,
+            input_tokens: r.get(2)?,
+            output_tokens: r.get(3)?,
+            cache_read_tokens: r.get(4)?,
+            cache_create_5m_tokens: r.get(5)?,
+            cache_create_1h_tokens: r.get(6)?,
+            plan_n: nullable_i64(r, 7)?,
+            exec_n: nullable_i64(r, 8)?,
+            other_n: nullable_i64(r, 9)?,
+        })
+    })?;
+    rows.collect()
+}
+
 pub fn all_tags<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<TagRow>> {
     let c = open_ro(db)?;
     let mut stmt = c.prepare(
