@@ -430,6 +430,10 @@ async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>, ApiError>
         "messages": stats.messages,
         "tools": stats.tools,
         "files": stats.files,
+        "sessions": stats.sessions,
+        "projects": stats.projects,
+        "days": stats.days,
+        "models": stats.models,
     }));
     Ok(Json(stats.into()))
 }
