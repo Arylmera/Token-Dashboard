@@ -737,8 +737,8 @@ async fn preferences_post(
         }
         if let Some(v) = body.widget_metrics {
             let stored = preferences::set_widget_metrics(p, &v)?;
-            let _ = events
-                .send(serde_json::json!({"type": "preferences", "widget_metrics": stored}));
+            let _ =
+                events.send(serde_json::json!({"type": "preferences", "widget_metrics": stored}));
             out.insert(
                 "widget_metrics".into(),
                 serde_json::Value::Array(
@@ -1695,7 +1695,13 @@ async fn prompts(
     let since = q.since.clone();
     let until = q.until.clone();
     let rows = blocking(move || {
-        expensive_prompts(path.as_ref(), limit, &sort, since.as_deref(), until.as_deref())
+        expensive_prompts(
+            path.as_ref(),
+            limit,
+            &sort,
+            since.as_deref(),
+            until.as_deref(),
+        )
     })
     .await?
     .0;

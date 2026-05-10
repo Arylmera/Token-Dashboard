@@ -190,7 +190,10 @@ pub fn get_widget_metrics<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<String>
         None => Vec::new(),
     };
     if parsed.is_empty() {
-        Ok(DEFAULT_WIDGET_METRICS.iter().map(|s| s.to_string()).collect())
+        Ok(DEFAULT_WIDGET_METRICS
+            .iter()
+            .map(|s| s.to_string())
+            .collect())
     } else {
         Ok(parsed)
     }
@@ -198,10 +201,7 @@ pub fn get_widget_metrics<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<String>
 
 /// Persist a deduped, whitelisted, length-capped widget-metrics list.
 /// Returns the value as stored.
-pub fn set_widget_metrics<P: AsRef<Path>>(
-    db: P,
-    raw: &[String],
-) -> rusqlite::Result<Vec<String>> {
+pub fn set_widget_metrics<P: AsRef<Path>>(db: P, raw: &[String]) -> rusqlite::Result<Vec<String>> {
     let mut seen = std::collections::HashSet::new();
     let cleaned: Vec<String> = raw
         .iter()

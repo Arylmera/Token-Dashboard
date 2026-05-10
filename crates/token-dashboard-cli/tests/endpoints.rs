@@ -423,7 +423,11 @@ async fn prompts_pair_through_attachment_chain() {
     let (status, body) = get_json(&fx.state, "/api/prompts").await;
     assert_eq!(status, StatusCode::OK);
     let arr = body.as_array().expect("array");
-    assert_eq!(arr.len(), 1, "user must still pair with assistant despite attachment");
+    assert_eq!(
+        arr.len(),
+        1,
+        "user must still pair with assistant despite attachment"
+    );
     assert_eq!(arr[0]["user_uuid"].as_str(), Some("u1"));
     assert_eq!(arr[0]["assistant_uuid"].as_str(), Some("a1"));
     assert_eq!(arr[0]["billable_tokens"].as_i64(), Some(210));

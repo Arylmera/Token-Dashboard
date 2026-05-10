@@ -108,7 +108,13 @@ fn build_tray(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
-        &[&show_item, &widget_item, &scan_item, &browser_item, &quit_item],
+        &[
+            &show_item,
+            &widget_item,
+            &scan_item,
+            &browser_item,
+            &quit_item,
+        ],
     )?;
 
     let url = base_url.to_string();
