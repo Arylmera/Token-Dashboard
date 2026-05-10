@@ -67,9 +67,49 @@ from source you need:
 
 ## Install
 
-Install paths are still being wired up for the v4 line; for now the
-canonical path is build-from-source. Pre-built `.msi` / `.dmg` /
-`.AppImage` will land alongside the first `v4.0.0` tag.
+Pre-built artifacts ship for every `v4.*` tag:
+[latest release](https://github.com/Arylmera/Token-Dashboard/releases/latest).
+
+### macOS (Apple Silicon) — one-line install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Arylmera/Token-Dashboard/main/scripts/install.sh | bash
+```
+
+What it does: downloads the latest `*.dmg` from the GitHub releases API,
+copies `Token Dashboard.app` to `/Applications`, runs `codesign --force
+--deep --sign -` to fix the Team-ID dyld mismatch that otherwise breaks
+unsigned bundles on macOS 14+, and launches the app. Source:
+[`scripts/install.sh`](scripts/install.sh).
+
+> ⚠️ The script is unsigned plain text. If you'd rather review the
+> commands first, open the URL in your browser before piping it to bash.
+
+Manual alternative: download the `.dmg` from the
+[release page](https://github.com/Arylmera/Token-Dashboard/releases/latest),
+drag `Token Dashboard.app` to `/Applications`, then run:
+
+```bash
+codesign --force --deep --sign - "/Applications/Token Dashboard.app"
+open -a "Token Dashboard"
+```
+
+### Windows — download the installer
+
+Grab `Token Dashboard_<version>_x64_en-US.msi` from the
+[latest release](https://github.com/Arylmera/Token-Dashboard/releases/latest)
+and double-click it. The installer drops the app under `%LOCALAPPDATA%\
+Programs\Token Dashboard\` with Start Menu shortcuts.
+
+SmartScreen will warn about an unrecognized publisher on first launch —
+click *More info* → *Run anyway*. The bundle is unsigned for now (same
+policy as the 3.x line).
+
+### Linux
+
+Download `*.AppImage` (portable) or `*.deb` (Debian/Ubuntu) from the
+[latest release](https://github.com/Arylmera/Token-Dashboard/releases/latest).
+For the AppImage: `chmod +x Token-Dashboard-*.AppImage && ./Token-Dashboard-*.AppImage`.
 
 ## Build from source
 
