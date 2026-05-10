@@ -2,6 +2,10 @@
 
 Features that aren't built yet but are on the radar. PRs welcome — though see [CLAUDE.md](../CLAUDE.md) for the stdlib-only / fully-local conventions before designing one.
 
+## 4.0 — Rust + Tauri rewrite
+
+Long-term direction: rewrite the Python backend in Rust and replace the Electron shell with Tauri. Same SQLite schema, same React frontend, ~5–10 MB installer instead of ~150 MB, ~50 MB idle RAM instead of 200–400 MB, scanner ingest 5–20× faster. Phased plan with parity gates per phase. Full draft: [V4_RUST_TAURI_PLAN.md](V4_RUST_TAURI_PLAN.md).
+
 ## Multi-machine merge
 
 **Goal.** A user with a laptop + a desktop sees one unified view across both machines.
