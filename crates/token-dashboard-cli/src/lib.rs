@@ -1523,12 +1523,39 @@ fn clamp_limit(raw: i64, default: i64) -> i64 {
     raw.clamp(1, upper)
 }
 
+#[derive(Serialize)]
+struct EnrichedSkillRow {
+    #[serde(flatten)]
+    base: SkillRow,
+    tokens_per_call: Option<i64>,
+}
+
 async fn skills(
     State(s): State<AppState>,
     Query(q): Query<RangeQs>,
-) -> Result<Json<Vec<SkillRow>>, ApiError> {
+) -> Result<Json<Vec<EnrichedSkillRow>>, ApiError> {
     let path = s.db_path.clone();
-    blocking(move || skill_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref())).await
+    let rows =
+        blocking(move || skill_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
+            .await?
+            .0;
+    // The catalog scan walks ~/.claude/{skills,scheduled-tasks,plugins};
+    // bounce it to the blocking pool so file-system stat'ing doesn't tie
+    // up the tokio worker.
+    let catalog = tokio::task::spawn_blocking(token_dashboard_core::skills_catalog::cached_catalog)
+        .await
+        .map_err(|e| ApiError::internal(format!("join: {e}")))?;
+    let enriched: Vec<EnrichedSkillRow> = rows
+        .into_iter()
+        .map(|r| {
+            let tokens = token_dashboard_core::skills_catalog::tokens_for(&r.skill, &catalog);
+            EnrichedSkillRow {
+                base: r,
+                tokens_per_call: tokens,
+            }
+        })
+        .collect();
+    Ok(Json(enriched))
 }
 
 #[derive(Serialize)]

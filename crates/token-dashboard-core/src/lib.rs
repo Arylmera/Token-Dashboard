@@ -9,6 +9,7 @@ pub mod preferences;
 pub mod pricing;
 pub mod queries;
 pub mod scanner;
+pub mod skills_catalog;
 pub mod sources;
 pub mod tips;
 
