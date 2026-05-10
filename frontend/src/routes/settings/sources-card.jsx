@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Toggle } from "./atoms.jsx";
+import { SortHeader, useSortable } from "../../components/sortable.jsx";
 
 const formatBytes = (n) => {
   if (n == null) return "—";
@@ -121,19 +122,34 @@ export const SourcesCard = () => {
         </div>
       )}
       {sources.length > 0 && (
+        <SourcesTable sources={sources} onToggle={onToggle} onDelete={onDelete} />
+      )}
+    </section>
+  );
+};
+
+const SourcesTable = ({ sources, onToggle, onDelete }) => {
+  const { sorted, sortState, requestSort } = useSortable(sources, null, "desc", {
+    name: (r) => r.name,
+    size: (r) => r.size_bytes || 0,
+    added: (r) => r.added_at || 0,
+    enabled: (r) => (r.enabled ? 1 : 0),
+  });
+  const headProps = { state: sortState, requestSort };
+  return (
         <div className="a-table-scroll" style={{ marginTop: 12 }}>
           <table className="a-table">
             <thead>
               <tr>
-                <th>Source</th>
-                <th className="num">Size</th>
-                <th>Added</th>
-                <th>Enabled</th>
+                <SortHeader sortKey="name" {...headProps}>Source</SortHeader>
+                <SortHeader sortKey="size" className="num" {...headProps}>Size</SortHeader>
+                <SortHeader sortKey="added" {...headProps}>Added</SortHeader>
+                <SortHeader sortKey="enabled" {...headProps}>Enabled</SortHeader>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {sources.map((s) => (
+              {sorted.map((s) => (
                 <tr key={s.name}>
                   <td>
                     <span className="mono">{s.name}</span>
@@ -158,7 +174,5 @@ export const SourcesCard = () => {
             </tbody>
           </table>
         </div>
-      )}
-    </section>
   );
 };

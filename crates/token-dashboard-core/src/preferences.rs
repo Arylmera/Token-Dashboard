@@ -18,6 +18,27 @@ use std::path::Path;
 use rusqlite::Connection;
 
 pub const BADGE_METRICS: &[&str] = &["tokens", "cost", "burn", "5h", "weekly"];
+
+/// Metric keys the widget window can render. Order in this slice is the
+/// canonical display order when rendering the widget; the stored
+/// preference is a csv subset (capped at 6).
+pub const WIDGET_METRICS: &[&str] = &[
+    "today_live",
+    "today_graph",
+    "burn_rate",
+    "range_1d",
+    "range_7d",
+    "range_30d",
+    "range_90d",
+    "range_all",
+    "input_tokens",
+    "output_tokens",
+    "cache_hit",
+    "cache_x_cost",
+    "five_h_limit",
+];
+pub const DEFAULT_WIDGET_METRICS: &[&str] = &["today_live", "burn_rate", "five_h_limit"];
+pub const WIDGET_METRICS_MAX: usize = 6;
 pub const DEFAULT_BADGE_METRIC: &str = "tokens";
 pub const BADGE_WINDOW_MODES: &[&str] = &["remaining", "used"];
 pub const DEFAULT_BADGE_WINDOW_MODE: &str = "remaining";
@@ -126,12 +147,90 @@ pub fn set_limits_enabled<P: AsRef<Path>>(db: P, v: bool) -> rusqlite::Result<bo
     set_bool(db, "limits_enabled", v)
 }
 
+pub fn get_advanced_mode<P: AsRef<Path>>(db: P) -> rusqlite::Result<bool> {
+    get_bool(db, "advanced_mode", false)
+}
+pub fn set_advanced_mode<P: AsRef<Path>>(db: P, v: bool) -> rusqlite::Result<bool> {
+    set_bool(db, "advanced_mode", v)
+}
+
+/// Theme id chosen in the UI. Stored verbatim as an opaque string so the
+/// backend doesn't have to track the frontend's theme catalog. Empty/missing
+/// returns None so the UI can fall back to its built-in default.
+pub fn get_theme<P: AsRef<Path>>(db: P) -> rusqlite::Result<Option<String>> {
+    Ok(read_str(db, "theme")?.filter(|s| !s.is_empty()))
+}
+pub fn set_theme<P: AsRef<Path>>(db: P, raw: &str) -> rusqlite::Result<Option<String>> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        delete_key(db, "theme")?;
+        Ok(None)
+    } else {
+        write_str(db, "theme", trimmed)?;
+        Ok(Some(trimmed.to_string()))
+    }
+}
+
+/// Read the widget-metrics preference as a deduped, whitelisted, ordered
+/// list. Falls back to the default selection if unset/invalid.
+pub fn get_widget_metrics<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<String>> {
+    let raw = read_str(db, "widget_metrics")?;
+    let parsed: Vec<String> = match raw {
+        Some(s) => {
+            let mut seen = std::collections::HashSet::new();
+            s.split(',')
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .filter(|t| WIDGET_METRICS.contains(t))
+                .filter(|t| seen.insert(t.to_string()))
+                .take(WIDGET_METRICS_MAX)
+                .map(String::from)
+                .collect()
+        }
+        None => Vec::new(),
+    };
+    if parsed.is_empty() {
+        Ok(DEFAULT_WIDGET_METRICS.iter().map(|s| s.to_string()).collect())
+    } else {
+        Ok(parsed)
+    }
+}
+
+/// Persist a deduped, whitelisted, length-capped widget-metrics list.
+/// Returns the value as stored.
+pub fn set_widget_metrics<P: AsRef<Path>>(
+    db: P,
+    raw: &[String],
+) -> rusqlite::Result<Vec<String>> {
+    let mut seen = std::collections::HashSet::new();
+    let cleaned: Vec<String> = raw
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .filter(|t| WIDGET_METRICS.contains(&t.as_str()))
+        .filter(|t| seen.insert(t.clone()))
+        .take(WIDGET_METRICS_MAX)
+        .collect();
+    write_str(db, "widget_metrics", &cleaned.join(","))?;
+    Ok(cleaned)
+}
+
 pub fn get_glass_enabled<P: AsRef<Path>>(db: P) -> rusqlite::Result<bool> {
     Ok(read_str(db, "glass_enabled")?.as_deref() == Some("1"))
 }
 pub fn set_glass_enabled<P: AsRef<Path>>(db: P, v: bool) -> rusqlite::Result<bool> {
     write_str(db, "glass_enabled", if v { "1" } else { "0" })?;
     Ok(v)
+}
+
+/// Whether the floating widget window was open at last shutdown. The
+/// Tauri shell uses this to re-open the widget on next launch so the
+/// user doesn't have to re-summon it from the tray each time.
+pub fn get_widget_open<P: AsRef<Path>>(db: P) -> rusqlite::Result<bool> {
+    get_bool(db, "widget_open", false)
+}
+pub fn set_widget_open<P: AsRef<Path>>(db: P, v: bool) -> rusqlite::Result<bool> {
+    set_bool(db, "widget_open", v)
 }
 
 pub fn get_glass_opacity<P: AsRef<Path>>(db: P) -> rusqlite::Result<i64> {

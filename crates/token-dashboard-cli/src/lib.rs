@@ -21,12 +21,14 @@ use serde::{Deserialize, Serialize};
 use token_dashboard_core::sources as src;
 use token_dashboard_core::tips::{all_tips, Tip};
 use token_dashboard_core::{
-    cost_for, list_sources, preferences,
+    compute_limits, cost_for,
+    limits::LimitsSnapshot,
+    list_sources, preferences,
     queries::{
-        add_session_tag, all_tags, daily_token_breakdown, dismiss_tip, expensive_prompts, get_plan,
-        hourly_breakdown, model_breakdown, normalise_tag, overview_totals, phase_split,
-        project_summary, recent_sessions, remove_session_tag, session_model_usage, session_tags,
-        session_turns, set_plan, skill_breakdown, tool_token_breakdown, DailyRow,
+        add_session_tag, all_tags, daily_token_breakdown, dismiss_tip, expensive_prompts,
+        first_prompts, get_plan, hourly_breakdown, model_breakdown, normalise_tag, overview_totals,
+        phase_split, project_summary, recent_sessions, remove_session_tag, session_model_usage,
+        session_tags, session_turns, set_plan, skill_breakdown, tool_token_breakdown, DailyRow,
         ExpensivePromptRow, ModelRow, OverviewTotals, ProjectRow, SessionRow, SessionTurn,
         SkillRow, TagRow, ToolRow,
     },
@@ -529,6 +531,8 @@ struct PreferencesResponse {
     badge_dock_enabled: bool,
     badge_menubar_enabled: bool,
     limits_enabled: bool,
+    advanced_mode: bool,
+    theme: Option<String>,
     glass_enabled: bool,
     glass_opacity: i64,
     anthropic_api_key: Option<String>,
@@ -536,6 +540,7 @@ struct PreferencesResponse {
     limits_weekly_reset_at: Option<String>,
     limits_5h_cap_override: Option<i64>,
     limits_weekly_cap_override: Option<i64>,
+    widget_metrics: Vec<String>,
 }
 
 async fn preferences_get(State(s): State<AppState>) -> Result<Json<PreferencesResponse>, ApiError> {
@@ -548,6 +553,8 @@ async fn preferences_get(State(s): State<AppState>) -> Result<Json<PreferencesRe
             badge_dock_enabled: preferences::get_badge_dock_enabled(p)?,
             badge_menubar_enabled: preferences::get_badge_menubar_enabled(p)?,
             limits_enabled: preferences::get_limits_enabled(p)?,
+            advanced_mode: preferences::get_advanced_mode(p)?,
+            theme: preferences::get_theme(p)?,
             glass_enabled: preferences::get_glass_enabled(p)?,
             glass_opacity: preferences::get_glass_opacity(p)?,
             anthropic_api_key: preferences::get_anthropic_api_key(p)?,
@@ -564,10 +571,22 @@ async fn preferences_get(State(s): State<AppState>) -> Result<Json<PreferencesRe
                 p,
                 "limits_weekly_cap_override",
             )?,
+            widget_metrics: preferences::get_widget_metrics(p)?,
         })
     })
     .await?;
     Ok(resp)
+}
+
+// Distinguish "field absent" from "field: null". Plain Option<T> collapses
+// both to None, so we need an outer Option to mark presence and an inner
+// Option to carry the value-or-null.
+fn deserialize_double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Deserialize::deserialize(de).map(Some)
 }
 
 #[derive(Deserialize, Default)]
@@ -587,15 +606,21 @@ struct PreferencesBody {
     #[serde(default)]
     limits_enabled: Option<bool>,
     #[serde(default)]
-    limits_five_hour_reset_at: Option<String>,
+    advanced_mode: Option<bool>,
     #[serde(default)]
-    limits_weekly_reset_at: Option<String>,
-    #[serde(default)]
-    limits_5h_cap_override: Option<i64>,
-    #[serde(default)]
-    limits_weekly_cap_override: Option<i64>,
+    theme: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    limits_five_hour_reset_at: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    limits_weekly_reset_at: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    limits_5h_cap_override: Option<Option<i64>>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    limits_weekly_cap_override: Option<Option<i64>>,
     #[serde(default)]
     anthropic_api_key: Option<String>,
+    #[serde(default)]
+    widget_metrics: Option<Vec<String>>,
 }
 
 async fn preferences_post(
@@ -656,12 +681,27 @@ async fn preferences_post(
                 events.send(serde_json::json!({"type": "preferences", "limits_enabled": stored}));
             out.insert("limits_enabled".into(), serde_json::Value::Bool(stored));
         }
+        if let Some(v) = body.advanced_mode {
+            let stored = preferences::set_advanced_mode(p, v)?;
+            let _ =
+                events.send(serde_json::json!({"type": "preferences", "advanced_mode": stored}));
+            out.insert("advanced_mode".into(), serde_json::Value::Bool(stored));
+        }
+        if let Some(v) = body.theme {
+            let stored = preferences::set_theme(p, &v)?;
+            let echo = stored
+                .clone()
+                .map(serde_json::Value::String)
+                .unwrap_or(serde_json::Value::Null);
+            let _ = events.send(serde_json::json!({"type": "preferences", "theme": echo.clone()}));
+            out.insert("theme".into(), echo);
+        }
         for (k, v) in [
             ("limits_five_hour_reset_at", body.limits_five_hour_reset_at),
             ("limits_weekly_reset_at", body.limits_weekly_reset_at),
         ] {
-            if let Some(s) = v {
-                let stored = preferences::set_limit_reset_at(p, k, Some(&s))?;
+            if let Some(next) = v {
+                let stored = preferences::set_limit_reset_at(p, k, next.as_deref())?;
                 out.insert(
                     k.into(),
                     stored
@@ -677,8 +717,8 @@ async fn preferences_post(
                 body.limits_weekly_cap_override,
             ),
         ] {
-            if let Some(n) = v {
-                let stored = preferences::set_limit_cap_override(p, k, Some(n))?;
+            if let Some(next) = v {
+                let stored = preferences::set_limit_cap_override(p, k, next)?;
                 let _ = events.send(serde_json::json!({"type": "preferences", k: stored}));
                 out.insert(
                     k.into(),
@@ -694,6 +734,17 @@ async fn preferences_post(
             let raw = if v.is_empty() { None } else { Some(v.as_str()) };
             preferences::set_anthropic_api_key(p, raw)?;
             // Don't echo the key back — keep it out of the response shape.
+        }
+        if let Some(v) = body.widget_metrics {
+            let stored = preferences::set_widget_metrics(p, &v)?;
+            let _ = events
+                .send(serde_json::json!({"type": "preferences", "widget_metrics": stored}));
+            out.insert(
+                "widget_metrics".into(),
+                serde_json::Value::Array(
+                    stored.into_iter().map(serde_json::Value::String).collect(),
+                ),
+            );
         }
         Ok(serde_json::Value::Object(out))
     })
@@ -778,6 +829,10 @@ struct LimitsResponse {
     last_sync_at: Option<String>,
     last_sync_status: Option<String>,
     has_api_key: bool,
+    // Live snapshot consumed by the Overview "Plan limits remaining" card
+    // and the Settings calibrator (which reads `five_hour.used`).
+    #[serde(flatten)]
+    snapshot: LimitsSnapshot,
 }
 
 #[derive(Serialize)]
@@ -863,9 +918,11 @@ fn current_iso_z() -> String {
 
 async fn limits_get(State(s): State<AppState>) -> Result<Json<LimitsResponse>, ApiError> {
     let path = s.db_path.clone();
+    let pricing = s.pricing.clone();
     let resp = blocking(move || -> rusqlite::Result<LimitsResponse> {
         let p = path.as_ref();
         let meta = preferences::get_limits_sync_meta(p)?;
+        let snapshot = compute_limits(p, &pricing)?;
         Ok(LimitsResponse {
             enabled: preferences::get_limits_enabled(p)?,
             limits_five_hour_reset_at: preferences::get_limit_reset_at(
@@ -884,6 +941,7 @@ async fn limits_get(State(s): State<AppState>) -> Result<Json<LimitsResponse>, A
             last_sync_at: meta.last_sync_at,
             last_sync_status: meta.last_sync_status,
             has_api_key: preferences::get_anthropic_api_key(p)?.is_some(),
+            snapshot,
         })
     })
     .await?;
@@ -1307,6 +1365,7 @@ async fn export_csv(
         let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
         let usage = session_model_usage(path.as_ref(), &id_refs)?;
         let tags_map = session_tags(path.as_ref(), &id_refs)?;
+        let fp_map = first_prompts(path.as_ref(), &id_refs)?;
 
         use std::collections::HashMap;
         let mut cost: HashMap<String, f64> = ids.iter().map(|s| (s.clone(), 0.0)).collect();
@@ -1351,9 +1410,10 @@ async fn export_csv(
                 .get(&r.session_id)
                 .map(|v| v.join(","))
                 .unwrap_or_default();
-            // first_prompt deferred — recent_sessions in core doesn't fetch it
-            // yet (Phase 2 follow-up); python's CSV column stays empty.
-            let first_prompt = "";
+            let first_prompt = fp_map
+                .get(&r.session_id)
+                .map(|s| s.replace(['\r', '\n'], " "))
+                .unwrap_or_default();
             push_csv_row(
                 &mut buf,
                 &[
@@ -1367,7 +1427,7 @@ async fn export_csv(
                     &cost_str,
                     &model,
                     &tags,
-                    first_prompt,
+                    &first_prompt,
                 ],
             );
         }
@@ -1610,14 +1670,18 @@ struct PromptsQs {
     limit: Option<i64>,
     #[serde(default)]
     sort: Option<String>,
+    #[serde(default)]
+    since: Option<String>,
+    #[serde(default)]
+    until: Option<String>,
 }
 
 #[derive(Serialize)]
 struct PromptResponse {
     #[serde(flatten)]
     row: ExpensivePromptRow,
-    /// Cost estimate for the assistant turn that follows this prompt,
-    /// keyed by `cache_read_tokens` only (matches python data.prompts).
+    /// Full priced cost for the assistant turn that follows this prompt:
+    /// input + output + cache-create + cache-read at the model's rates.
     estimated_cost_usd: Option<f64>,
 }
 
@@ -1628,9 +1692,13 @@ async fn prompts(
     let path = s.db_path.clone();
     let limit = clamp_limit(q.limit.unwrap_or(50), 50);
     let sort = q.sort.unwrap_or_else(|| "tokens".into());
-    let rows = blocking(move || expensive_prompts(path.as_ref(), limit, &sort))
-        .await?
-        .0;
+    let since = q.since.clone();
+    let until = q.until.clone();
+    let rows = blocking(move || {
+        expensive_prompts(path.as_ref(), limit, &sort, since.as_deref(), until.as_deref())
+    })
+    .await?
+    .0;
     let pricing = s.pricing.clone();
     let mut out: Vec<PromptResponse> = Vec::with_capacity(rows.len());
     for row in rows {
@@ -1639,11 +1707,11 @@ async fn prompts(
                 cost_for(
                     model,
                     &Usage {
-                        input_tokens: 0,
-                        output_tokens: 0,
+                        input_tokens: row.input_tokens,
+                        output_tokens: row.output_tokens,
                         cache_read_tokens: row.cache_read_tokens,
-                        cache_create_5m_tokens: 0,
-                        cache_create_1h_tokens: 0,
+                        cache_create_5m_tokens: row.cache_create_5m_tokens,
+                        cache_create_1h_tokens: row.cache_create_1h_tokens,
                     },
                     &pricing,
                 )
@@ -1776,6 +1844,9 @@ struct SessionsResponse {
     /// Top-billable model in this session (or null if no assistant turns).
     model: Option<String>,
     tags: Vec<String>,
+    /// First non-empty user prompt in the session — populates the "first
+    /// prompt" column in the sessions list.
+    first_prompt: Option<String>,
 }
 
 async fn sessions(
@@ -1859,6 +1930,16 @@ async fn sessions(
     .await?
     .0;
 
+    // First prompt per session (earliest non-empty user prompt_text).
+    let path_for_fp = path.clone();
+    let ids_for_fp = ids.clone();
+    let mut first_prompt_map = blocking(move || {
+        let refs: Vec<&str> = ids_for_fp.iter().map(String::as_str).collect();
+        first_prompts(path_for_fp.as_ref(), &refs)
+    })
+    .await?
+    .0;
+
     let mut out: Vec<SessionsResponse> = Vec::with_capacity(rows.len());
     for row in rows {
         let sid = row.session_id.clone();
@@ -1867,6 +1948,7 @@ async fn sessions(
             cost_estimated: estimated.remove(&sid).unwrap_or(false),
             model: top.remove(&sid).and_then(|(m, _)| m),
             tags: tag_map.remove(&sid).unwrap_or_default(),
+            first_prompt: first_prompt_map.remove(&sid),
             base: row,
         });
     }

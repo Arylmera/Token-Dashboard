@@ -49,7 +49,8 @@
           "input_tokens": { "type": "integer", "format": "int64" },
           "output_tokens": { "type": "integer", "format": "int64" },
           "billable_tokens": { "type": "integer", "format": "int64" },
-          "cache_read_tokens": { "type": "integer", "format": "int64" }
+          "cache_read_tokens": { "type": "integer", "format": "int64" },
+          "last_active": { "type": ["string", "null"], "description": "ISO timestamp of the most recent message in range." }
         }
       },
       "ToolRow": {
@@ -220,6 +221,8 @@
           "badge_dock_enabled": { "type": "boolean" },
           "badge_menubar_enabled": { "type": "boolean" },
           "limits_enabled": { "type": "boolean" },
+          "advanced_mode": { "type": "boolean" },
+          "theme": { "type": ["string", "null"] },
           "glass_enabled": { "type": "boolean" },
           "glass_opacity": { "type": "integer", "minimum": 0, "maximum": 100 },
           "anthropic_api_key": { "type": ["string", "null"] },

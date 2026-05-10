@@ -50,32 +50,33 @@ const KpiRow = ({ totals }) => {
   const useHourly = rangeDays === 1;
   const ioSeries = useHourly ? (D.hourlyDetail || []) : daily;
   const ioDays = useHourly ? 24 : rangeDays;
+  const plusKey = t.plusKey || "all";
+  const plusDays = rangeDaysFromKey(plusKey);
+  const plusDaily = D.dailyPlus || daily;
+  const plusUseHourly = plusDays === 1;
+  const plusSparkData = plusUseHourly ? (D.hourlyDetail || []) : plusDaily;
+  const plusSparkDays = plusUseHourly ? 24 : plusDays;
+  const plusAvg = Number.isFinite(plusDays) && plusDays > 0
+    ? `avg ${fmtCost((t.plusCost || 0) / plusDays)}/day`
+    : `${fmtNum(t.turns)} turns`;
   const windows = [
     {
       key: "range",
-      days: rangeDays,
       label: t.rangeLabel || "range",
       value: fmtCostWhole(t.range || 0),
       sub: `${fmtTokens(t.rangeTokens)} tok · ${t.rangeSessions || 0} sessions`,
-      sparkDays: rangeDays,
+      sparkData: useHourly ? (D.hourlyDetail || []) : daily,
+      sparkDays: useHourly ? 24 : rangeDays,
     },
     {
-      key: "week",
-      days: 7,
-      label: "7 days",
-      value: fmtCostWhole(t.week),
-      sub: `${fmtTokens(t.weekTokens)} tok · avg ${fmtCost(t.week / 7)}/day`,
-      sparkDays: 7,
+      key: "plus",
+      label: t.plusLabel || "plus",
+      value: fmtCostWhole(t.plusCost || 0),
+      sub: `${fmtTokens(t.plusTokens || 0)} tok · ${plusAvg}`,
+      sparkData: plusSparkData,
+      sparkDays: plusSparkDays,
     },
-    {
-      key: "all",
-      days: Infinity,
-      label: "all-time",
-      value: fmtCostWhole(t.cost),
-      sub: `${fmtTokens(t.allTokens)} tok · ${fmtNum(t.turns)} turns`,
-      sparkDays: Infinity,
-    },
-  ].sort((a, b) => a.days - b.days);
+  ];
   return (
     <section className="a-kpi-row">
       {windows.map((w) => (
@@ -84,7 +85,7 @@ const KpiRow = ({ totals }) => {
           label={w.label}
           value={w.value}
           sub={w.sub}
-          spark={<KpiSpark daily={daily} days={w.sparkDays} />}
+          spark={<KpiSpark daily={w.sparkData} days={w.sparkDays} />}
         />
       ))}
       <KPI
@@ -109,13 +110,27 @@ const KpiRow = ({ totals }) => {
   );
 };
 
-const ChartAxis = ({ data }) => {
+const ChartAxis = ({ data, ticks = 7, insetLeft = 0, insetRight = 0 }) => {
   if (!data || data.length === 0) return null;
+  const n = data.length;
+  const count = Math.min(ticks, n);
+  const idxs = count <= 1
+    ? [0]
+    : Array.from({ length: count }, (_, k) => Math.round((k * (n - 1)) / (count - 1)));
+  const uniq = [...new Set(idxs)];
   return (
-    <div className="a-chart-axis">
-      <span>{data[0].date}</span>
-      <span>{data[Math.floor(data.length / 2)].date}</span>
-      <span>{data[data.length - 1].date}</span>
+    <div className="a-chart-axis" style={{ paddingLeft: insetLeft, paddingRight: insetRight, position: "relative", height: 14 }}>
+      {uniq.map((i, k) => {
+        const pct = uniq.length === 1 ? 0 : (k / (uniq.length - 1)) * 100;
+        const transform = k === 0 ? "translate(0, 0)" : (k === uniq.length - 1 ? "translate(-100%, 0)" : "translate(-50%, 0)");
+        return (
+          <span key={i} style={{
+            position: "absolute",
+            left: `calc(${insetLeft}px + (100% - ${insetLeft + insetRight}px) * ${pct / 100})`,
+            top: 0, transform,
+          }}>{data[i].date}</span>
+        );
+      })}
     </div>
   );
 };
@@ -331,22 +346,31 @@ const TopStrip = ({ totals, burn }) => (
   </section>
 );
 
-const DailyCharts = ({ totals }) => (
-  <section className="a-card-row">
-    <div className="a-card" style={{ gridColumn: "1 / -1" }}>
-      <div className="a-card-head">
-        <h2>Cache &times; cost</h2>
-        <div className="a-chart-legend">
-          <span className="a-chart-legend-item"><span className="a-chart-legend-sw" style={{ background: "var(--accent)" }} /> cache reads · tokens</span>
-          <span className="a-chart-legend-item"><span className="a-chart-legend-sw a-chart-legend-sw-dashed" /> cost · USD</span>
-          <span className="a-card-meta" style={{ marginLeft: 8 }}>last {totals.rangeLabel || "30 days"} · {fmtCost((D.daily || []).reduce((a, b) => a + b.cost, 0))} total · {fmtPct(totals.cacheHitRate)} hit</span>
+const DailyCharts = ({ totals }) => {
+  const rangeDays = rangeDaysFromKey(totals.rangeKey);
+  // 1-day range collapses to a single daily bucket — fall back to the
+  // 24-slot hourly series so the cache×cost overlay actually draws a
+  // curve instead of a flat segment between two duplicated points.
+  const useHourly = rangeDays === 1;
+  const series = useHourly ? (D.hourlyDetail || []) : (D.daily || []);
+  const total = series.reduce((a, b) => a + (Number(b.cost) || 0), 0);
+  return (
+    <section className="a-card-row">
+      <div className="a-card" style={{ gridColumn: "1 / -1" }}>
+        <div className="a-card-head">
+          <h2>Cache &times; cost</h2>
+          <div className="a-chart-legend">
+            <span className="a-chart-legend-item"><span className="a-chart-legend-sw" style={{ background: "var(--accent)" }} /> cache reads · tokens</span>
+            <span className="a-chart-legend-item"><span className="a-chart-legend-sw a-chart-legend-sw-dashed" /> cost · USD</span>
+            <span className="a-card-meta" style={{ marginLeft: 8 }}>last {totals.rangeLabel || "30 days"} · {fmtCost(total)} total · {fmtPct(totals.cacheHitRate)} hit</span>
+          </div>
         </div>
+        <DualAreaChart data={series} height={220} accent="var(--accent)" />
+        <ChartAxis data={series} ticks={useHourly ? 5 : 7} insetLeft={44} insetRight={52} />
       </div>
-      <DualAreaChart data={D.daily} height={220} accent="var(--accent)" />
-      <ChartAxis data={D.daily} />
-    </div>
-  </section>
-);
+    </section>
+  );
+};
 
 const MODEL_COLORS = ["var(--bone)", "var(--accent)", "var(--gull)"];
 const colorFor = (i) => MODEL_COLORS[i] || "var(--gull)";
@@ -362,7 +386,7 @@ const ProjectsTable = ({ totals }) => {
   });
   const headProps = { state: sortState, requestSort };
   return (
-    <div className="a-card">
+    <div className="a-card a-projects-card">
       <div className="a-card-head"><h2>Tokens by project</h2></div>
       <table className="a-table">
         <thead><tr>

@@ -287,8 +287,14 @@ export function ApiRoute() {
           </span>
           <span>
             <strong>Spec:</strong>{" "}
-            <a href="/api/openapi.json" target="_blank" rel="noreferrer">
+            <a
+              className="a-link is-mono"
+              href="/api/openapi.json"
+              target="_blank"
+              rel="noreferrer"
+            >
               /api/openapi.json
+              <span className="a-link-icon" aria-hidden="true">↗</span>
             </a>
           </span>
         </div>

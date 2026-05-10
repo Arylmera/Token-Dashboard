@@ -7,7 +7,16 @@ import { Settings } from "./routes/settings.jsx";
 import { Tips } from "./routes/tips.jsx";
 import { Work } from "./routes/work.jsx";
 import { ApiRoute } from "./routes/api.jsx";
-import { applyThemeClass, persistThemeIndex, themeIndexFromStorage } from "./theme.js";
+import {
+  applyThemeClass,
+  persistThemeBackend,
+  persistThemeIndex,
+  themeIndexFromId,
+  themeIndexFromStorage,
+} from "./theme.js";
+import { useAdvancedMode } from "./use-advanced-mode.js";
+
+const ADVANCED_TABS = new Set(["api"]);
 
 const ROUTES = {
   overview: Overview,
@@ -65,10 +74,28 @@ const useRangeReload = (range) => {
 
 const useTheme = () => {
   const [themeIdx, setThemeIdx] = useState(themeIndexFromStorage);
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     applyThemeClass(themeIdx);
     persistThemeIndex(themeIdx);
-  }, [themeIdx]);
+    if (hydrated) persistThemeBackend(themeIdx);
+  }, [themeIdx, hydrated]);
+  // Tauri's webview origin is a fresh ephemeral port each launch, so
+  // localStorage is effectively per-session. Pull the backend's stored
+  // theme on mount and reconcile if it differs.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/preferences", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        const i = themeIndexFromId(d && d.theme);
+        if (i >= 0) setThemeIdx(i);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setHydrated(true); });
+    return () => { cancelled = true; };
+  }, []);
   return [themeIdx, setThemeIdx];
 };
 
@@ -102,14 +129,22 @@ export const DirectionA = ({ initialTab, lockTab = false }) => {
   const [tab, setTab] = useHashRouter(initialTab, lockTab);
   const [range, setRange] = useState("30d");
   const [themeIdx, setThemeIdx] = useTheme();
+  const [advancedMode, advancedLoaded] = useAdvancedMode();
   useGlassBootstrap();
   useRangeReload(range);
-  const Route = ROUTES[tab] || Overview;
+  // Bounce off an advanced-only tab as soon as we know the toggle is off,
+  // so users can't linger on hidden routes after disabling advanced mode.
+  useEffect(() => {
+    if (!advancedLoaded || lockTab) return;
+    if (!advancedMode && ADVANCED_TABS.has(tab)) setTab("overview");
+  }, [advancedLoaded, advancedMode, tab, lockTab, setTab]);
+  const effectiveTab = !advancedMode && ADVANCED_TABS.has(tab) ? "overview" : tab;
+  const Route = ROUTES[effectiveTab] || Overview;
   return (
     <>
-      <Topbar tab={tab} setTab={setTab} range={range} setRange={setRange} />
+      <Topbar tab={effectiveTab} setTab={setTab} range={range} setRange={setRange} advancedMode={advancedMode} />
       <main className="a-main-area">
-        <Route themeIdx={themeIdx} onPickTheme={setThemeIdx} />
+        <Route themeIdx={themeIdx} onPickTheme={setThemeIdx} advancedMode={advancedMode} />
       </main>
     </>
   );

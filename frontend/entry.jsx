@@ -1,7 +1,33 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { DirectionA } from "./src/app.jsx";
+import { Widget } from "./src/widget.jsx";
 import "./src/api-client.js";
+
+// Tauri shell bridge. v3 used an Electron preload to expose `window.td`;
+// v4 reaches the runtime through `window.__TAURI__.core.invoke`. Keep the
+// same surface so settings cards (glass, devtools, badge) stay agnostic.
+try {
+  const tauri = typeof window !== "undefined" ? window.__TAURI__ : null;
+  const invoke = tauri && tauri.core && tauri.core.invoke;
+  if (invoke) {
+    const ua = (navigator.userAgent || "").toLowerCase();
+    const platform = ua.includes("mac") ? "darwin"
+      : ua.includes("win") ? "win32"
+      : ua.includes("linux") ? "linux"
+      : "";
+    window.td = Object.assign(window.td || {}, {
+      platform,
+      setGlass: (on) => invoke("set_glass", { on: !!on }).catch(() => {}),
+    });
+  }
+} catch (_) {}
+
+const isWidget = () => {
+  try {
+    return /widget\.html?$/i.test(window.location.pathname);
+  } catch (_) { return false; }
+};
 
 const Shell = () => (
   <div className="dir-a-root" style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
@@ -18,6 +44,10 @@ const Shell = () => (
     if (plat) document.body.classList.add(`platform-${plat}`);
   } catch (_) {}
   const root = createRoot(document.getElementById("root"));
+  if (isWidget()) {
+    root.render(<Widget />);
+    return;
+  }
   const render = () => root.render(<Shell />);
   render();
   try {

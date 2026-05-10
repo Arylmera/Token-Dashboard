@@ -18,6 +18,7 @@
     "targets": ["msi", "deb", "appimage", "dmg"],
     "resources": {
       "../../frontend/index.html": "frontend/index.html",
+      "../../frontend/widget.html": "frontend/widget.html",
       "../../frontend/styles.css": "frontend/styles.css",
       "../../frontend/vendor": "frontend/vendor",
       "../../frontend/dist": "frontend/dist"

@@ -2,29 +2,62 @@ import React, { useState } from "react";
 import { D } from "../data-store.js";
 import { fmtCost, fmtTokens } from "../format.js";
 import { HBar } from "../components/atoms.jsx";
+import { SortHeader, useSortable } from "../components/sortable.jsx";
 
-const ProjectsTable = ({ rows, max }) => (
-  <div className="a-table-scroll">
-    <table className="a-table a-sink-table">
-      <thead><tr><th>project</th><th>last active</th><th className="num">sessions</th><th className="num">tokens</th><th className="num">cost</th><th style={{ paddingLeft: 16 }}>distribution</th></tr></thead>
-      <tbody>
-        {rows.map((p) => (
-          <tr key={p.slug} className="clickable">
-            <td className="mono" style={{ color: "var(--bone)" }}>{p.name}</td>
-            <td className="muted">{p.lastActive}</td>
-            <td className="num">{p.sessions}</td>
-            <td className="num">{fmtTokens(p.tokens)}</td>
-            <td className="num tone-good">{fmtCost(p.cost)}</td>
-            <td style={{ width: 240, paddingLeft: 16 }}><HBar value={p.cost} max={max} /></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fmtLastActive = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+};
+
+const ProjectsTable = ({ rows, max }) => {
+  const { sorted, sortState, requestSort } = useSortable(rows, "tokens", "desc", {
+    name: (r) => r.name,
+    lastActive: (r) => r.lastActive,
+    sessions: (r) => r.sessions || 0,
+    tokens: (r) => r.tokens || 0,
+    cost: (r) => r.cost || 0,
+  });
+  const headProps = { state: sortState, requestSort };
+  return (
+    <div className="a-table-scroll">
+      <table className="a-table a-sink-table">
+        <thead><tr>
+          <SortHeader sortKey="name" {...headProps}>project</SortHeader>
+          <SortHeader sortKey="lastActive" {...headProps}>last active</SortHeader>
+          <SortHeader sortKey="sessions" className="num" {...headProps}>sessions</SortHeader>
+          <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
+          <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
+          <th style={{ paddingLeft: 16 }}>distribution</th>
+        </tr></thead>
+        <tbody>
+          {sorted.map((p) => (
+            <tr key={p.slug} className="clickable">
+              <td className="mono" style={{ color: "var(--bone)" }}>{p.name}</td>
+              <td className="muted">{fmtLastActive(p.lastActive)}</td>
+              <td className="num">{p.sessions}</td>
+              <td className="num">{fmtTokens(p.tokens)}</td>
+              <td className="num tone-good">{fmtCost(p.cost)}</td>
+              <td style={{ width: 240, paddingLeft: 16 }}><HBar value={p.cost} max={max} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 const SkillsTable = ({ rows }) => {
   const barMax = Math.max(1, ...rows.map((r) => r.tokens || 0));
+  const { sorted, sortState, requestSort } = useSortable(rows, "tokens", "desc", {
+    name: (r) => r.name,
+    invocations: (r) => r.invocations || 0,
+    tokens: (r) => r.tokens || 0,
+    cost: (r) => r.cost || 0,
+  });
+  const headProps = { state: sortState, requestSort };
   return (
     <div className="a-table-scroll">
       <table className="a-table a-sink-table">
@@ -35,9 +68,15 @@ const SkillsTable = ({ rows }) => {
           <col style={{ width: 110 }} />
           <col style={{ width: 240 }} />
         </colgroup>
-        <thead><tr><th>skill</th><th className="num">invocations</th><th className="num">est. tokens</th><th className="num">est. cost</th><th style={{ paddingLeft: 16 }}>distribution</th></tr></thead>
+        <thead><tr>
+          <SortHeader sortKey="name" {...headProps}>skill</SortHeader>
+          <SortHeader sortKey="invocations" className="num" {...headProps}>invocations</SortHeader>
+          <SortHeader sortKey="tokens" className="num" {...headProps}>est. tokens</SortHeader>
+          <SortHeader sortKey="cost" className="num" {...headProps}>est. cost</SortHeader>
+          <th style={{ paddingLeft: 16 }}>distribution</th>
+        </tr></thead>
         <tbody>
-          {rows.map((s) => (
+          {sorted.map((s) => (
             <tr key={s.name}>
               <td className="mono" style={{ color: "var(--bone)" }}>{s.name}</td>
               <td className="num">{s.invocations}</td>
@@ -52,34 +91,52 @@ const SkillsTable = ({ rows }) => {
   );
 };
 
-const SessionsTable = ({ rows, max }) => (
-  <div className="a-table-scroll">
-    <table className="a-table a-sink-table">
-      <thead><tr><th>session</th><th>project</th><th>started</th><th className="num">turns</th><th className="num">tokens</th><th className="num">cost</th><th style={{ paddingLeft: 16 }}>distribution</th></tr></thead>
-      <tbody>
-        {rows.map((s) => (
-          <tr key={s.fullId || s.id}>
-            <td className="mono" style={{ color: "var(--bone)" }}>{s.id}</td>
-            <td className="mono">{s.project}</td>
-            <td className="muted">{s.started}</td>
-            <td className="num">{s.turns}</td>
-            <td className="num">{fmtTokens(s.tokens)}</td>
-            <td className="num tone-good">{fmtCost(s.cost)}</td>
-            <td style={{ width: 240, paddingLeft: 16 }}><HBar value={s.cost} max={max} /></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
+const SessionsTable = ({ rows, max }) => {
+  const { sorted, sortState, requestSort } = useSortable(rows, "cost", "desc", {
+    id: (r) => r.id,
+    project: (r) => r.project,
+    started: (r) => r.started,
+    turns: (r) => r.turns || 0,
+    tokens: (r) => r.tokens || 0,
+    cost: (r) => r.cost || 0,
+  });
+  const headProps = { state: sortState, requestSort };
+  return (
+    <div className="a-table-scroll">
+      <table className="a-table a-sink-table">
+        <thead><tr>
+          <SortHeader sortKey="id" {...headProps}>session</SortHeader>
+          <SortHeader sortKey="project" {...headProps}>project</SortHeader>
+          <SortHeader sortKey="started" {...headProps}>started</SortHeader>
+          <SortHeader sortKey="turns" className="num" {...headProps}>turns</SortHeader>
+          <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
+          <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
+          <th style={{ paddingLeft: 16 }}>distribution</th>
+        </tr></thead>
+        <tbody>
+          {sorted.map((s) => (
+            <tr key={s.fullId || s.id}>
+              <td className="mono" style={{ color: "var(--bone)" }}>{s.id}</td>
+              <td className="mono">{s.project}</td>
+              <td className="muted">{s.started}</td>
+              <td className="num">{s.turns}</td>
+              <td className="num">{fmtTokens(s.tokens)}</td>
+              <td className="num tone-good">{fmtCost(s.cost)}</td>
+              <td style={{ width: 240, paddingLeft: 16 }}><HBar value={s.cost} max={max} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 export const Work = () => {
   const [view, setView] = useState("projects");
   const source = view === "projects" ? (D.projects || [])
     : view === "skills" ? (D.skills || [])
     : (D.topSessions || []);
-  const sortKey = view === "sessions" ? "cost" : "tokens";
-  const rows = [...source].sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0));
+  const rows = source;
   const max = Math.max(1, ...rows.map((r) => r.cost || 0));
   const total = rows.reduce((a, b) => a + (b.cost || 0), 0);
   const totalLabel = view === "skills" && total > 0 ? `~${fmtCost(total)}` : fmtCost(total);

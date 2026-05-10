@@ -67,6 +67,12 @@ const isoDaysAgo = (n) => {
 
 const RANGE_DAYS = { "1d": 1, "7d": 7, "30d": 30, "90d": 90, "all": null };
 const RANGE_LABELS = { "1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days", "all": "all-time" };
+const RANGE_PLUS = { "1d": "7d", "7d": "30d", "30d": "90d", "90d": "all", "all": "all" };
+const _plusKey = () => RANGE_PLUS[currentRange] || "all";
+const _plusSince = () => {
+  const days = RANGE_DAYS[_plusKey()];
+  return days == null ? null : isoDaysAgo(days);
+};
 
 const billable = (o) => (o.input_tokens || 0) + (o.output_tokens || 0)
   + (o.cache_create_5m_tokens || 0) + (o.cache_create_1h_tokens || 0);
@@ -90,7 +96,9 @@ const REG = [
   { key: "overviewToday", trigger: "days",  windowSince: () => isoDaysAgo(0),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(0))}` },
   { key: "overviewYday",  trigger: "days",  windowSince: () => isoDaysAgo(1),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(1))}&until=${encodeURIComponent(isoDaysAgo(0))}` },
   { key: "overviewRange", trigger: "days",  windowSince: (r) => r, url: ({ rangeSince }) => `/api/overview${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
+  { key: "overviewPlus",  trigger: "days",  windowSince: () => _plusSince(), url: ({ plusSince }) => `/api/overview${plusSince ? `?since=${encodeURIComponent(plusSince)}` : ""}` },
   { key: "daily",         trigger: "days",  windowSince: (r) => r, url: ({ rangeSince }) => `/api/daily${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
+  { key: "dailyPlus",     trigger: "days",  windowSince: () => _plusSince(), url: ({ plusSince }) => `/api/daily${plusSince ? `?since=${encodeURIComponent(plusSince)}` : ""}` },
   { key: "projects",      trigger: "projects", url: ({ rangeSince }) => `/api/projects${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
   { key: "tools",         trigger: "any",   url: ({ rangeSince }) => `/api/tools${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
   { key: "sessionsRaw",   trigger: "sessions", url: ({ rangeSince }) => `/api/sessions?${rangeSince ? `since=${encodeURIComponent(rangeSince)}&` : ""}limit=50` },
@@ -126,16 +134,25 @@ async function _fetchKeys(keys, ctx) {
 
 function _ctx(range) {
   const days = RANGE_DAYS[range];
-  return { range, rangeSince: days == null ? null : isoDaysAgo(days) };
+  const pk = RANGE_PLUS[range] || "all";
+  const pdays = RANGE_DAYS[pk];
+  return {
+    range,
+    rangeSince: days == null ? null : isoDaysAgo(days),
+    plusKey: pk,
+    plusSince: pdays == null ? null : isoDaysAgo(pdays),
+  };
 }
 
 function _rebuildMockData(range) {
   const c = _cache;
-  const totals = buildTotals(range, c.overviewAll || {}, c.overview30 || {}, c.overview7 || {}, c.overviewToday || {}, c.overviewYday || {}, c.overviewRange || {});
+  const plusKey = RANGE_PLUS[range] || "all";
+  const totals = buildTotals(range, c.overviewAll || {}, c.overview30 || {}, c.overview7 || {}, c.overviewToday || {}, c.overviewYday || {}, c.overviewRange || {}, c.overviewPlus || {}, plusKey);
   const hourly = buildHourly(c.hourlyRaw || []);
   window.MOCK_DATA = {
     totals,
     daily:    buildDaily(c.daily || [], totals.range),
+    dailyPlus: buildDaily(c.dailyPlus || [], totals.plusCost || 0),
     projects: buildProjects(c.projects || [], totals.range),
     models:   buildModels(c.byModel || []),
     tools:    (c.tools || []).map((t) => ({ name: t.tool_name, calls: t.calls || 0, tokens: t.result_tokens || 0 })),
@@ -148,6 +165,7 @@ function _rebuildMockData(range) {
     hourlyDetail: buildHourlyDetail(c.hourlyRaw || []),
     heatmap:  buildHeatmap(c.sessionsRaw || []),
     burn:     buildBurn(hourly, totals.week),
+    today:    buildToday(c.overviewToday || {}),
     plan:     c.planResp || { plan: "max" },
     limits:   c.limitsResp || null,
     budget:   c.budgetResp || null,
@@ -180,13 +198,19 @@ async function loadStatic() {
   _rebuildMockData(r);
 }
 
-const buildTotals = (r, all, m30, w7, today, yday, range) => {
+const buildTotals = (r, all, m30, w7, today, yday, range, plus, plusKey) => {
   const cacheReadRange = range.cache_read_tokens || 0;
   const billableRange = billable(range);
   const cacheHit = cacheReadRange + billableRange > 0
     ? cacheReadRange / (cacheReadRange + billableRange)
     : 0;
+  const plusObj = plus || {};
   return {
+    plusKey,
+    plusLabel: RANGE_LABELS[plusKey] || plusKey,
+    plusCost: plusObj.cost_usd || 0,
+    plusTokens: totalTokens(plusObj),
+    plusSessions: plusObj.sessions || 0,
     cost: all.cost_usd || 0,
     today: today.cost_usd || 0,
     yesterday: yday.cost_usd || 0,
@@ -235,7 +259,7 @@ const buildProjects = (projects, rangeCost) => {
     cost: rangeCost * ((p.billable_tokens || 0) / allBillable),
     sessions: p.sessions || 0,
     tokens: (p.input_tokens || 0) + (p.output_tokens || 0),
-    lastActive: "—",
+    lastActive: p.last_active || null,
   }));
 };
 
@@ -302,15 +326,21 @@ const buildHourly = (hourlyRaw) => Array.from({ length: 24 }, (_, i) => {
   return b ? (b.cost_usd || 0) : 0;
 });
 
-const buildHourlyDetail = (hourlyRaw) => Array.from({ length: 24 }, (_, i) => {
-  const b = (Array.isArray(hourlyRaw) && hourlyRaw[i]) || null;
-  return {
-    cost: b ? (b.cost_usd || 0) : 0,
-    input: b ? (b.input_tokens || 0) : 0,
-    output: b ? (b.output_tokens || 0) : 0,
-    cacheRead: b ? (b.cache_read_tokens || 0) : 0,
-  };
-});
+const buildHourlyDetail = (hourlyRaw) => {
+  const now = new Date();
+  return Array.from({ length: 24 }, (_, i) => {
+    const b = (Array.isArray(hourlyRaw) && hourlyRaw[i]) || null;
+    const ts = new Date(now.getTime() - (23 - i) * 3600 * 1000);
+    const hh = String(ts.getHours()).padStart(2, "0");
+    return {
+      date: `${hh}:00`,
+      cost: b ? (b.cost_usd || 0) : 0,
+      input: b ? (b.input_tokens || 0) : 0,
+      output: b ? (b.output_tokens || 0) : 0,
+      cacheRead: b ? (b.cache_read_tokens || 0) : 0,
+    };
+  });
+};
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const WEEK_MS = 86400 * 7 * 1000;
@@ -326,6 +356,27 @@ const buildHeatmap = (sessionsRaw) => {
     heatmap[dayIdx].cells[d.getHours()] += s.turns || 0;
   });
   return heatmap;
+};
+
+const buildToday = (today) => {
+  const input = today.input_tokens || 0;
+  const output = today.output_tokens || 0;
+  const cacheRead = today.cache_read_tokens || 0;
+  const cacheWrite = (today.cache_create_5m_tokens || 0) + (today.cache_create_1h_tokens || 0);
+  const billableTok = input + output + cacheWrite;
+  const cacheHitRate = (cacheRead + billableTok) > 0
+    ? cacheRead / (cacheRead + billableTok)
+    : 0;
+  return {
+    cost: today.cost_usd || 0,
+    tokens: input + output + cacheRead + cacheWrite,
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadTokens: cacheRead,
+    cacheWriteTokens: cacheWrite,
+    cacheHitRate,
+    sessions: today.sessions || 0,
+  };
 };
 
 const buildBurn = (hourly, weekCost) => {

@@ -62,7 +62,7 @@ export const BadgeCard = ({ limitsEnabled }) => {
   const isMac = typeof window !== "undefined" && window.td && window.td.platform === "darwin";
   const subtitle = isMac
     ? "shown on the dock badge and macOS menu bar"
-    : "shown on the taskbar overlay (Electron app only)";
+    : "shown on the taskbar overlay";
   const anyEnabled = isMac ? (dockEnabled || menubarEnabled) : dockEnabled;
   return (
     <section className="a-card">

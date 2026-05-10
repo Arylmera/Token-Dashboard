@@ -110,24 +110,24 @@ export const StripSpark = ({ data, accent = "var(--accent)", height = 38 }) => {
   const pts = data.map((v, i) => ({ x: (i / denom) * w, y: height - (v / range) * (height - 8) - 4 }));
   const line = smoothPath(pts);
   const area = `M0,${height - 4} L${line.slice(1)} L${w},${height - 4} Z`;
-  const cursorX = w;
   const cursorY = height - (data[data.length - 1] / range) * (height - 8) - 4;
+  const dotTopPct = (cursorY / height) * 100;
   const gid = randId("a-strip-grad");
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="a-strip-spark">
-      <defs>
-        <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={accent} stopOpacity="0.3" />
-          <stop offset="100%" stopColor={accent} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill={`url(#${gid})`} />
-      <path d={line} fill="none" stroke={accent} strokeWidth="0.8" vectorEffect="non-scaling-stroke" />
-      <line x1={cursorX} y1="0" x2={cursorX} y2={height} stroke={accent} strokeWidth="0.4" opacity="0.6" />
-      <circle cx={cursorX} cy={cursorY} r="1.4" fill={accent}>
-        <animate attributeName="r" values="1.4;2.4;1.4" dur="2s" repeatCount="indefinite" />
-      </circle>
-    </svg>
+    <div className="a-strip-spark">
+      <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="a-strip-spark-svg">
+        <defs>
+          <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={accent} stopOpacity="0.3" />
+            <stop offset="100%" stopColor={accent} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#${gid})`} />
+        <path d={line} fill="none" stroke={accent} strokeWidth="0.8" vectorEffect="non-scaling-stroke" />
+        <line x1={w} y1="0" x2={w} y2={height} stroke={accent} strokeWidth="0.4" opacity="0.6" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <span className="a-strip-spark-dot" style={{ top: `${dotTopPct}%`, background: accent }} />
+    </div>
   );
 };
 
@@ -153,8 +153,10 @@ export const DualAreaChart = ({ data, height = 220, accent = "var(--accent)" }) 
     );
   }
   const w = 100;
-  const topPad = 22;
-  const botPad = 14;
+  const topPad = 24;
+  const botPad = 16;
+  const padL = 44;
+  const padR = 52;
   const cacheMax = Math.max(...data.map((d) => Number(d.cacheRead) || 0)) || 1;
   const costMax = Math.max(...data.map((d) => Number(d.cost) || 0)) || 1;
   const yCache = (v) => height - (v / cacheMax) * (height - topPad - botPad) - botPad;
@@ -169,17 +171,36 @@ export const DualAreaChart = ({ data, height = 220, accent = "var(--accent)" }) 
   const peakIdxOf = (key) => data.reduce((mi, d, i) => ((Number(d[key]) || 0) > (Number(data[mi][key]) || 0) ? i : mi), 0);
   const cachePeak = peakIdxOf("cacheRead");
   const costPeak  = peakIdxOf("cost");
+  // Convert SVG viewBox coords to percentages of the wrapper (which spans
+  // padL..padR of the wrapper, with the SVG sitting in that inner region).
+  const innerWidthPct = 100; // SVG fills inner region; wrapper math handles offsets
   const ptAt = (i, isCache) => {
     const x = (i / denom) * w;
     const y = isCache ? yCache(data[i].cacheRead) : yCost(data[i].cost);
-    return { x, y, xPct: (x / w) * 100, yPct: (y / height) * 100 };
+    return { x, y, xPct: (x / w) * innerWidthPct, yPct: (y / height) * 100 };
   };
+
+  // Build tick rows: 5 horizontal grid lines (0/25/50/75/100%).
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const gridY = ticks.map((t) => topPad + (1 - t) * (height - topPad - botPad));
 
   const gradId = randId("a-dual-grad");
   const hatchId = randId("a-dual-hatch");
   return (
-    <div className="a-chart-wrap" style={{ position: "relative", height }}>
-      <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="a-chart" style={{ height: "100%" }}>
+    <div className="a-chart-wrap" style={{ position: "relative", height, paddingLeft: padL, paddingRight: padR, boxSizing: "border-box" }}>
+      {/* Y axis labels — left (cache tokens) */}
+      {ticks.map((t, idx) => (
+        <div key={`yl-${idx}`} className="a-chart-ytick a-chart-ytick-l" style={{
+          top: `${(gridY[idx] / height) * 100}%`,
+        }}>{fmtTokensShort(cacheMax * t)}</div>
+      ))}
+      {/* Y axis labels — right (cost) */}
+      {ticks.map((t, idx) => (
+        <div key={`yr-${idx}`} className="a-chart-ytick a-chart-ytick-r" style={{
+          top: `${(gridY[idx] / height) * 100}%`,
+        }}>{fmtDollars(costMax * t)}</div>
+      ))}
+      <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="a-chart" style={{ height: "100%", width: "100%" }}>
         <defs>
           <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor={accent} stopOpacity="0.22" />
@@ -189,18 +210,38 @@ export const DualAreaChart = ({ data, height = 220, accent = "var(--accent)" }) 
             <line x1="0" y1="0" x2="0" y2="2" stroke={accent} strokeWidth="0.4" opacity="0.35" />
           </pattern>
         </defs>
+        {/* horizontal grid lines */}
+        {gridY.map((gy, idx) => (
+          <line key={`g-${idx}`} x1="0" y1={gy} x2={w} y2={gy}
+            stroke="var(--iron-border)" strokeWidth="0.3"
+            strokeDasharray={idx === ticks.length - 1 ? "" : "0.6 1.2"}
+            vectorEffect="non-scaling-stroke" opacity="0.6" />
+        ))}
         <path d={cacheArea} fill={`url(#${gradId})`} />
         <path d={cacheArea} fill={`url(#${hatchId})`} />
         <path d={cacheLine} fill="none" stroke={accent} strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
         <path d={costLine}  fill="none" stroke="var(--bone)" strokeWidth="0.6" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" opacity="0.85" />
-        <circle cx={ptAt(cachePeak, true).x}  cy={ptAt(cachePeak, true).y}  r="1.2" fill={accent} />
-        <circle cx={ptAt(costPeak, false).x}  cy={ptAt(costPeak, false).y}  r="1.2" fill="var(--bone)" />
       </svg>
+      {/* HTML peak markers (avoid SVG circle stretch from preserveAspectRatio="none") */}
+      <div className="a-chart-peak" style={{
+        position: "absolute",
+        left: `calc(${padL}px + (100% - ${padL + padR}px) * ${ptAt(cachePeak, true).xPct / 100})`,
+        top: `${ptAt(cachePeak, true).yPct}%`,
+        width: 6, height: 6, borderRadius: "50%",
+        background: accent, transform: "translate(-50%, -50%)", pointerEvents: "none",
+      }} />
+      <div className="a-chart-peak" style={{
+        position: "absolute",
+        left: `calc(${padL}px + (100% - ${padL + padR}px) * ${ptAt(costPeak, false).xPct / 100})`,
+        top: `${ptAt(costPeak, false).yPct}%`,
+        width: 6, height: 6, borderRadius: "50%",
+        background: "var(--bone)", transform: "translate(-50%, -50%)", pointerEvents: "none",
+      }} />
       <div className="a-chart-annot" style={{
         position: "absolute",
-        left: `${ptAt(cachePeak, true).xPct}%`,
-        top: `calc(${ptAt(cachePeak, true).yPct}% - 16px)`,
-        transform: ptAt(cachePeak, true).xPct > 80 ? "translate(-100%, 0)" : "translate(-50%, 0)",
+        left: `calc(${padL}px + (100% - ${padL + padR}px) * ${ptAt(cachePeak, true).xPct / 100})`,
+        top: `calc(${ptAt(cachePeak, true).yPct}% - 18px)`,
+        transform: ptAt(cachePeak, true).xPct > 80 ? "translate(-100%, 0)" : (ptAt(cachePeak, true).xPct < 20 ? "translate(0, 0)" : "translate(-50%, 0)"),
         whiteSpace: "nowrap", pointerEvents: "none",
         font: '500 10px "JetBrains Mono"', color: "var(--gull)",
       }}>
@@ -208,16 +249,14 @@ export const DualAreaChart = ({ data, height = 220, accent = "var(--accent)" }) 
       </div>
       <div className="a-chart-annot" style={{
         position: "absolute",
-        left: `${ptAt(costPeak, false).xPct}%`,
-        top: `calc(${ptAt(costPeak, false).yPct}% + 6px)`,
-        transform: ptAt(costPeak, false).xPct > 80 ? "translate(-100%, 0)" : "translate(-50%, 0)",
+        left: `calc(${padL}px + (100% - ${padL + padR}px) * ${ptAt(costPeak, false).xPct / 100})`,
+        top: `calc(${ptAt(costPeak, false).yPct}% + 8px)`,
+        transform: ptAt(costPeak, false).xPct > 80 ? "translate(-100%, 0)" : (ptAt(costPeak, false).xPct < 20 ? "translate(0, 0)" : "translate(-50%, 0)"),
         whiteSpace: "nowrap", pointerEvents: "none",
         font: '500 10px "JetBrains Mono"', color: "var(--bone)",
       }}>
         cost · {fmtDollars(data[costPeak].cost)}
       </div>
-      <div className="a-chart-yaxis-l">{fmtTokensShort(cacheMax)}</div>
-      <div className="a-chart-yaxis-r">{fmtDollars(costMax)}</div>
     </div>
   );
 };

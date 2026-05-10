@@ -17,12 +17,26 @@ const TIP_MERGE_BODY = {
   "repeat-bash": "These bash commands ran many times in the past 7 days. Consider a watch flag or shell alias.",
 };
 
+// Last segment of a Claude Code project slug, used to label per-worktree rows
+// when collapsing right-size tips into one card per parent project.
+const slugTail = (slug) => {
+  if (!slug) return "?";
+  const wt = slug.indexOf("--claude-worktrees-");
+  if (wt !== -1) return slug.slice(wt + "--claude-worktrees-".length);
+  const tail = slug.split(/-+/).filter(Boolean).pop();
+  return tail || slug;
+};
+
 const buildTipPrompt = (t, projectKey) => {
   const proj = projectKey === "__global__" ? "" : ` (project: ${projectKey})`;
   switch (t.category) {
     case "cache":
       return `In ${projectKey}, our Claude Code cache hit rate is below 40% over the last 7 days, meaning we keep rebuilding context instead of reusing it. Investigate the project for patterns that thrash the prompt cache: frequent /clear, redundant CLAUDE.md edits, large rotating system blocks, or sessions that load big files near the start. Propose concrete changes (CLAUDE.md restructuring, hook adjustments, session habits) that would lift the hit rate. Ask before editing files.`;
     case "right-size":
+      if (t._merged) {
+        const list = t.rows.map((r) => `  - ${r}`).join("\n");
+        return `In ${projectKey}, ${t.count} short Opus turns (output < 500 tokens) ran across ${t.rows.length} worktrees in the past 7 days and would have been much cheaper on Sonnet:\n${list}\n\nAudit how Opus is invoked here — slash commands, agents, default model — and propose where to switch to Sonnet without hurting quality. List candidates explicitly. Ask before editing.`;
+      }
       return `In ${projectKey}, many short Opus turns (output < 500 tokens) ran in the past 7 days and would have been much cheaper on Sonnet. Audit how Opus is invoked here — slash commands, agents, default model — and propose where to switch to Sonnet without hurting quality. List candidates explicitly. Ask before editing.`;
     case "tool-bloat":
       return `In ${projectKey}, several tool results exceeded 50k tokens in the past 7 days. Find which Bash/Read calls produce huge outputs and propose narrower alternatives (head/tail, ripgrep with file scope, targeted Read offsets, ctx_execute for analysis). Suggest hooks or CLAUDE.md guidance to prevent regressions. Ask before editing.`;
@@ -82,20 +96,43 @@ const TipCard = ({ t, projectKey }) => {
   );
 };
 
+const mergeRightSize = (list, slug) => {
+  if (list.length === 1) return list[0];
+  list.sort((a, b) => (b.count || 0) - (a.count || 0));
+  const sum = (k) => list.reduce((acc, t) => acc + (Number(t[k]) || 0), 0);
+  const count = sum("count");
+  const apiOpus = sum("api_opus") / 100;
+  const apiSonnet = sum("api_sonnet") / 100;
+  const savings = sum("savings") / 100;
+  return {
+    _merged: true,
+    type: list[0].type || "info",
+    category: "right-size",
+    title: `${count} short Opus turns across ${list.length} worktrees in ${slug} might fit on Sonnet`,
+    body: `Opus turns under 500 output tokens cost ~$${apiOpus.toFixed(2)} in the last 7 days. Sonnet would have cost ~$${apiSonnet.toFixed(2)} (savings ~$${savings.toFixed(2)}).`,
+    count,
+    rows: list.map((t) => `${slugTail(t.project_slug)} · ${t.count || 0} turns · ~$${((Number(t.savings) || 0) / 100).toFixed(2)} savings`),
+  };
+};
+
 const mergeTipsByCategory = (tips, projectKey) => {
   const out = [];
   const buckets = {};
   tips.forEach((t) => {
     const cat = t.category;
-    if (cat === "repeat-file" || cat === "repeat-bash") {
+    if (cat === "repeat-file" || cat === "repeat-bash" || cat === "right-size") {
       (buckets[cat] = buckets[cat] || []).push(t);
     } else {
       out.push(t);
     }
   });
+  const slug = projectKey === "__global__" ? "(unknown project)" : projectKey;
   Object.entries(buckets).forEach(([cat, list]) => {
+    if (cat === "right-size") {
+      out.push(mergeRightSize(list, slug));
+      return;
+    }
     if (list.length === 1) { out.push(list[0]); return; }
-    const slug = projectKey === "__global__" ? "(unknown project)" : projectKey;
     list.sort((a, b) => (b.count || 0) - (a.count || 0));
     out.push({
       _merged: true,

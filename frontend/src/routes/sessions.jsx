@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { D } from "../data-store.js";
 import { fmtCost, fmtTokens } from "../format.js";
 import { HBar, KPI, Label, ModelBadge } from "../components/atoms.jsx";
+import { SortHeader, useSortable } from "../components/sortable.jsx";
 
 const BANDS = [
   { from: 0,  to: 6,  label: "00:00–06:00" },
@@ -85,9 +86,14 @@ const Heatmap = () => {
   return (
     <div className="a-heatmap">
       <div className="a-heatmap-axis-x">
-        <span></span>
-        {Array.from({ length: 24 }).map((_, h) => (
-          <span key={h} className="a-heatmap-hour">{h % 6 === 0 ? `${h.toString().padStart(2, "0")}:00` : ""}</span>
+        {[0, 6, 12, 18].map((h) => (
+          <span
+            key={h}
+            className="a-heatmap-hour"
+            style={{ gridColumn: `${h + 2} / span 6` }}
+          >
+            {`${h.toString().padStart(2, "0")}:00`}
+          </span>
         ))}
       </div>
       {rows.map((row) => (
@@ -128,8 +134,10 @@ const buildTurns = (rows, sessionCost) => {
   for (const m of rows || []) {
     if (m.is_sidechain) continue;
     if (m.type === "user") {
+      const text = (m.prompt_text || "").trim();
+      if (!text) continue;
       if (cur) out.push(cur);
-      cur = { n: out.length + 1, prompt: m.prompt_text || "", tokens: 0, tools: 0, billable: 0 };
+      cur = { n: out.length + 1, prompt: text, tokens: 0, tools: 0, billable: 0 };
       continue;
     }
     if (cur && m.type === "assistant") {
@@ -191,6 +199,16 @@ const TagChips = ({ tags, onRemove }) => (
 
 const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSelectedId, allTags, tagFilter, setTagFilter, onExport, onMutateTags }) => {
   const exportHref = `/api/export.csv${tagFilter ? `?tag=${encodeURIComponent(tagFilter)}` : ""}`;
+  const { sorted, sortState, requestSort } = useSortable(filtered, null, "desc", {
+    id: (r) => r.id,
+    project: (r) => r.project,
+    started: (r) => r.started,
+    turns: (r) => r.turns || 0,
+    tokens: (r) => r.tokens || 0,
+    cost: (r) => r.cost || 0,
+    firstPrompt: (r) => r.firstPrompt || "",
+  });
+  const headProps = { state: sortState, requestSort };
   return (
   <section className="a-card" style={{ marginBottom: 12 }}>
     <div className="a-card-head">
@@ -225,18 +243,18 @@ const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSele
       <table className="a-table a-sticky-head">
         <thead>
           <tr>
-            <th>session</th>
-            <th>project</th>
-            <th>started</th>
-            <th className="num">turns</th>
-            <th className="num">tokens</th>
-            <th className="num">cost</th>
+            <SortHeader sortKey="id" {...headProps}>session</SortHeader>
+            <SortHeader sortKey="project" {...headProps}>project</SortHeader>
+            <SortHeader sortKey="started" {...headProps}>started</SortHeader>
+            <SortHeader sortKey="turns" className="num" {...headProps}>turns</SortHeader>
+            <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
+            <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
             <th>tags</th>
-            <th style={{ paddingLeft: 16 }}>first prompt</th>
+            <SortHeader sortKey="firstPrompt" style={{ paddingLeft: 16 }} {...headProps}>first prompt</SortHeader>
           </tr>
         </thead>
         <tbody>
-          {filtered.map((s) => (
+          {sorted.map((s) => (
             <tr key={s.id} className={`clickable ${selectedId === s.id ? "is-active" : ""}`} onClick={() => setSelectedId(s.id)}>
               <td className="mono" style={{ color: "var(--bone)" }}>{s.id}</td>
               <td className="muted">{s.project}</td>
@@ -298,6 +316,14 @@ const SessionDetail = ({ selected, turns, onMutateTags }) => {
   const sliceCount = limit === "all" ? totalTurns : Math.min(limit, totalTurns);
   const visible = limit === "all" ? turns : turns.slice(0, limit);
   const isScrollable = sliceCount > 10;
+  const { sorted: sortedTurns, sortState: turnSort, requestSort: requestTurnSort } = useSortable(visible, null, "desc", {
+    n: (r) => r.n,
+    prompt: (r) => r.prompt,
+    tokens: (r) => r.tokens || 0,
+    tools: (r) => r.tools || 0,
+    cost: (r) => r.cost || 0,
+  });
+  const turnHeadProps = { state: turnSort, requestSort: requestTurnSort };
   return (
     <section className="a-card">
       <div className="a-card-head">
@@ -342,10 +368,17 @@ const SessionDetail = ({ selected, turns, onMutateTags }) => {
       <div className={`a-table-scroll a-turn-scroll ${isScrollable ? "is-scrollable" : ""}`} style={{ marginTop: 8 }}>
         <table className="a-table a-turn-table a-sticky-head">
           <thead>
-            <tr><th className="num">#</th><th style={{ paddingLeft: 16 }}>prompt</th><th className="num">tokens</th><th className="num">tools</th><th className="num">cost</th><th style={{ paddingLeft: 16, width: 180 }}>distribution</th></tr>
+            <tr>
+              <SortHeader sortKey="n" className="num" {...turnHeadProps}>#</SortHeader>
+              <SortHeader sortKey="prompt" style={{ paddingLeft: 16 }} {...turnHeadProps}>prompt</SortHeader>
+              <SortHeader sortKey="tokens" className="num" {...turnHeadProps}>tokens</SortHeader>
+              <SortHeader sortKey="tools" className="num" {...turnHeadProps}>tools</SortHeader>
+              <SortHeader sortKey="cost" className="num" {...turnHeadProps}>cost</SortHeader>
+              <th style={{ paddingLeft: 16, width: 180 }}>distribution</th>
+            </tr>
           </thead>
           <tbody>
-            {visible.map((t) => (
+            {sortedTurns.map((t) => (
               <tr key={t.n}>
                 <td className="num mono">{t.n}</td>
                 <td style={{ paddingLeft: 16, maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t.prompt || ""}>
