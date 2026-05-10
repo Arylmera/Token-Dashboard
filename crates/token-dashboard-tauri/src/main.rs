@@ -18,10 +18,11 @@ use tauri::{
     tray::{TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
 };
-use token_dashboard_cli::{app as build_router, AppState};
+use token_dashboard_cli::{app as build_router, spawn_scan_loop, AppState};
 use token_dashboard_core::{default_db_path, Pricing};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
+const SCAN_INTERVAL: Duration = Duration::from_secs(10);
 
 fn projects_dir_default() -> PathBuf {
     let mut p = default_db_path();
@@ -197,30 +198,6 @@ fn apply_glass(win: &tauri::WebviewWindow, on: bool) {
     {
         let _ = (win, on);
     }
-}
-
-/// Spawn a tokio task that periodically pokes `/api/scan` so the DB
-/// reflects new JSONL writes from in-flight Claude Code sessions.
-/// The route already broadcasts `scan_complete` over SSE, so the
-/// frontend refetches automatically — no extra wiring needed.
-fn spawn_scan_loop(base_url: String) {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(10));
-        // First tick fires immediately — skip it so we don't double up
-        // with the initial frontend load that already triggers fetches.
-        interval.tick().await;
-        loop {
-            interval.tick().await;
-            let scan_url = format!("{base_url}/api/scan");
-            let _ = tokio::task::spawn_blocking(move || {
-                ureq::get(&scan_url)
-                    .timeout(Duration::from_secs(30))
-                    .call()
-                    .ok();
-            })
-            .await;
-        }
-    });
 }
 
 /// Spawn a tokio task that refreshes the tray tooltip every 5s with the
@@ -408,6 +385,7 @@ async fn main() {
         token_dashboard_core::preferences::get_glass_enabled(&db_path).unwrap_or(false);
 
     let state = AppState::new(db_path, Pricing::embedded(), projects_dir);
+    spawn_scan_loop(state.clone(), SCAN_INTERVAL);
     let router = build_router(state);
 
     let server = tokio::spawn(async move {
@@ -455,7 +433,6 @@ async fn main() {
                 let _ = win.set_focus();
                 build_tray(app.handle(), &base_url)?;
                 spawn_tray_updater(app.handle().clone(), base_url.clone());
-                spawn_scan_loop(base_url.clone());
                 Ok(())
             }
         })

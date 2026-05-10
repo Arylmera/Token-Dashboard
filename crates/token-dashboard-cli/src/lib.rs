@@ -417,14 +417,25 @@ impl From<ScanStats> for ScanResponse {
 }
 
 async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>, ApiError> {
+    let stats = run_scan_and_broadcast(s)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(stats.into()))
+}
+
+/// Run `scan_dir` once and publish a `scan_complete` SSE event with the
+/// rich hint (sessions/projects/days/models) the frontend dispatcher
+/// uses to decide which endpoints to refetch. Shared between the
+/// `/api/scan` route and the periodic background loop so both code paths
+/// emit identical events.
+async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, String> {
     let db = s.db_path.clone();
     let proj = s.projects_dir.clone();
     let stats = tokio::task::spawn_blocking(move || scan_dir(proj.as_ref(), db.as_ref()))
         .await
-        .map_err(|e| ApiError::internal(format!("join: {e}")))?
-        .map_err(|e| ApiError::internal(format!("scan: {e}")))?;
-    // Notify SSE subscribers — the frontend uses this to refetch tabs
-    // automatically. Best-effort: failure means no listeners attached.
+        .map_err(|e| format!("join: {e}"))?
+        .map_err(|e| format!("scan: {e}"))?;
+    // Best-effort: failure means no listeners attached.
     let _ = s.events.send(serde_json::json!({
         "type": "scan_complete",
         "messages": stats.messages,
@@ -435,7 +446,26 @@ async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>, ApiError>
         "days": stats.days,
         "models": stats.models,
     }));
-    Ok(Json(stats.into()))
+    Ok(stats)
+}
+
+/// Spawn a tokio task that runs `scan_dir` every `interval` and
+/// broadcasts the result so both the embedded backend and any connected
+/// frontend stay live without manual refresh. Both binaries (headless
+/// cli and tauri shell) call this once at startup.
+pub fn spawn_scan_loop(state: AppState, interval: Duration) {
+    tokio::spawn(async move {
+        // First tick fires immediately — skip it so we don't race the
+        // initial frontend load that already triggers a fetch.
+        let mut ticker = tokio::time::interval(interval);
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            if let Err(e) = run_scan_and_broadcast(state.clone()).await {
+                tracing::warn!(error = %e, "background scan failed");
+            }
+        }
+    });
 }
 
 #[derive(Deserialize)]
