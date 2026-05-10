@@ -8,6 +8,7 @@
   },
   "app": {
     "windows": [],
+    "withGlobalTauri": true,
     "security": {
       "csp": null
     }
@@ -15,6 +16,12 @@
   "bundle": {
     "active": true,
     "targets": ["msi", "deb", "appimage", "dmg"],
+    "resources": {
+      "../../frontend/index.html": "frontend/index.html",
+      "../../frontend/styles.css": "frontend/styles.css",
+      "../../frontend/vendor": "frontend/vendor",
+      "../../frontend/dist": "frontend/dist"
+    },
     "macOS": {
       "minimumSystemVersion": "11.0",
       "dmg": {
