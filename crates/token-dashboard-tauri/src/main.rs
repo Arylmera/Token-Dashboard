@@ -29,10 +29,22 @@ fn projects_dir_default() -> PathBuf {
     p.join("projects")
 }
 
-fn frontend_static_dir() -> Option<PathBuf> {
-    // Walk upward from the executable looking for `frontend/index.html`,
-    // matching how the python helper finds packaged resources. Falls
-    // back to a repo-root sibling check for `cargo run` scenarios.
+fn frontend_static_dir(context: &tauri::Context) -> Option<PathBuf> {
+    // Bundled installs ship the frontend as Tauri resources (see
+    // `bundle.resources` in tauri.conf.json). Use Tauri's resource_dir
+    // resolver — handles the platform layout differences (Windows MSI
+    // installs alongside the exe, macOS bundles under
+    // `Contents/Resources/`, Linux debs under `/usr/lib/<app>/`).
+    if let Ok(res) =
+        tauri::utils::platform::resource_dir(context.package_info(), &tauri::utils::Env::default())
+    {
+        let candidate = res.join("frontend");
+        if candidate.join("index.html").exists() {
+            return Some(candidate);
+        }
+    }
+    // Fallback for `cargo run` scenarios: walk upward from the exe
+    // looking for the in-repo `frontend/` dir, then check the cwd.
     if let Ok(exe) = std::env::current_exe() {
         let mut cur = exe.parent().map(|p| p.to_path_buf());
         while let Some(dir) = cur {
@@ -341,11 +353,15 @@ async fn main() {
         std::process::exit(1);
     }
 
+    // Build the Tauri context up front so `frontend_static_dir` can use
+    // the resource_dir resolver (handles macOS/Linux bundle layouts).
+    let context = tauri::generate_context!();
+
     // Point the embedded server at the on-disk frontend bundle so the
     // webview can fetch /web/styles.css, /web/dist/app.js, etc. Bundled
-    // builds ship the frontend next to the binary; cargo-run finds it
+    // builds ship the frontend as Tauri resources; cargo-run finds it
     // at the repo root.
-    if let Some(static_dir) = frontend_static_dir() {
+    if let Some(static_dir) = frontend_static_dir(&context) {
         // Safety: this ran before any thread reads env vars.
         unsafe {
             std::env::set_var("TOKEN_DASHBOARD_STATIC", &static_dir);
@@ -406,6 +422,7 @@ async fn main() {
                     .inner_size(1280.0, 800.0)
                     .min_inner_size(380.0, 200.0)
                     .background_color(bg)
+                    .decorations(false)
                     .visible(true)
                     .build()?;
                 if glass_enabled {
@@ -432,6 +449,6 @@ async fn main() {
                 }
             }
         })
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("tauri run");
 }

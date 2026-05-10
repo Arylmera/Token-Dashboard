@@ -31,6 +31,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: System deps for tauri-build
         run: |
           sudo apt-get update
@@ -39,6 +42,13 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libsoup-3.0-dev
+      # tauri-build resolves bundle resources at compile time; the
+      # frontend/dist path must exist or the build script aborts.
+      - name: Build frontend bundle
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
