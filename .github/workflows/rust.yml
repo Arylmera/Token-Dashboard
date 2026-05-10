@@ -5,6 +5,7 @@ on:
     branches: [develop, v4-rust]
   pull_request:
     branches: [develop, v4-rust]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always

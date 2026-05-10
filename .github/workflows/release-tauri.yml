@@ -20,18 +20,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Cargo workspaces put bundle outputs in the workspace-root
+          # `target/`, NOT inside the crate that owns tauri.conf.json.
           - os: windows-2022
             artifact_glob: |
-              crates/token-dashboard-tauri/target/release/bundle/msi/*.msi
-              crates/token-dashboard-tauri/target/release/bundle/nsis/*.exe
+              target/release/bundle/msi/*.msi
           - os: macos-14
             artifact_glob: |
-              crates/token-dashboard-tauri/target/release/bundle/dmg/*.dmg
-              crates/token-dashboard-tauri/target/release/bundle/macos/*.app.tar.gz
+              target/release/bundle/dmg/*.dmg
+              target/release/bundle/macos/*.app.tar.gz
           - os: ubuntu-22.04
             artifact_glob: |
-              crates/token-dashboard-tauri/target/release/bundle/deb/*.deb
-              crates/token-dashboard-tauri/target/release/bundle/appimage/*.AppImage
+              target/release/bundle/deb/*.deb
+              target/release/bundle/appimage/*.AppImage
     steps:
       - uses: actions/checkout@v4
 
