@@ -710,6 +710,250 @@ struct SourceDeleteResponse {
     name: String,
 }
 
+/// Max upload size for /api/sources/add and /api/import.db. Mirrors the
+/// python `MAX_IMPORT_BYTES` (200 MiB) — sized to fit a year of typical
+/// usage in one snapshot without allowing pathological uploads.
+const MAX_UPLOAD_BYTES: usize = 200 * 1024 * 1024;
+
+async fn sources_add(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Json<Source>, ApiError> {
+    if body.is_empty() {
+        return Err(ApiError::bad_request("empty body"));
+    }
+    if body.len() > MAX_UPLOAD_BYTES {
+        return Err(ApiError {
+            status: StatusCode::PAYLOAD_TOO_LARGE,
+            msg: format!("upload too large (max {MAX_UPLOAD_BYTES} bytes)"),
+        });
+    }
+    let filename = headers
+        .get("X-Source-Filename")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            format!("source-{secs}.db")
+        });
+
+    let path = s.db_path.clone();
+    let bytes = body.to_vec();
+    let row = tokio::task::spawn_blocking(move || {
+        token_dashboard_core::sources::add_source(path.as_ref(), &filename, &bytes)
+    })
+    .await
+    .map_err(|e| ApiError::internal(format!("join: {e}")))?;
+    let row = match row {
+        Ok(r) => r,
+        Err(e) => return Err(ApiError::bad_request(e.to_string())),
+    };
+    let _ = s.events.send(serde_json::json!({"type": "sources"}));
+    Ok(Json(row))
+}
+
+#[derive(Serialize)]
+struct ImportResponse {
+    ok: bool,
+    messages_added: i64,
+    tool_calls_imported: i64,
+    tags_added: i64,
+}
+
+async fn import_db(
+    State(s): State<AppState>,
+    body: axum::body::Bytes,
+) -> Result<Json<ImportResponse>, ApiError> {
+    if body.is_empty() {
+        return Err(ApiError::bad_request("empty body"));
+    }
+    if body.len() > MAX_UPLOAD_BYTES {
+        return Err(ApiError {
+            status: StatusCode::PAYLOAD_TOO_LARGE,
+            msg: format!("upload too large (max {MAX_UPLOAD_BYTES} bytes)"),
+        });
+    }
+    if !body.starts_with(b"SQLite format 3\0") {
+        return Err(ApiError::bad_request("not a SQLite database"));
+    }
+
+    let path = s.db_path.clone();
+    let bytes = body.to_vec();
+    let resp = tokio::task::spawn_blocking(move || -> Result<ImportResponse, String> {
+        // Stage the upload to a tempfile so sqlite can ATTACH it.
+        let tmp = {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let mut p = std::env::temp_dir();
+            p.push(format!("td-import-{nanos}.db"));
+            p
+        };
+        std::fs::write(&tmp, &bytes).map_err(|e| format!("io: {e}"))?;
+
+        let result = (|| -> Result<ImportResponse, String> {
+            let conn =
+                rusqlite::Connection::open(path.as_ref()).map_err(|e| format!("open: {e}"))?;
+            // ATTACH path is interpolated, not bound — sqlite forbids `?`.
+            // Quote-escape any single quote in the temp path.
+            let attach_path = tmp.to_string_lossy().replace('\'', "''");
+            conn.execute(&format!("ATTACH DATABASE '{attach_path}' AS src"), [])
+                .map_err(|e| format!("attach: {e}"))?;
+
+            let detach = || {
+                let _ = conn.execute("DETACH DATABASE src", []);
+            };
+            let inner = (|| -> Result<ImportResponse, String> {
+                let mut stmt = conn
+                    .prepare("SELECT name FROM src.sqlite_master WHERE type='table'")
+                    .map_err(|e| format!("src tables: {e}"))?;
+                let src_tables: std::collections::HashSet<String> = stmt
+                    .query_map([], |r| r.get::<_, String>(0))
+                    .map_err(|e| format!("src tables: {e}"))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                drop(stmt);
+                for required in ["messages", "tool_calls"] {
+                    if !src_tables.contains(required) {
+                        return Err(format!("source DB missing required table: {required}"));
+                    }
+                }
+
+                conn.execute("BEGIN", [])
+                    .map_err(|e| format!("begin: {e}"))?;
+                // Count newly-added messages before the INSERT runs.
+                let msg_added: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM src.messages s \
+                         WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.uuid = s.uuid)",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .map_err(|e| format!("count msgs: {e}"))?;
+
+                // Build column intersection for messages.
+                let messages_cols = pragma_columns(&conn, "messages")?;
+                let src_messages_cols = pragma_columns_attached(&conn, "src", "messages")?;
+                let shared: Vec<String> = messages_cols
+                    .iter()
+                    .filter(|c| src_messages_cols.contains(*c))
+                    .cloned()
+                    .collect();
+                let col_list = shared.join(", ");
+                conn.execute(
+                    &format!(
+                        "INSERT OR IGNORE INTO messages ({col_list}) \
+                         SELECT {col_list} FROM src.messages"
+                    ),
+                    [],
+                )
+                .map_err(|e| format!("insert messages: {e}"))?;
+
+                conn.execute(
+                    "DELETE FROM tool_calls \
+                     WHERE message_uuid IN (SELECT uuid FROM src.messages)",
+                    [],
+                )
+                .map_err(|e| format!("delete tool_calls: {e}"))?;
+
+                let tc_cols = pragma_columns(&conn, "tool_calls")?;
+                let src_tc_cols = pragma_columns_attached(&conn, "src", "tool_calls")?;
+                let shared_tc: Vec<String> = tc_cols
+                    .iter()
+                    .filter(|c| src_tc_cols.contains(*c) && c.as_str() != "id")
+                    .cloned()
+                    .collect();
+                let tc_col_list = shared_tc.join(", ");
+                conn.execute(
+                    &format!(
+                        "INSERT INTO tool_calls ({tc_col_list}) \
+                         SELECT {tc_col_list} FROM src.tool_calls"
+                    ),
+                    [],
+                )
+                .map_err(|e| format!("insert tool_calls: {e}"))?;
+                let tc_added: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM src.tool_calls", [], |r| r.get(0))
+                    .map_err(|e| format!("count tool_calls: {e}"))?;
+
+                let mut tags_added: i64 = 0;
+                if src_tables.contains("session_tags") {
+                    tags_added = conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM src.session_tags s \
+                             WHERE NOT EXISTS (SELECT 1 FROM session_tags t \
+                              WHERE t.session_id = s.session_id AND t.tag = s.tag)",
+                            [],
+                            |r| r.get(0),
+                        )
+                        .map_err(|e| format!("count tags: {e}"))?;
+                    conn.execute(
+                        "INSERT OR IGNORE INTO session_tags (session_id, tag, created_at) \
+                         SELECT session_id, tag, created_at FROM src.session_tags",
+                        [],
+                    )
+                    .map_err(|e| format!("insert tags: {e}"))?;
+                }
+
+                conn.execute("COMMIT", [])
+                    .map_err(|e| format!("commit: {e}"))?;
+
+                Ok(ImportResponse {
+                    ok: true,
+                    messages_added: msg_added,
+                    tool_calls_imported: tc_added,
+                    tags_added,
+                })
+            })();
+
+            detach();
+            inner
+        })();
+        let _ = std::fs::remove_file(&tmp);
+        result
+    })
+    .await
+    .map_err(|e| ApiError::internal(format!("join: {e}")))?;
+
+    let resp = match resp {
+        Ok(r) => r,
+        Err(msg) => return Err(ApiError::bad_request(msg)),
+    };
+    let _ = s.events.send(serde_json::json!({"type": "scan_complete"}));
+    Ok(Json(resp))
+}
+
+fn pragma_columns(conn: &rusqlite::Connection, table: &str) -> Result<Vec<String>, String> {
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = conn.prepare(&sql).map_err(|e| format!("pragma: {e}"))?;
+    let rows: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(1))
+        .map_err(|e| format!("pragma: {e}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+fn pragma_columns_attached(
+    conn: &rusqlite::Connection,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<String>, String> {
+    let sql = format!("PRAGMA {schema}.table_info({table})");
+    let mut stmt = conn.prepare(&sql).map_err(|e| format!("pragma: {e}"))?;
+    let rows: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(1))
+        .map_err(|e| format!("pragma: {e}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
 async fn sources_delete(
     State(s): State<AppState>,
     AxumPath(name): AxumPath<String>,
@@ -1443,8 +1687,10 @@ pub fn app(state: AppState) -> Router {
         .route("/api/plan", post(set_plan_handler))
         .route("/api/tips/dismiss", post(tips_dismiss_handler))
         .route("/api/sessions/:sid/tags", post(session_tags_post))
+        .route("/api/sources/add", post(sources_add))
         .route("/api/sources/:name/toggle", post(sources_toggle))
         .route("/api/sources/:name/delete", post(sources_delete))
+        .route("/api/import.db", post(import_db))
         .route("/api/pricing", get(pricing_get))
         .route("/api/export.csv", get(export_csv))
         .route("/api/export.db", get(export_db))

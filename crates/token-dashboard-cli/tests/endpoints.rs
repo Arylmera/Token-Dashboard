@@ -61,6 +61,34 @@ async fn get_json(state: &AppState, path: &str) -> (StatusCode, Value) {
     (status, body)
 }
 
+async fn post_bytes(
+    state: &AppState,
+    path: &str,
+    body: Vec<u8>,
+    extra_headers: &[(&str, &str)],
+) -> (StatusCode, Vec<u8>) {
+    let mut req = Request::builder()
+        .method(Method::POST)
+        .uri(path)
+        .header(header::CONTENT_TYPE, "application/octet-stream");
+    for (k, v) in extra_headers {
+        req = req.header(*k, *v);
+    }
+    let resp = app(state.clone())
+        .oneshot(req.body(Body::from(body)).unwrap())
+        .await
+        .unwrap();
+    let status = resp.status();
+    let bytes = resp
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+    (status, bytes)
+}
+
 async fn post_json(state: &AppState, path: &str, body: &Value) -> (StatusCode, Value) {
     let resp = app(state.clone())
         .oneshot(
@@ -537,6 +565,87 @@ fn insert_synthetic_source(state: &AppState, name: &str) {
         rusqlite::params![name, format!("/nonexistent/{name}.db")],
     )
     .unwrap();
+}
+
+/// Build a minimal SQLite file with a `messages` table — enough for
+/// `add_source`/`import.db` to accept it.
+fn make_synthetic_db() -> Vec<u8> {
+    let tmp = TempDir::new().unwrap();
+    let p = tmp.path().join("synth.db");
+    let conn = rusqlite::Connection::open(&p).unwrap();
+    conn.execute(
+        "CREATE TABLE messages (uuid TEXT PRIMARY KEY, type TEXT, session_id TEXT, \
+         project_slug TEXT, timestamp TEXT, input_tokens INTEGER, output_tokens INTEGER, \
+         cache_read_tokens INTEGER, cache_create_5m_tokens INTEGER, \
+         cache_create_1h_tokens INTEGER)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "CREATE TABLE tool_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, \
+         message_uuid TEXT, session_id TEXT, project_slug TEXT, tool_name TEXT, \
+         target TEXT, use_id TEXT, result_tokens INTEGER, is_error INTEGER, timestamp TEXT)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO messages (uuid, type, session_id, project_slug, timestamp, \
+         input_tokens, output_tokens, cache_read_tokens, cache_create_5m_tokens, \
+         cache_create_1h_tokens) VALUES \
+         ('imp-1', 'assistant', 'imp-s', 'imp-proj', '2026-04-10T00:00:00Z', 1, 1, 0, 0, 0)",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    std::fs::read(&p).unwrap()
+}
+
+#[tokio::test]
+async fn sources_add_rejects_non_sqlite() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, _) = post_bytes(&fx.state, "/api/sources/add", b"not-a-db".to_vec(), &[]).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn sources_add_round_trip() {
+    let fx = setup_with_jsonl(&[]);
+    let blob = make_synthetic_db();
+    let (status, body) = post_bytes(
+        &fx.state,
+        "/api/sources/add",
+        blob,
+        &[("X-Source-Filename", "myexport.db")],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "got status {:?}", status);
+    let v: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["enabled"].as_bool(), Some(true));
+    assert!(v["name"].as_str().unwrap().contains("myexport"));
+}
+
+#[tokio::test]
+async fn import_db_merges_messages() {
+    let fx = setup_with_jsonl(&[]);
+    let blob = make_synthetic_db();
+    let (status, body) = post_bytes(&fx.state, "/api/import.db", blob, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let v: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["ok"].as_bool(), Some(true));
+    assert_eq!(v["messages_added"].as_i64(), Some(1));
+
+    // Re-import: same row, dedup via uuid PK → 0 added.
+    let blob = make_synthetic_db();
+    let (_, body2) = post_bytes(&fx.state, "/api/import.db", blob, &[]).await;
+    let v2: Value = serde_json::from_slice(&body2).unwrap();
+    assert_eq!(v2["messages_added"].as_i64(), Some(0));
+}
+
+#[tokio::test]
+async fn import_db_rejects_non_sqlite() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, _) = post_bytes(&fx.state, "/api/import.db", b"garbage".to_vec(), &[]).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

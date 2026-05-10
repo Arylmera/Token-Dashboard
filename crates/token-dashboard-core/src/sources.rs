@@ -25,6 +25,162 @@ pub struct Source {
     pub exists: bool,
 }
 
+const SQLITE_MAGIC: &[u8] = b"SQLite format 3\x00";
+
+/// Build the on-disk directory holding attached source DBs. Mirrors
+/// python `sources_dir`. Created on demand.
+pub fn sources_dir<P: AsRef<Path>>(db_path: P) -> std::io::Result<std::path::PathBuf> {
+    let parent = db_path
+        .as_ref()
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let dir = parent.join("token-dashboard-sources");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+fn safe_name(filename: &str) -> String {
+    // Strip path components.
+    let base = std::path::Path::new(filename)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "source.db".into());
+    // Drop anything outside [A-Za-z0-9._-]; collapse repeats.
+    let mut out = String::with_capacity(base.len());
+    let mut prev_underscore = false;
+    for c in base.chars() {
+        let keep = c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-';
+        if keep {
+            out.push(c);
+            prev_underscore = false;
+        } else if !prev_underscore {
+            out.push('_');
+            prev_underscore = true;
+        }
+    }
+    let cleaned = out.trim_matches(['.', '_']).to_string();
+    let cleaned = if cleaned.is_empty() {
+        "source.db".to_string()
+    } else {
+        cleaned
+    };
+    if cleaned.to_lowercase().ends_with(".db") {
+        cleaned
+    } else {
+        format!("{cleaned}.db")
+    }
+}
+
+fn unique_name<P: AsRef<Path>>(db_path: P, candidate: &str) -> rusqlite::Result<String> {
+    let conn = Connection::open(db_path.as_ref())?;
+    let mut stmt = conn.prepare("SELECT name FROM attached_sources")?;
+    let existing: std::collections::HashSet<String> = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    if !existing.contains(candidate) {
+        return Ok(candidate.to_string());
+    }
+    let stem = if candidate.to_lowercase().ends_with(".db") {
+        &candidate[..candidate.len() - 3]
+    } else {
+        candidate
+    };
+    let mut n: u32 = 2;
+    loop {
+        let trial = format!("{stem}-{n}.db");
+        if !existing.contains(&trial) {
+            return Ok(trial);
+        }
+        n += 1;
+    }
+}
+
+/// Validate + store an uploaded source DB and register it (enabled).
+/// Mirrors python `add_source`. Returns the registry row.
+pub fn add_source<P: AsRef<Path>>(
+    db_path: P,
+    filename: &str,
+    bytes: &[u8],
+) -> Result<Source, AddSourceError> {
+    if bytes.is_empty() || !bytes.starts_with(SQLITE_MAGIC) {
+        return Err(AddSourceError::NotSqlite);
+    }
+    let name = unique_name(db_path.as_ref(), &safe_name(filename))?;
+    let dir = sources_dir(db_path.as_ref()).map_err(AddSourceError::Io)?;
+    let target = dir.join(&name);
+    std::fs::write(&target, bytes).map_err(AddSourceError::Io)?;
+
+    // Probe: confirm it's a readable SQLite file with a `messages` table —
+    // surfaces invalid uploads at upload time, not later.
+    let probe = Connection::open(&target);
+    let has_msgs = match probe {
+        Ok(p) => {
+            let n: Result<i64, _> = p.query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='messages'",
+                [],
+                |r| r.get(0),
+            );
+            n.is_ok()
+        }
+        Err(_) => {
+            let _ = std::fs::remove_file(&target);
+            return Err(AddSourceError::NotReadable);
+        }
+    };
+    if !has_msgs {
+        let _ = std::fs::remove_file(&target);
+        return Err(AddSourceError::NoMessages);
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    let conn = Connection::open(db_path.as_ref())?;
+    conn.execute(
+        "INSERT INTO attached_sources (name, path, enabled, added_at, size_bytes) \
+         VALUES (?, ?, 1, ?, ?)",
+        rusqlite::params![name, target.to_string_lossy(), now, bytes.len() as i64],
+    )?;
+    Ok(Source {
+        name,
+        path: target.to_string_lossy().into_owned(),
+        enabled: true,
+        added_at: now,
+        size_bytes: Some(bytes.len() as i64),
+        exists: true,
+    })
+}
+
+#[derive(Debug)]
+pub enum AddSourceError {
+    NotSqlite,
+    NotReadable,
+    NoMessages,
+    Io(std::io::Error),
+    Db(rusqlite::Error),
+}
+
+impl std::fmt::Display for AddSourceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotSqlite => write!(f, "not a SQLite database"),
+            Self::NotReadable => write!(f, "file is not a readable SQLite database"),
+            Self::NoMessages => write!(f, "source DB has no `messages` table"),
+            Self::Io(e) => write!(f, "io: {e}"),
+            Self::Db(e) => write!(f, "db: {e}"),
+        }
+    }
+}
+
+impl From<rusqlite::Error> for AddSourceError {
+    fn from(e: rusqlite::Error) -> Self {
+        Self::Db(e)
+    }
+}
+
 /// Toggle the `enabled` flag for a registered source. Returns true when
 /// the row exists. Mirrors python `set_source_enabled`.
 pub fn set_source_enabled<P: AsRef<Path>>(
