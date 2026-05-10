@@ -12,22 +12,30 @@ const rangeDaysFromKey = (key) => {
   return 30;
 };
 
-const sparkOf = (daily, days) => {
-  const arr = (daily || []).map((d) => Number(d.cost) || 0);
+const sparkOf = (daily, days, pick) => {
+  const fn = pick || ((d) => Number(d.cost) || 0);
+  const arr = (daily || []).map(fn);
   if (!arr.length) return null;
   const slice = Number.isFinite(days) ? arr.slice(-days) : arr;
   if (slice.length < 2) return null;
   return slice;
 };
 
-const KpiSpark = ({ daily, days }) => {
-  const data = sparkOf(daily, days);
+const KpiSpark = ({ daily, days, pick, accent }) => {
+  const data = sparkOf(daily, days, pick);
   if (!data) return null;
   return (
     <div className="a-kpi-spark">
-      <StripSpark data={data} height={22} accent="var(--accent)" />
+      <StripSpark data={data} height={22} accent={accent || "var(--accent)"} />
     </div>
   );
+};
+
+const cacheHitOf = (d) => {
+  const reads = Number(d.cacheRead) || 0;
+  const billed = (Number(d.input) || 0) + (Number(d.output) || 0);
+  const total = reads + billed;
+  return total > 0 ? reads / total : 0;
 };
 
 const KpiRow = ({ totals }) => {
@@ -71,9 +79,24 @@ const KpiRow = ({ totals }) => {
           spark={<KpiSpark daily={daily} days={w.sparkDays} />}
         />
       ))}
-      <KPI label="input" value={fmtTokens(t.inputTokens)} sub="tokens" />
-      <KPI label="output" value={fmtTokens(t.outputTokens)} sub="tokens" />
-      <KPI label="cache hit" value={fmtPct(t.cacheHitRate)} sub="last 7 days" />
+      <KPI
+        label="input"
+        value={fmtTokens(t.inputTokens)}
+        sub="tokens"
+        spark={<KpiSpark daily={daily} days={7} pick={(d) => Number(d.input) || 0} accent="var(--gull)" />}
+      />
+      <KPI
+        label="output"
+        value={fmtTokens(t.outputTokens)}
+        sub="tokens"
+        spark={<KpiSpark daily={daily} days={7} pick={(d) => Number(d.output) || 0} accent="var(--gull-2)" />}
+      />
+      <KPI
+        label="cache hit"
+        value={fmtPct(t.cacheHitRate)}
+        sub="last 7 days"
+        spark={<KpiSpark daily={daily} days={7} pick={cacheHitOf} accent="var(--good)" />}
+      />
     </section>
   );
 };
