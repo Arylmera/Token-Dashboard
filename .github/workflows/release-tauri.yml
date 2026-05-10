@@ -112,7 +112,7 @@ jobs:
       - name: Install tauri-cli (prebuilt)
         uses: taiki-e/install-action@v2
         with:
-          tool: tauri-cli@^2
+          tool: tauri-cli
 
       - name: Tauri build
         working-directory: crates/token-dashboard-tauri
