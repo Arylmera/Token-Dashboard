@@ -6,6 +6,7 @@ import { AreaChart, Donut, DualAreaChart, StripSpark } from "../components/chart
 
 const rangeDaysFromKey = (key) => {
   const k = String(key || "").toLowerCase();
+  if (k === "all" || k === "alltime" || k === "all-time") return Infinity;
   if (k === "today" || k === "yesterday") return 1;
   const m = k.match(/^(\d+)\s*d/);
   if (m) return parseInt(m[1], 10);
@@ -82,20 +83,20 @@ const KpiRow = ({ totals }) => {
       <KPI
         label="input"
         value={fmtTokens(t.inputTokens)}
-        sub="tokens"
-        spark={<KpiSpark daily={daily} days={7} pick={(d) => Number(d.input) || 0} accent="var(--gull)" />}
+        sub={`tokens · ${t.rangeLabel || "range"}`}
+        spark={<KpiSpark daily={daily} days={rangeDays} pick={(d) => Number(d.input) || 0} />}
       />
       <KPI
         label="output"
         value={fmtTokens(t.outputTokens)}
-        sub="tokens"
-        spark={<KpiSpark daily={daily} days={7} pick={(d) => Number(d.output) || 0} accent="var(--gull-2)" />}
+        sub={`tokens · ${t.rangeLabel || "range"}`}
+        spark={<KpiSpark daily={daily} days={rangeDays} pick={(d) => Number(d.output) || 0} />}
       />
       <KPI
         label="cache hit"
         value={fmtPct(t.cacheHitRate)}
-        sub="last 7 days"
-        spark={<KpiSpark daily={daily} days={7} pick={cacheHitOf} accent="var(--good)" />}
+        sub={`last ${t.rangeLabel || "range"}`}
+        spark={<KpiSpark daily={daily} days={rangeDays} pick={cacheHitOf} />}
       />
     </section>
   );

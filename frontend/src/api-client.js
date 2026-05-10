@@ -180,9 +180,11 @@ async function loadStatic() {
 }
 
 const buildTotals = (r, all, m30, w7, today, yday, range) => {
-  const cacheRead = w7.cache_read_tokens || 0;
-  const billable7 = billable(w7);
-  const cacheHit = cacheRead + billable7 > 0 ? cacheRead / (cacheRead + billable7) : 0;
+  const cacheReadRange = range.cache_read_tokens || 0;
+  const billableRange = billable(range);
+  const cacheHit = cacheReadRange + billableRange > 0
+    ? cacheReadRange / (cacheReadRange + billableRange)
+    : 0;
   return {
     cost: all.cost_usd || 0,
     today: today.cost_usd || 0,
@@ -198,10 +200,10 @@ const buildTotals = (r, all, m30, w7, today, yday, range) => {
     weekTokens: totalTokens(w7),
     rangeTokens: totalTokens(range),
     allTokens: totalTokens(all),
-    inputTokens: all.input_tokens || 0,
-    outputTokens: all.output_tokens || 0,
-    cacheReadTokens: all.cache_read_tokens || 0,
-    cacheWriteTokens: (all.cache_create_5m_tokens || 0) + (all.cache_create_1h_tokens || 0),
+    inputTokens: range.input_tokens || 0,
+    outputTokens: range.output_tokens || 0,
+    cacheReadTokens: range.cache_read_tokens || 0,
+    cacheWriteTokens: (range.cache_create_5m_tokens || 0) + (range.cache_create_1h_tokens || 0),
     sessions: m30.sessions || 0,
     turns: all.turns || 0,
     avgTurnsPerSession: all.sessions ? (all.turns / all.sessions) : 0,
