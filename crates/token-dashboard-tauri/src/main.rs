@@ -375,8 +375,7 @@ fn spawn_widget(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
     } else {
         tauri::utils::config::Color(0x0a, 0x0a, 0x0a, 0xff)
     };
-    #[allow(unused_mut)]
-    let mut builder = WebviewWindowBuilder::new(app, "widget", WebviewUrl::External(parsed))
+    let builder = WebviewWindowBuilder::new(app, "widget", WebviewUrl::External(parsed))
         .title("Token Dashboard")
         .inner_size(280.0, 180.0)
         .min_inner_size(220.0, 120.0)
@@ -387,15 +386,6 @@ fn spawn_widget(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         .resizable(true)
         .background_color(bg)
         .visible(true);
-    // macOS transparency requires `app.macOSPrivateApi: true` in
-    // tauri.conf.json (not set here), so we only enable it when glass is on
-    // — otherwise WebView2/macOS render an opaque window as before.
-    #[cfg(target_os = "macos")]
-    {
-        if glass_on {
-            builder = builder.transparent(true);
-        }
-    }
     let win = builder.build().map_err(|e| {
         eprintln!("spawn_widget: build failed: {e}");
         e
