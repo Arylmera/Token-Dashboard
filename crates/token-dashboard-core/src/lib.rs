@@ -4,6 +4,7 @@
 //! scanner. Endpoints, tips, and HTTP wiring land in later phases.
 
 pub mod db;
+pub mod queries;
 pub mod scanner;
 pub mod sources;
 

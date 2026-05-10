@@ -1,30 +1,42 @@
 //! Token Dashboard 4.0 headless HTTP server.
 //!
-//! Phase 2 scaffold per `docs/V4_RUST_TAURI_PLAN.md`. Two endpoints land
-//! in this commit to prove the wiring; the rest of the surface (overview,
-//! prompts, sessions, tools, daily, hourly, skills, by-model, tips, plan,
-//! preferences, limits, tags, phase-split, budget, export.csv, export.db,
-//! pricing, stream) ports incrementally on top of this scaffold.
+//! Phase 2 surface lands incrementally on this scaffold. Endpoints
+//! shipped in this binary today:
 //!
-//! Env vars (match the 3.x server in `token_dashboard/__main__.py`):
-//!   PORT                  default 8080
-//!   HOST                  default 127.0.0.1
-//!   TOKEN_DASHBOARD_DB    default ~/.claude/token-dashboard.db
-//!   CLAUDE_PROJECTS_DIR   default ~/.claude/projects
+//!   GET /api/health    → {ok, version}
+//!   GET /api/sources   → attached_sources rows
+//!   GET /api/overview  → top-line totals (cost_usd is a placeholder until
+//!                        pricing.json lands)
+//!   GET /api/projects  → per-project aggregation
+//!   GET /api/tools     → per-tool calls + result_tokens
+//!   GET /api/daily     → per-day token stack
+//!   GET /api/by-model  → per-model totals
+//!   GET /api/tags      → tag → session-count
+//!
+//! Everything else (overview cost, prompts, sessions, hourly, skills,
+//! tips, plan, preferences, limits, phase-split, budget, stream,
+//! export.csv, export.db, pricing CRUD) ports in follow-ups.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::get,
     Router,
 };
-use serde::Serialize;
-use token_dashboard_core::{default_db_path, list_sources, Source};
+use serde::{Deserialize, Serialize};
+use token_dashboard_core::{
+    default_db_path, list_sources,
+    queries::{
+        all_tags, daily_token_breakdown, model_breakdown, overview_totals, project_summary,
+        tool_token_breakdown, DailyRow, ModelRow, OverviewTotals, ProjectRow, TagRow, ToolRow,
+    },
+    Source,
+};
 
 #[derive(Clone)]
 struct AppState {
@@ -37,6 +49,22 @@ struct Health {
     version: &'static str,
 }
 
+#[derive(Deserialize, Default, Clone)]
+struct RangeQs {
+    since: Option<String>,
+    until: Option<String>,
+}
+
+/// `/api/overview` JSON adds a `cost_usd` placeholder (0.0 until the
+/// pricing.json port lands). Field is present so the frontend KPI strip
+/// renders without conditional logic.
+#[derive(Serialize)]
+struct OverviewResponse {
+    #[serde(flatten)]
+    totals: OverviewTotals,
+    cost_usd: f64,
+}
+
 async fn health() -> Json<Health> {
     Json(Health {
         ok: true,
@@ -46,11 +74,77 @@ async fn health() -> Json<Health> {
 
 async fn sources(State(s): State<AppState>) -> Result<Json<Vec<Source>>, ApiError> {
     let path = s.db_path.clone();
-    let rows = tokio::task::spawn_blocking(move || list_sources(path.as_ref()))
+    blocking(move || list_sources(path.as_ref())).await
+}
+
+async fn overview(
+    State(s): State<AppState>,
+    Query(q): Query<RangeQs>,
+) -> Result<Json<OverviewResponse>, ApiError> {
+    let path = s.db_path.clone();
+    let totals =
+        blocking(move || overview_totals(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
+            .await?
+            .0;
+    Ok(Json(OverviewResponse {
+        totals,
+        cost_usd: 0.0,
+    }))
+}
+
+async fn projects(
+    State(s): State<AppState>,
+    Query(q): Query<RangeQs>,
+) -> Result<Json<Vec<ProjectRow>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || project_summary(path.as_ref(), q.since.as_deref(), q.until.as_deref())).await
+}
+
+async fn tools(
+    State(s): State<AppState>,
+    Query(q): Query<RangeQs>,
+) -> Result<Json<Vec<ToolRow>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || tool_token_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
+        .await
+}
+
+async fn daily(
+    State(s): State<AppState>,
+    Query(q): Query<RangeQs>,
+) -> Result<Json<Vec<DailyRow>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || daily_token_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
+        .await
+}
+
+async fn by_model(
+    State(s): State<AppState>,
+    Query(q): Query<RangeQs>,
+) -> Result<Json<Vec<ModelRow>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || model_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref())).await
+}
+
+async fn tags(State(s): State<AppState>) -> Result<Json<Vec<TagRow>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || all_tags(path.as_ref())).await
+}
+
+/// Run a blocking rusqlite call on tokio's blocking pool and wrap the
+/// result/error in a `Json<T>` response. The closure is `Send + 'static`
+/// because spawn_blocking runs it on a worker thread.
+async fn blocking<F, T, E>(f: F) -> Result<Json<T>, ApiError>
+where
+    F: FnOnce() -> Result<T, E> + Send + 'static,
+    T: Send + 'static,
+    E: std::fmt::Display + Send + 'static,
+{
+    let v = tokio::task::spawn_blocking(f)
         .await
         .map_err(|e| ApiError::internal(format!("join: {e}")))?
         .map_err(|e| ApiError::internal(format!("db: {e}")))?;
-    Ok(Json(rows))
+    Ok(Json(v))
 }
 
 #[derive(Debug)]
@@ -97,8 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(PathBuf::from)
         .unwrap_or_else(default_db_path);
 
-    // Init the schema if the file is missing — matches the 3.x bootstrap
-    // (`cli.py dashboard` calls `init_db` before the first scan).
+    // Init the schema if the file is missing — matches the 3.x bootstrap.
     token_dashboard_core::init_db(&db_path)?;
 
     let state = AppState {
@@ -108,6 +201,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/sources", get(sources))
+        .route("/api/overview", get(overview))
+        .route("/api/projects", get(projects))
+        .route("/api/tools", get(tools))
+        .route("/api/daily", get(daily))
+        .route("/api/by-model", get(by_model))
+        .route("/api/tags", get(tags))
         .with_state(state)
         .layer(tower_http::trace::TraceLayer::new_for_http());
 
