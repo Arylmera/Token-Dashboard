@@ -63,15 +63,13 @@ function ResponseRow({ code, resp }) {
   );
 }
 
-function tryItUrl(serverUrl, path, parameters, request) {
-  // Build a curl example. Path-params get filled with placeholders;
-  // query params are appended as ?key={key}.
+function tryItUrl(serverUrl, path, parameters) {
+  // Build a curl example. Query params are appended as ?key={key};
+  // path params are already in the path string.
   let url = `${serverUrl}${path}`;
   const queryPairs = [];
   for (const p of parameters || []) {
-    if (p.in === "path") {
-      url = url.replace(`{${p.name}}`, `{${p.name}}`);
-    } else if (p.in === "query") {
+    if (p && p.in === "query" && p.name) {
       queryPairs.push(`${p.name}={${p.name}}`);
     }
   }
@@ -97,9 +95,31 @@ function exampleBody(operation) {
   return json.example || (json.schema && json.schema.example) || {};
 }
 
-function Endpoint({ path, method, op, serverUrl }) {
+/// Walk a `#/components/<bucket>/<name>` JSON pointer against the spec
+/// and return the resolved object, or `null` if it doesn't exist.
+function resolveRef(spec, ref) {
+  if (typeof ref !== "string" || !ref.startsWith("#/")) return null;
+  const segs = ref.slice(2).split("/");
+  let cur = spec;
+  for (const s of segs) {
+    if (cur == null || typeof cur !== "object") return null;
+    cur = cur[s];
+  }
+  return cur || null;
+}
+
+function resolveParams(params, spec) {
+  return (params || [])
+    .map((p) => (p && p.$ref ? resolveRef(spec, p.$ref) : p))
+    .filter(Boolean);
+}
+
+function Endpoint({ path, method, op, serverUrl, spec }) {
   const [open, setOpen] = useState(false);
-  const params = op.parameters || [];
+  const params = useMemo(
+    () => resolveParams(op.parameters, spec),
+    [op.parameters, spec],
+  );
   const responses = op.responses || {};
   const body = exampleBody(op);
   const url = tryItUrl(serverUrl, path, params);
@@ -290,6 +310,7 @@ export function ApiRoute() {
                 method={e.method}
                 op={e.op}
                 serverUrl={serverUrl}
+                spec={spec}
               />
             ))}
           </div>
