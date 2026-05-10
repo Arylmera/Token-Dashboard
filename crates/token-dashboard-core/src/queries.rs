@@ -404,6 +404,175 @@ pub fn phase_split<P: AsRef<Path>>(
     rows.collect()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpensivePromptRow {
+    pub user_uuid: String,
+    pub session_id: String,
+    pub project_slug: String,
+    pub timestamp: String,
+    pub prompt_text: Option<String>,
+    pub prompt_chars: Option<i64>,
+    pub assistant_uuid: String,
+    pub model: Option<String>,
+    pub billable_tokens: i64,
+    pub cache_read_tokens: i64,
+}
+
+/// User prompt joined with the immediately-following assistant turn's
+/// tokens. `sort` is "tokens" (default — largest billable first) or
+/// "recent" (newest first). Mirrors python `expensive_prompts`.
+pub fn expensive_prompts<P: AsRef<Path>>(
+    db: P,
+    limit: i64,
+    sort: &str,
+) -> rusqlite::Result<Vec<ExpensivePromptRow>> {
+    let order = if sort == "recent" {
+        "u.timestamp DESC"
+    } else {
+        "billable_tokens DESC"
+    };
+    let sql = format!(
+        "SELECT u.uuid AS user_uuid, u.session_id, u.project_slug, u.timestamp, \
+                u.prompt_text, u.prompt_chars, \
+                a.uuid AS assistant_uuid, a.model, \
+                COALESCE(a.input_tokens,0)+COALESCE(a.output_tokens,0) \
+                  +COALESCE(a.cache_create_5m_tokens,0)+COALESCE(a.cache_create_1h_tokens,0) AS billable_tokens, \
+                COALESCE(a.cache_read_tokens,0) AS cache_read_tokens \
+           FROM messages u \
+           JOIN messages a ON a.parent_uuid = u.uuid AND a.type='assistant' \
+          WHERE u.type='user' AND u.prompt_text IS NOT NULL \
+          ORDER BY {order} \
+          LIMIT ?"
+    );
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(&sql)?;
+    let rows = stmt.query_map([limit], |r| {
+        Ok(ExpensivePromptRow {
+            user_uuid: r.get(0)?,
+            session_id: r.get(1)?,
+            project_slug: r.get(2)?,
+            timestamp: r.get(3)?,
+            prompt_text: r.get(4)?,
+            prompt_chars: r.get(5)?,
+            assistant_uuid: r.get(6)?,
+            model: r.get(7)?,
+            billable_tokens: r.get(8)?,
+            cache_read_tokens: r.get(9)?,
+        })
+    })?;
+    rows.collect()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillRow {
+    pub skill: String,
+    pub invocations: i64,
+    pub sessions: i64,
+    pub last_used: Option<String>,
+}
+
+pub fn skill_breakdown<P: AsRef<Path>>(
+    db: P,
+    since: Option<&str>,
+    until: Option<&str>,
+) -> rusqlite::Result<Vec<SkillRow>> {
+    let (rng, args) = range_clause(since, until, "timestamp");
+    let sql = format!(
+        "SELECT target AS skill, \
+                COUNT(*) AS invocations, \
+                COUNT(DISTINCT session_id) AS sessions, \
+                MAX(timestamp) AS last_used \
+         FROM tool_calls \
+         WHERE tool_name = 'Skill' AND target IS NOT NULL AND target != '' {rng} \
+         GROUP BY target \
+         ORDER BY invocations DESC"
+    );
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
+        Ok(SkillRow {
+            skill: r.get(0)?,
+            invocations: r.get(1)?,
+            sessions: r.get(2)?,
+            last_used: r.get(3)?,
+        })
+    })?;
+    rows.collect()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTurn {
+    pub uuid: String,
+    pub parent_uuid: Option<String>,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub timestamp: String,
+    pub model: Option<String>,
+    pub is_sidechain: i64,
+    pub agent_id: Option<String>,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_create_5m_tokens: i64,
+    pub cache_create_1h_tokens: i64,
+    pub prompt_text: Option<String>,
+    pub prompt_chars: Option<i64>,
+    pub tool_calls_json: Option<String>,
+    pub project_slug: String,
+    pub cwd: Option<String>,
+}
+
+pub fn session_turns<P: AsRef<Path>>(
+    db: P,
+    session_id: &str,
+) -> rusqlite::Result<Vec<SessionTurn>> {
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(
+        "SELECT uuid, parent_uuid, type, timestamp, model, is_sidechain, agent_id, \
+                input_tokens, output_tokens, cache_read_tokens, \
+                cache_create_5m_tokens, cache_create_1h_tokens, \
+                prompt_text, prompt_chars, tool_calls_json, project_slug, cwd \
+         FROM messages \
+         WHERE session_id = ? \
+         ORDER BY timestamp ASC",
+    )?;
+    let rows = stmt.query_map([session_id], |r| {
+        Ok(SessionTurn {
+            uuid: r.get(0)?,
+            parent_uuid: r.get(1)?,
+            type_: r.get(2)?,
+            timestamp: r.get(3)?,
+            model: r.get(4)?,
+            is_sidechain: r.get(5)?,
+            agent_id: r.get(6)?,
+            input_tokens: r.get(7)?,
+            output_tokens: r.get(8)?,
+            cache_read_tokens: r.get(9)?,
+            cache_create_5m_tokens: r.get(10)?,
+            cache_create_1h_tokens: r.get(11)?,
+            prompt_text: r.get(12)?,
+            prompt_chars: r.get(13)?,
+            tool_calls_json: r.get(14)?,
+            project_slug: r.get(15)?,
+            cwd: r.get(16)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Read the saved plan label (`api`, `pro`, `max`, `max-20x`).
+/// Mirrors `pricing.get_plan` — defaults to `api` when nothing is set.
+pub fn get_plan<P: AsRef<Path>>(db: P) -> rusqlite::Result<String> {
+    let c = open_ro(db)?;
+    let v: rusqlite::Result<String> =
+        c.query_row("SELECT v FROM plan WHERE k='plan'", [], |r| r.get(0));
+    match v {
+        Ok(s) => Ok(s),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok("api".to_string()),
+        Err(e) => Err(e),
+    }
+}
+
 pub fn all_tags<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<TagRow>> {
     let c = open_ro(db)?;
     let mut stmt = c.prepare(

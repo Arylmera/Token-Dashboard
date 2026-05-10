@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
-    extract::{Query, State},
+    extract::{Path as AxumPath, Query, State},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::get,
@@ -15,9 +15,10 @@ use serde::{Deserialize, Serialize};
 use token_dashboard_core::{
     cost_for, list_sources,
     queries::{
-        all_tags, daily_token_breakdown, hourly_breakdown, model_breakdown, overview_totals,
-        phase_split, project_summary, tool_token_breakdown, DailyRow, HourlyRow, ModelRow,
-        OverviewTotals, ProjectRow, TagRow, ToolRow,
+        all_tags, daily_token_breakdown, expensive_prompts, get_plan, hourly_breakdown,
+        model_breakdown, overview_totals, phase_split, project_summary, session_turns,
+        skill_breakdown, tool_token_breakdown, DailyRow, ExpensivePromptRow, HourlyRow, ModelRow,
+        OverviewTotals, ProjectRow, SessionTurn, SkillRow, TagRow, ToolRow,
     },
     scan_dir, Pricing, ScanStats, Source, Usage,
 };
@@ -285,6 +286,95 @@ async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>, ApiError>
     Ok(Json(stats.into()))
 }
 
+#[derive(Deserialize, Default)]
+struct PromptsQs {
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    sort: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PromptResponse {
+    #[serde(flatten)]
+    row: ExpensivePromptRow,
+    /// Cost estimate for the assistant turn that follows this prompt,
+    /// keyed by `cache_read_tokens` only (matches python data.prompts).
+    estimated_cost_usd: Option<f64>,
+}
+
+async fn prompts(
+    State(s): State<AppState>,
+    Query(q): Query<PromptsQs>,
+) -> Result<Json<Vec<PromptResponse>>, ApiError> {
+    let path = s.db_path.clone();
+    let limit = clamp_limit(q.limit.unwrap_or(50), 50);
+    let sort = q.sort.unwrap_or_else(|| "tokens".into());
+    let rows = blocking(move || expensive_prompts(path.as_ref(), limit, &sort))
+        .await?
+        .0;
+    let pricing = s.pricing.clone();
+    let mut out: Vec<PromptResponse> = Vec::with_capacity(rows.len());
+    for row in rows {
+        let estimated_cost_usd = match row.model.as_deref() {
+            Some(model) => {
+                cost_for(
+                    model,
+                    &Usage {
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        cache_read_tokens: row.cache_read_tokens,
+                        cache_create_5m_tokens: 0,
+                        cache_create_1h_tokens: 0,
+                    },
+                    &pricing,
+                )
+                .usd
+            }
+            None => None,
+        };
+        out.push(PromptResponse {
+            row,
+            estimated_cost_usd,
+        });
+    }
+    Ok(Json(out))
+}
+
+/// Mirrors python `clamp_limit`: bound 1..=max_default*10 and fall back
+/// on parse errors. Caller may pass any user-supplied value.
+fn clamp_limit(raw: i64, default: i64) -> i64 {
+    let upper = default * 10;
+    raw.clamp(1, upper)
+}
+
+async fn skills(
+    State(s): State<AppState>,
+    Query(q): Query<RangeQs>,
+) -> Result<Json<Vec<SkillRow>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || skill_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref())).await
+}
+
+#[derive(Serialize)]
+struct PlanResponse {
+    plan: String,
+}
+
+async fn plan(State(s): State<AppState>) -> Result<Json<PlanResponse>, ApiError> {
+    let path = s.db_path.clone();
+    let plan = blocking(move || get_plan(path.as_ref())).await?.0;
+    Ok(Json(PlanResponse { plan }))
+}
+
+async fn session(
+    State(s): State<AppState>,
+    AxumPath(sid): AxumPath<String>,
+) -> Result<Json<Vec<SessionTurn>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || session_turns(path.as_ref(), &sid)).await
+}
+
 /// Run a blocking rusqlite call on tokio's blocking pool and wrap the
 /// result/error in a `Json<T>` response. The closure is `Send + 'static`
 /// because spawn_blocking runs it on a worker thread.
@@ -335,6 +425,10 @@ pub fn app(state: AppState) -> Router {
         .route("/api/tags", get(tags))
         .route("/api/hourly", get(hourly))
         .route("/api/phase-split", get(phase_split_endpoint))
+        .route("/api/prompts", get(prompts))
+        .route("/api/skills", get(skills))
+        .route("/api/plan", get(plan))
+        .route("/api/sessions/:sid", get(session))
         // The 3.x server accepts both GET and POST for /api/scan; we keep
         // GET for parity with `routes.py` (where it's wired in
         // `if path == "/api/scan"`).

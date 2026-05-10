@@ -320,6 +320,95 @@ async fn scan_endpoint_picks_up_new_jsonl() {
     assert_eq!(body["files"].as_i64(), Some(1));
 }
 
+#[tokio::test]
+async fn prompts_returns_user_assistant_pairs() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "what is 2+2?"),
+        // a1 is the assistant turn that follows u1; expensive_prompts joins
+        // a.parent_uuid = u.uuid, so the user's actual uuid must match.
+        json!({
+            "type": "assistant", "uuid": "a1", "parentUuid": "u1",
+            "sessionId": "s1", "timestamp": "2026-04-10T00:00:01Z",
+            "isSidechain": false,
+            "message": {
+                "id": "msg_a1", "model": "claude-opus-4-7",
+                "content": [{"type": "text", "text": "4"}],
+                "usage": {"input_tokens": 100, "output_tokens": 5}
+            }
+        }),
+    ]);
+    let (status, body) = get_json(&fx.state, "/api/prompts").await;
+    assert_eq!(status, StatusCode::OK);
+    let arr = body.as_array().expect("array");
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["user_uuid"].as_str(), Some("u1"));
+    assert_eq!(arr[0]["assistant_uuid"].as_str(), Some("a1"));
+    assert_eq!(arr[0]["billable_tokens"].as_i64(), Some(105));
+    assert_eq!(arr[0]["prompt_text"].as_str(), Some("what is 2+2?"));
+}
+
+#[tokio::test]
+async fn skills_counts_skill_tool_use() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "hi"),
+        assistant_with_tool(
+            "a1",
+            "2026-04-10T00:00:01Z",
+            "Skill",
+            "skill",
+            "test-driven-development",
+        ),
+        assistant_with_tool(
+            "a2",
+            "2026-04-10T00:00:02Z",
+            "Skill",
+            "skill",
+            "test-driven-development",
+        ),
+        assistant_with_tool(
+            "a3",
+            "2026-04-10T00:00:03Z",
+            "Skill",
+            "skill",
+            "brainstorming",
+        ),
+    ]);
+    let (status, body) = get_json(&fx.state, "/api/skills").await;
+    assert_eq!(status, StatusCode::OK);
+    let arr = body.as_array().expect("array");
+    assert_eq!(arr.len(), 2);
+    let tdd = arr
+        .iter()
+        .find(|r| r["skill"] == "test-driven-development")
+        .unwrap();
+    assert_eq!(tdd["invocations"].as_i64(), Some(2));
+}
+
+#[tokio::test]
+async fn plan_defaults_to_api() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, body) = get_json(&fx.state, "/api/plan").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["plan"].as_str(), Some("api"));
+}
+
+#[tokio::test]
+async fn session_returns_turns_in_order() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "hi"),
+        assistant("a1", "2026-04-10T00:00:01Z", "claude-opus-4-7", 5),
+        assistant("a2", "2026-04-10T00:00:02Z", "claude-opus-4-7", 7),
+    ]);
+    let (status, body) = get_json(&fx.state, "/api/sessions/s1").await;
+    assert_eq!(status, StatusCode::OK);
+    let arr = body.as_array().expect("array");
+    assert_eq!(arr.len(), 3);
+    assert_eq!(arr[0]["uuid"].as_str(), Some("u1"));
+    assert_eq!(arr[1]["uuid"].as_str(), Some("a1"));
+    assert_eq!(arr[2]["uuid"].as_str(), Some("a2"));
+    assert_eq!(arr[0]["type"].as_str(), Some("user"));
+}
+
 /// Format Unix seconds as the ISO8601 shape Claude Code writes
 /// (UTC + trailing Z). Avoids pulling in the chrono crate just for tests.
 fn chrono_like_rfc3339(secs: i64) -> String {
