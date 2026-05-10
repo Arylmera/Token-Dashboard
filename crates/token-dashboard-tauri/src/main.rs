@@ -225,12 +225,32 @@ fn spawn_tray_updater(app: AppHandle, base_url: String) {
             let Some((metric, overview)) = snapshot else {
                 continue;
             };
-            let tooltip = format_metric(&metric, &overview);
+            let display = format_metric(&metric, &overview);
             if let Some(tray) = app.tray_by_id("main") {
-                let _ = tray.set_tooltip(Some(format!("Token Dashboard\n{tooltip}")));
+                let _ = tray.set_tooltip(Some(format!("Token Dashboard\n{display}")));
             }
+            // macOS: also push the metric onto the dock badge. Tauri's
+            // set_badge_label is a no-op on Windows/Linux, so we always
+            // call it but the text only appears on macOS.
+            apply_dock_badge(&app, &display);
         }
     });
+}
+
+#[cfg(target_os = "macos")]
+fn apply_dock_badge(app: &AppHandle, label: &str) {
+    let _ = app.set_dock_visibility(true);
+    // Trim very long labels — the dock can only render a handful of
+    // glyphs before they get clipped.
+    let trimmed: String = label.chars().take(8).collect();
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_badge_label(Some(trimmed));
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_dock_badge(_app: &AppHandle, _label: &str) {
+    // Other platforms surface the same info via the tray tooltip.
 }
 
 /// Format the chosen badge_metric for display in the tray tooltip.

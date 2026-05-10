@@ -165,6 +165,29 @@ notes specific to v4:
   `xattr -d com.apple.quarantine /Applications/Token\ Dashboard.app`
   the first time.
 
+## macOS notes
+
+The macOS build ships as a `.dmg` (drag-to-Applications). Vibrancy +
+dock-badge integration are wired into the Tauri shell:
+
+- **Vibrancy** — when `glass_enabled` is on (toggle in Settings), the
+  window uses `NSVisualEffectMaterial::UnderWindowBackground` so the
+  desktop wallpaper shows through a blurred panel.
+- **Dock badge** — the value of `badge_metric` (Settings) is rendered
+  on the dock tile every 5 seconds. Tokens render as `127k`-style
+  short labels; cost renders as `$5.21`.
+- **Minimum macOS** — 11.0 (Big Sur). Apple Silicon and Intel both work
+  via the universal binary the release pipeline produces.
+
+First launch: macOS refuses unsigned apps by default. Either run
+
+```bash
+xattr -d com.apple.quarantine /Applications/Token\ Dashboard.app
+```
+
+once after install, or right-click the app and choose *Open* to bypass
+Gatekeeper for that single launch.
+
 ## License
 
 MIT.
