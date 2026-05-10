@@ -729,6 +729,111 @@ async fn sources_delete(
     Ok(Json(SourceDeleteResponse { ok: true, name }))
 }
 
+#[derive(Serialize)]
+struct PricingPayload {
+    defaults: serde_json::Value,
+    overrides: serde_json::Value,
+    effective: serde_json::Value,
+}
+
+fn pricing_payload(defaults: &token_dashboard_core::Pricing) -> serde_json::Value {
+    serde_json::to_value(&defaults.models).unwrap_or(serde_json::Value::Null)
+}
+
+fn build_pricing_payload(
+    defaults: &token_dashboard_core::Pricing,
+    overrides: &token_dashboard_core::pricing::Overrides,
+) -> PricingPayload {
+    let merged = token_dashboard_core::pricing::apply_overrides(defaults, overrides);
+    PricingPayload {
+        defaults: pricing_payload(defaults),
+        overrides: serde_json::to_value(overrides).unwrap_or(serde_json::Value::Null),
+        effective: serde_json::to_value(&merged.models).unwrap_or(serde_json::Value::Null),
+    }
+}
+
+async fn pricing_get(State(s): State<AppState>) -> Result<Json<PricingPayload>, ApiError> {
+    let path = s.db_path.clone();
+    let pricing = s.pricing.clone();
+    let payload = blocking(move || -> rusqlite::Result<PricingPayload> {
+        let overrides = token_dashboard_core::pricing::get_pricing_overrides(path.as_ref())?;
+        Ok(build_pricing_payload(&pricing, &overrides))
+    })
+    .await?;
+    Ok(payload)
+}
+
+async fn pricing_set(
+    State(s): State<AppState>,
+    AxumPath(model): AxumPath<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<PricingPayload>, ApiError> {
+    if !s.pricing.models.contains_key(&model) {
+        return Err(ApiError::not_found(format!("unknown model: {model}")));
+    }
+    // Validate the body against PRICING_FIELDS — python rejects negatives
+    // and non-numeric values with 400.
+    let obj = body
+        .as_object()
+        .ok_or_else(|| ApiError::bad_request("body must be a JSON object"))?;
+    let mut cleaned: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for k in token_dashboard_core::pricing::PRICING_FIELDS {
+        if let Some(v) = obj.get(*k) {
+            let f = v
+                .as_f64()
+                .ok_or_else(|| ApiError::bad_request(format!("invalid value for {k}")))?;
+            if f < 0.0 {
+                return Err(ApiError::bad_request(format!("{k} must be >= 0")));
+            }
+            cleaned.insert((*k).into(), f);
+        }
+    }
+    if cleaned.is_empty() {
+        return Err(ApiError::bad_request("no pricing fields supplied"));
+    }
+    let path = s.db_path.clone();
+    let pricing = s.pricing.clone();
+    let payload = blocking(move || -> rusqlite::Result<PricingPayload> {
+        token_dashboard_core::pricing::set_pricing_override(path.as_ref(), &model, &cleaned)?;
+        let overrides = token_dashboard_core::pricing::get_pricing_overrides(path.as_ref())?;
+        Ok(build_pricing_payload(&pricing, &overrides))
+    })
+    .await?;
+    Ok(payload)
+}
+
+async fn pricing_clear(
+    State(s): State<AppState>,
+    AxumPath(model): AxumPath<String>,
+) -> Result<Json<PricingPayload>, ApiError> {
+    if !s.pricing.models.contains_key(&model) {
+        return Err(ApiError::not_found(format!("unknown model: {model}")));
+    }
+    let path = s.db_path.clone();
+    let pricing = s.pricing.clone();
+    let payload = blocking(move || -> rusqlite::Result<PricingPayload> {
+        token_dashboard_core::pricing::clear_pricing_override(path.as_ref(), &model)?;
+        let overrides = token_dashboard_core::pricing::get_pricing_overrides(path.as_ref())?;
+        Ok(build_pricing_payload(&pricing, &overrides))
+    })
+    .await?;
+    Ok(payload)
+}
+
+async fn pricing_clear_all(State(s): State<AppState>) -> Result<Json<PricingPayload>, ApiError> {
+    let path = s.db_path.clone();
+    let pricing = s.pricing.clone();
+    let payload = blocking(move || -> rusqlite::Result<PricingPayload> {
+        token_dashboard_core::pricing::clear_all_pricing_overrides(path.as_ref())?;
+        Ok(build_pricing_payload(
+            &pricing,
+            &std::collections::HashMap::new(),
+        ))
+    })
+    .await?;
+    Ok(payload)
+}
+
 async fn tips_handler(State(s): State<AppState>) -> Result<Json<Vec<Tip>>, ApiError> {
     let path = s.db_path.clone();
     blocking(move || all_tips(path.as_ref(), None)).await
@@ -1127,6 +1232,10 @@ pub fn app(state: AppState) -> Router {
         .route("/api/sessions/:sid/tags", post(session_tags_post))
         .route("/api/sources/:name/toggle", post(sources_toggle))
         .route("/api/sources/:name/delete", post(sources_delete))
+        .route("/api/pricing", get(pricing_get))
+        .route("/api/pricing/clear-all", post(pricing_clear_all))
+        .route("/api/pricing/:model", post(pricing_set))
+        .route("/api/pricing/:model/clear", post(pricing_clear))
         .with_state(state);
 
     // Static bundle is opt-in via TOKEN_DASHBOARD_STATIC env var so the

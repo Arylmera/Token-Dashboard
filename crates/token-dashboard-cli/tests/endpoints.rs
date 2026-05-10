@@ -540,6 +540,57 @@ fn insert_synthetic_source(state: &AppState, name: &str) {
 }
 
 #[tokio::test]
+async fn pricing_round_trip() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, body) = get_json(&fx.state, "/api/pricing").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["defaults"]["claude-opus-4-7"].is_object());
+    assert_eq!(body["overrides"].as_object().map(|m| m.len()), Some(0));
+
+    let (set_status, set_body) = post_json(
+        &fx.state,
+        "/api/pricing/claude-opus-4-7",
+        &json!({"input": 4.5}),
+    )
+    .await;
+    assert_eq!(set_status, StatusCode::OK);
+    assert_eq!(
+        set_body["overrides"]["claude-opus-4-7"]["input"].as_f64(),
+        Some(4.5)
+    );
+    // Effective rates reflect the override.
+    assert_eq!(
+        set_body["effective"]["claude-opus-4-7"]["input"].as_f64(),
+        Some(4.5)
+    );
+
+    let (_, cleared) = post_json(&fx.state, "/api/pricing/claude-opus-4-7/clear", &json!({})).await;
+    assert!(cleared["overrides"]
+        .as_object()
+        .map(|m| !m.contains_key("claude-opus-4-7"))
+        .unwrap_or(false));
+}
+
+#[tokio::test]
+async fn pricing_unknown_model_404() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, _) = post_json(&fx.state, "/api/pricing/gpt-9001", &json!({"input": 1.0})).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn pricing_negative_value_400() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, _) = post_json(
+        &fx.state,
+        "/api/pricing/claude-opus-4-7",
+        &json!({"input": -1.0}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn sources_toggle_round_trip() {
     let fx = setup_with_jsonl(&[]);
     insert_synthetic_source(&fx.state, "extra.db");

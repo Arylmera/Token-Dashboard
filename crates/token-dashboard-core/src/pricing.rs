@@ -182,6 +182,105 @@ fn round6(v: f64) -> f64 {
     (v * 1_000_000.0).round() / 1_000_000.0
 }
 
+const OVERRIDES_KEY: &str = "pricing_overrides_json";
+
+/// Per-model pricing overrides keyed by model id. Each inner map has
+/// keys from `PRICING_FIELDS`. Mirrors python `get_pricing_overrides`.
+pub type Overrides = HashMap<String, HashMap<String, f64>>;
+
+fn open_db<P: AsRef<Path>>(db: P) -> rusqlite::Result<rusqlite::Connection> {
+    let c = rusqlite::Connection::open(db.as_ref())?;
+    c.busy_timeout(std::time::Duration::from_secs(30))?;
+    Ok(c)
+}
+
+pub fn get_pricing_overrides<P: AsRef<Path>>(db: P) -> rusqlite::Result<Overrides> {
+    let c = open_db(db)?;
+    let raw: Option<String> = c
+        .query_row("SELECT v FROM plan WHERE k=?", [OVERRIDES_KEY], |r| {
+            r.get(0)
+        })
+        .ok();
+    let Some(s) = raw else {
+        return Ok(HashMap::new());
+    };
+    let parsed: Result<Overrides, _> = serde_json::from_str(&s);
+    Ok(parsed.unwrap_or_default())
+}
+
+fn write_overrides<P: AsRef<Path>>(db: P, overrides: &Overrides) -> rusqlite::Result<()> {
+    let c = open_db(db)?;
+    if overrides.is_empty() {
+        c.execute("DELETE FROM plan WHERE k=?", [OVERRIDES_KEY])?;
+    } else {
+        let s = serde_json::to_string(overrides).unwrap_or_else(|_| "{}".into());
+        c.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES (?, ?)",
+            rusqlite::params![OVERRIDES_KEY, s],
+        )?;
+    }
+    Ok(())
+}
+
+/// Merge `partial` into the override row for `model`. Returns the
+/// resulting per-model override (empty map signals fully cleared).
+pub fn set_pricing_override<P: AsRef<Path>>(
+    db: P,
+    model: &str,
+    partial: &HashMap<String, f64>,
+) -> rusqlite::Result<HashMap<String, f64>> {
+    let mut overrides = get_pricing_overrides(db.as_ref())?;
+    let entry = overrides.entry(model.to_string()).or_default();
+    for k in PRICING_FIELDS {
+        if let Some(v) = partial.get(*k) {
+            entry.insert((*k).into(), *v);
+        }
+    }
+    if entry.is_empty() {
+        overrides.remove(model);
+    }
+    let resulting = overrides.get(model).cloned().unwrap_or_default();
+    write_overrides(db, &overrides)?;
+    Ok(resulting)
+}
+
+pub fn clear_pricing_override<P: AsRef<Path>>(db: P, model: &str) -> rusqlite::Result<()> {
+    let mut overrides = get_pricing_overrides(db.as_ref())?;
+    if overrides.remove(model).is_some() {
+        write_overrides(db, &overrides)?;
+    }
+    Ok(())
+}
+
+pub fn clear_all_pricing_overrides<P: AsRef<Path>>(db: P) -> rusqlite::Result<()> {
+    write_overrides(db, &HashMap::new())
+}
+
+/// Return a `Pricing` deep-copy with per-model override fields merged in.
+/// Mirrors python `apply_pricing_overrides`.
+pub fn apply_overrides(pricing: &Pricing, overrides: &Overrides) -> Pricing {
+    if overrides.is_empty() {
+        return pricing.clone();
+    }
+    let mut merged = pricing.clone();
+    for (model, fields) in overrides {
+        let Some(rates) = merged.models.get_mut(model) else {
+            continue;
+        };
+        for (k, v) in fields {
+            match k.as_str() {
+                "input" => rates.input = *v,
+                "output" => rates.output = *v,
+                "cache_read" => rates.cache_read = *v,
+                "cache_create_5m" => rates.cache_create_5m = *v,
+                "cache_create_1h" => rates.cache_create_1h = *v,
+                _ => {}
+            }
+        }
+    }
+    merged
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
