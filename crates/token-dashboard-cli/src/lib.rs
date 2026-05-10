@@ -184,12 +184,45 @@ async fn daily(
         .await
 }
 
+#[derive(Serialize)]
+struct ModelRowWithCost {
+    #[serde(flatten)]
+    row: ModelRow,
+    cost_usd: f64,
+}
+
 async fn by_model(
     State(s): State<AppState>,
     Query(q): Query<RangeQs>,
-) -> Result<Json<Vec<ModelRow>>, ApiError> {
+) -> Result<Json<Vec<ModelRowWithCost>>, ApiError> {
     let path = s.db_path.clone();
-    blocking(move || model_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref())).await
+    let rows = blocking(move || {
+        model_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref())
+    })
+    .await?
+    .0;
+    let pricing = s.pricing.clone();
+    let out = rows
+        .into_iter()
+        .map(|m| {
+            let cost_usd = cost_for(
+                &m.model,
+                &Usage {
+                    input_tokens: m.input_tokens,
+                    output_tokens: m.output_tokens,
+                    cache_read_tokens: m.cache_read_tokens,
+                    cache_create_5m_tokens: m.cache_create_5m_tokens,
+                    cache_create_1h_tokens: m.cache_create_1h_tokens,
+                },
+                &pricing,
+            )
+            .usd
+            .map(round4)
+            .unwrap_or(0.0);
+            ModelRowWithCost { row: m, cost_usd }
+        })
+        .collect();
+    Ok(Json(out))
 }
 
 async fn tags(State(s): State<AppState>) -> Result<Json<Vec<TagRow>>, ApiError> {

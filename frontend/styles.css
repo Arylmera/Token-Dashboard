@@ -195,8 +195,9 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 .a-prompt-flag { color: var(--gull); }
 .a-prompt-val  { color: var(--bone); }
 .a-prompt-cursor {
-  display: inline-block; width: 7px; height: 13px;
-  background: var(--accent); margin-left: 4px; align-self: center;
+  display: inline-block; color: var(--accent);
+  font: 500 14px "JetBrains Mono"; line-height: 1;
+  margin: 0 2px 0 4px; align-self: center;
   animation: a-blink 1.05s steps(1) infinite;
 }
 @keyframes a-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
@@ -219,6 +220,14 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
   height: 2px; background: var(--accent);
 }
 .a-topbar-actions { display: flex; gap: 8px; align-items: center; }
+.a-wincontrols { display: inline-flex; gap: 2px; margin-left: 8px; -webkit-app-region: no-drag; }
+.a-winbtn {
+  width: 30px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; color: var(--gull);
+  border-radius: 4px; cursor: pointer; padding: 0;
+}
+.a-winbtn:hover { background: var(--panel-2); color: var(--bone); border-color: var(--iron-border); }
+.a-winbtn-close:hover { background: #c42b1c; color: #fff; border-color: #c42b1c; }
 .a-range {
   display: inline-flex; padding: 1px;
   background: var(--panel-2); border: 1px solid var(--iron-border);
@@ -708,18 +717,22 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
   .dir-a-root .a-recent-sessions { display: none; }
 }
 
-/* Phone / narrow widget (<=560px): native buttons get their own top row, then
-   brand, then nav, then actions — vertical stack avoids overlap. */
+/* Phone / narrow widget (<=560px): brand+window-controls share top row,
+   then range/actions, then nav at the bottom. */
 @media (max-width: 560px) {
   .dir-a-root .a-topbar {
     display: flex; flex-direction: column; align-items: stretch;
     grid-template-columns: none;
     gap: 6px;
-    padding: 38px 12px 8px; /* top reserves the native-button row */
+    padding: 8px 12px 8px;
+    position: relative;
   }
-  .dir-a-root .a-brand { order: 1; }
-  .dir-a-root .a-nav { order: 2; flex-wrap: wrap; row-gap: 12px; }
-  .dir-a-root .a-topbar-actions { order: 3; justify-content: flex-start; }
+  .dir-a-root .a-brand { order: 1; padding-right: 96px; }
+  .dir-a-root .a-topbar-actions { order: 2; justify-content: flex-start; }
+  .dir-a-root .a-nav { order: 3; flex-wrap: wrap; row-gap: 12px; }
+  .dir-a-root .a-wincontrols {
+    position: absolute; top: 4px; right: 8px;
+  }
   .dir-a-root .a-brand-sub { display: none; }
   .dir-a-root .a-navlink { padding: 5px 8px; font-size: 10px; }
   .dir-a-root .a-navlink.is-active::after { left: 8px; right: 8px; bottom: -10px; }
@@ -743,26 +756,37 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 }
 
 /* Widget mode (<=380px): one KPI per row, tighter chrome.
-   Nav reduces to overview + settings — other tabs aren't usable in this footprint. */
+   Nav reduces to overview + settings — other tabs aren't usable in this footprint.
+   Nav + range share one row (range on the right) since only 2 tabs are visible. */
 @media (max-width: 380px) {
   .dir-a-root .a-topbar {
+    flex-direction: row; flex-wrap: wrap;
     gap: 4px;
-    padding: 36px 10px 6px;
+    padding: 6px 10px 6px;
   }
+  .dir-a-root .a-brand { flex: 1 1 100%; padding-right: 88px; }
+  .dir-a-root .a-wincontrols { top: 3px; right: 6px; }
   .dir-a-root .a-navlink[data-tab="prompts"],
   .dir-a-root .a-navlink[data-tab="sessions"],
   .dir-a-root .a-navlink[data-tab="token sink"],
-  .dir-a-root .a-navlink[data-tab="tips"] { display: none; }
+  .dir-a-root .a-navlink[data-tab="tips"],
+  .dir-a-root .a-navlink[data-tab="api"] { display: none; }
   .dir-a-root .a-brand-text { font-size: 11px; }
-  .dir-a-root .a-nav { gap: 0; overflow-x: auto; flex-wrap: nowrap; }
+  .dir-a-root .a-nav { order: 2; flex: 1 1 auto; gap: 0; overflow-x: auto; flex-wrap: nowrap; }
+  .dir-a-root .a-topbar-actions { order: 3; flex: 0 0 auto; margin-left: auto; justify-content: flex-end; }
   .dir-a-root .a-navlink { white-space: nowrap; padding: 4px 6px; }
   .dir-a-root .a-main-area { padding: 8px; }
   .dir-a-root .a-card { padding: 10px; }
   .dir-a-root .a-kpi-row { grid-template-columns: 1fr !important; }
-  .dir-a-root .a-kpi-row .a-kpi { border-right: 0 !important; }
+  .dir-a-root .a-kpi-row .a-kpi { border-right: 0 !important; padding: 8px 12px; }
   .dir-a-root .a-kpi-row .a-kpi:last-child { border-bottom: 0; }
-  .dir-a-root .a-metric { font-size: 28px; }
-  .dir-a-root .a-strip-num { font-size: 20px; }
+  .dir-a-root .a-metric,
+  .dir-a-root[data-density="compact"] .a-kpi .a-metric,
+  .dir-a-root[data-density="spacious"] .a-kpi .a-metric { font-size: 32px !important; }
+  .dir-a-root .a-kpi .a-label { font-size: 9px; }
+  .dir-a-root .a-strip-num { font-size: 32px; }
+  .dir-a-root .a-strip-left .a-label,
+  .dir-a-root .a-strip-right .a-label { font-size: 11px; }
   .dir-a-root .a-chart { height: 120px; }
   .dir-a-root .a-spark { height: 24px; }
   .dir-a-root .a-card-head h2 { font-size: 10px; }

@@ -79,7 +79,8 @@
           "output_tokens": { "type": "integer", "format": "int64" },
           "cache_read_tokens": { "type": "integer", "format": "int64" },
           "cache_create_5m_tokens": { "type": "integer", "format": "int64" },
-          "cache_create_1h_tokens": { "type": "integer", "format": "int64" }
+          "cache_create_1h_tokens": { "type": "integer", "format": "int64" },
+          "cost_usd": { "type": "number", "format": "double", "description": "USD cost computed from token counts via embedded pricing.json. 0 when the model has no pricing entry." }
         }
       },
       "HourlySlot": {

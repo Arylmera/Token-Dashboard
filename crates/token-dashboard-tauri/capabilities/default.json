@@ -3,9 +3,17 @@
   "identifier": "default",
   "description": "Default permissions for the Token Dashboard tauri shell",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
+  },
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
     "core:webview:default",
     "core:event:default",
     "core:tray:default"
