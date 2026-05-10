@@ -1,6 +1,6 @@
 [package]
 name = "token-dashboard-tauri"
-version = "4.0.1"
+version = "4.0.2"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
