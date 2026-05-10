@@ -5,7 +5,6 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use token_dashboard_cli::{app, AppState};
 use token_dashboard_core::{default_db_path, Pricing};
@@ -51,11 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             p.join("projects")
         });
 
-    let state = AppState {
-        db_path: Arc::new(db_path),
-        pricing: Arc::new(pricing),
-        projects_dir: Arc::new(projects_dir),
-    };
+    let state = AppState::new(db_path, pricing, projects_dir);
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;

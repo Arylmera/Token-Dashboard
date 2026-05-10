@@ -1,16 +1,22 @@
 //! Library surface of the cli crate. Exposes the axum router so
 //! integration tests can hit handlers without binding a port.
 
+use std::convert::Infallible;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     extract::{Path as AxumPath, Query, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Json,
+    },
     routing::get,
     Router,
 };
+use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use token_dashboard_core::{
     cost_for, list_sources,
@@ -23,6 +29,8 @@ use token_dashboard_core::{
     },
     scan_dir, Pricing, ScanStats, Source, Usage,
 };
+use tokio::sync::broadcast;
+use tokio_stream::wrappers::BroadcastStream;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -31,6 +39,25 @@ pub struct AppState {
     /// Path passed to `scan_dir` when `/api/scan` fires. Defaults to
     /// `~/.claude/projects` in `main.rs` but tests override it.
     pub projects_dir: Arc<PathBuf>,
+    /// Broadcast bus for SSE — clients subscribe through `/api/stream`.
+    /// Mirrors the python `sse.EVENTS.publish({"type": "..."})` pattern;
+    /// publishers (scan loop, settings POSTs) push JSON values onto this
+    /// channel and every connected client gets one fan-out copy.
+    pub events: broadcast::Sender<serde_json::Value>,
+}
+
+impl AppState {
+    /// Construct an `AppState` for tests/binaries with a fresh broadcast
+    /// channel. Capacity 64 is the same default the python EventBus uses.
+    pub fn new(db_path: PathBuf, pricing: Pricing, projects_dir: PathBuf) -> Self {
+        let (tx, _rx) = broadcast::channel(64);
+        Self {
+            db_path: Arc::new(db_path),
+            pricing: Arc::new(pricing),
+            projects_dir: Arc::new(projects_dir),
+            events: tx,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -284,7 +311,44 @@ async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>, ApiError>
         .await
         .map_err(|e| ApiError::internal(format!("join: {e}")))?
         .map_err(|e| ApiError::internal(format!("scan: {e}")))?;
+    // Notify SSE subscribers — the frontend uses this to refetch tabs
+    // automatically. Best-effort: failure means no listeners attached.
+    let _ = s.events.send(serde_json::json!({
+        "type": "scan_complete",
+        "messages": stats.messages,
+        "tools": stats.tools,
+        "files": stats.files,
+    }));
     Ok(Json(stats.into()))
+}
+
+/// `/api/stream` — server-sent events.
+///
+/// Wraps the AppState broadcast channel into an SSE response. axum
+/// drives a 15s keep-alive ping (matches the python heartbeat cadence
+/// in `server/sse.py`) so webkit2gtk doesn't drop the connection
+/// (plan §R1 trip wire). Initial `hello` event is emitted on connect
+/// so the client can confirm the stream is alive before any real
+/// publish lands.
+async fn stream(State(s): State<AppState>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = s.events.subscribe();
+    let hello = futures::stream::once(async { Ok(Event::default().event("hello").data("{}")) });
+    let live = BroadcastStream::new(rx).filter_map(|res| async move {
+        match res {
+            Ok(payload) => Some(Ok(Event::default()
+                .event(
+                    payload
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("message"),
+                )
+                .data(payload.to_string()))),
+            // Lagged receiver — surface as a typed event so the client
+            // can refetch state instead of silently missing updates.
+            Err(_) => Some(Ok(Event::default().event("lagged").data("{}"))),
+        }
+    });
+    Sse::new(hello.chain(live)).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }
 
 #[derive(Deserialize, Default)]
@@ -532,8 +596,12 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// Build the axum router. `static_dir` is the optional path to a
+/// frontend bundle (e.g. `frontend/dist`) — when present it's mounted
+/// at `/web/` and `/` so the Tauri shell can boot the same routes the
+/// 3.x server serves.
 pub fn app(state: AppState) -> Router {
-    Router::new()
+    let mut router = Router::new()
         .route("/api/health", get(health))
         .route("/api/sources", get(sources))
         .route("/api/overview", get(overview))
@@ -553,6 +621,21 @@ pub fn app(state: AppState) -> Router {
         // GET for parity with `routes.py` (where it's wired in
         // `if path == "/api/scan"`).
         .route("/api/scan", get(scan))
-        .with_state(state)
-        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .route("/api/stream", get(stream))
+        .with_state(state);
+
+    // Static bundle is opt-in via TOKEN_DASHBOARD_STATIC env var so the
+    // headless server keeps booting without a frontend build present.
+    if let Some(dir) = std::env::var_os("TOKEN_DASHBOARD_STATIC") {
+        let path = std::path::PathBuf::from(dir);
+        if path.is_dir() {
+            let serve = tower_http::services::ServeDir::new(path.clone())
+                .append_index_html_on_directories(true);
+            router = router
+                .nest_service("/web", serve.clone())
+                .route_service("/", serve);
+        }
+    }
+
+    router.layer(tower_http::trace::TraceLayer::new_for_http())
 }

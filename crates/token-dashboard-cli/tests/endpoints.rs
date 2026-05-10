@@ -8,7 +8,6 @@
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -45,11 +44,7 @@ fn setup_with_jsonl(records: &[Value]) -> Fixture {
 
     Fixture {
         _tmp: tmp,
-        state: AppState {
-            db_path: Arc::new(db),
-            pricing: Arc::new(Pricing::embedded()),
-            projects_dir: Arc::new(proj_root.clone()),
-        },
+        state: AppState::new(db, Pricing::embedded(), proj_root.clone()),
         proj_root,
         proj_dir,
     }
