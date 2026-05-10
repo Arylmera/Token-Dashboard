@@ -196,11 +196,10 @@ async fn by_model(
     Query(q): Query<RangeQs>,
 ) -> Result<Json<Vec<ModelRowWithCost>>, ApiError> {
     let path = s.db_path.clone();
-    let rows = blocking(move || {
-        model_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref())
-    })
-    .await?
-    .0;
+    let rows =
+        blocking(move || model_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
+            .await?
+            .0;
     let pricing = s.pricing.clone();
     let out = rows
         .into_iter()
