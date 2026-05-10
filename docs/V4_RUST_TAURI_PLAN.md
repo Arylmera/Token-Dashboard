@@ -1,6 +1,14 @@
 # Token Dashboard 4.0 — Rust + Tauri Rewrite Plan
 
-Draft. Not a commitment. This document captures the rationale, scope, and a phased migration path for rewriting the project in Rust (backend) and Tauri (desktop shell) as a 4.0 release. The current 3.x line (Python stdlib backend + Electron shell) stays maintained until 4.0 reaches feature parity.
+> **STATUS: shipped.** The 4.0 rewrite is complete. The python+Electron
+> tree was removed at the cutover commit; the rust+tauri stack is the
+> default development line. This document is preserved as historical
+> reference for the rationale and phased approach. Active roadmap
+> items live in [ROADMAP.md](ROADMAP.md).
+
+This document captures the rationale, scope, and the phased migration
+path used to rewrite the project in Rust (backend) and Tauri (desktop
+shell) as the 4.0 release.
 
 ## Why 4.0 (and why now)
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-const TABS = ["overview", "prompts", "sessions", "token sink", "tips", "settings"];
+const TABS = ["overview", "prompts", "sessions", "token sink", "tips", "api", "settings"];
 const RANGES = ["1d", "7d", "30d", "90d", "all"];
 
 const useVersion = () => {

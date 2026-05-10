@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Token Dashboard",
+  "version": "4.0.0",
+  "identifier": "com.arylmera.token-dashboard",
+  "build": {
+    "beforeDevCommand": "cd ../../frontend && npm install && npm run build",
+    "beforeBuildCommand": "cd ../../frontend && npm install && npm run build",
+    "frontendDist": "../../frontend"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "deb", "appimage", "dmg"],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "dmg": {
+        "windowSize": { "width": 660, "height": 400 },
+        "appPosition": { "x": 180, "y": 170 },
+        "applicationFolderPosition": { "x": 480, "y": 170 }
+      }
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Local dashboard for Claude Code token usage",
+    "longDescription": "Reads the JSONL transcripts Claude Code writes and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine."
+  }
+}

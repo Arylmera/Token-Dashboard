@@ -2,9 +2,9 @@ name: Frontend tests
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, v4-rust]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, v4-rust]
   workflow_dispatch:
 
 jobs:

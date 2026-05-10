@@ -1,0 +1,28 @@
+[package]
+name = "token-dashboard-tauri"
+version = "4.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Token Dashboard 4.0 desktop shell (Tauri 2)"
+default-run = "token-dashboard-app"
+
+[[bin]]
+name = "token-dashboard-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+token-dashboard-cli = { path = "../token-dashboard-cli" }
+token-dashboard-core = { path = "../token-dashboard-core" }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+window-vibrancy = "0.7"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
+axum = "0.7"
+ureq = { version = "2.10", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

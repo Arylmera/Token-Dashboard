@@ -347,3 +347,140 @@ window.DATA_READY = loadAll().catch((err) => {
 window.RELOAD_DATA   = loadAll;     // back-compat alias
 window.RELOAD_DELTA  = loadDelta;
 window.RELOAD_STATIC = loadStatic;
+
+// /api/stream consumer.
+//
+// In the 3.x Electron build the main process held the SSE connection
+// and forwarded ticks to the renderer. The Tauri shell has no main-
+// process bridge — the webview talks directly to the embedded server,
+// so we run the SSE loop in the page itself.
+//
+// Plan §R1 trip wire: webkit2gtk has a documented history of dropping
+// idle SSE connections. If the first attempt produces no frames within
+// 90s, or three consecutive reconnects fail, we fall back to a 15s
+// polling loop. The fallback never reverts to SSE in the same page
+// session — a manual reload is the recovery path. That trade-off
+// avoids flapping in the wild.
+const SSE_RECONNECT_BASE_MS = 1000;
+const SSE_RECONNECT_MAX_MS = 5000;
+const SSE_FIRST_FRAME_TIMEOUT_MS = 90_000;
+const POLL_FALLBACK_MS = 15_000;
+const MAX_CONSECUTIVE_FAILURES = 3;
+
+let _streamSource = null;
+let _firstFrameTimer = null;
+let _consecutiveFailures = 0;
+let _pollingFallbackTimer = null;
+
+function _onPayload(payload) {
+  if (!payload || typeof payload !== "object") return;
+  const type = payload.type;
+  // Map known events back to the existing loadDelta/loadStatic surface.
+  switch (type) {
+    case "scan_complete":
+      // Fresh transcripts → everything in the dashboard view may have moved.
+      loadDelta({ scan: true }).catch((e) => console.warn("loadDelta scan", e));
+      break;
+    case "preferences":
+    case "plan":
+    case "sources":
+    case "tags":
+      loadStatic().catch((e) => console.warn("loadStatic", e));
+      break;
+    default:
+      // Unknown event types are forward-compatible no-ops.
+      break;
+  }
+}
+
+function _connectStream() {
+  if (typeof EventSource !== "function") {
+    _activatePollingFallback("EventSource unsupported");
+    return;
+  }
+  try {
+    _streamSource = new EventSource("/api/stream");
+  } catch (err) {
+    console.warn("SSE construct failed", err);
+    _scheduleReconnectOrFallback();
+    return;
+  }
+
+  // First-frame watchdog: if the connection opens but never delivers
+  // an event in the first 90s, treat it as a wedged connection (the
+  // webkit2gtk failure mode plan §R1 calls out).
+  if (_firstFrameTimer) clearTimeout(_firstFrameTimer);
+  _firstFrameTimer = setTimeout(() => {
+    console.warn("SSE: no frames in first 90s, falling back to polling");
+    _activatePollingFallback("no-frames");
+  }, SSE_FIRST_FRAME_TIMEOUT_MS);
+
+  const cancelWatchdog = () => {
+    if (_firstFrameTimer) {
+      clearTimeout(_firstFrameTimer);
+      _firstFrameTimer = null;
+    }
+  };
+
+  _streamSource.addEventListener("hello", () => {
+    cancelWatchdog();
+    _consecutiveFailures = 0;
+  });
+  // Real events. Tauri shell's bus emits typed events; the EventSource
+  // default `message` channel only receives events without a `type`
+  // field, so we listen to specific names.
+  ["scan_complete", "preferences", "plan", "sources", "tags", "lagged"].forEach(
+    (name) => {
+      _streamSource.addEventListener(name, (ev) => {
+        cancelWatchdog();
+        _consecutiveFailures = 0;
+        let payload = null;
+        try { payload = JSON.parse(ev.data || "{}"); } catch (_) {}
+        if (name === "lagged") {
+          // Server told us the listener fell behind — refetch everything.
+          loadAll().catch((e) => console.warn("loadAll lagged", e));
+          return;
+        }
+        _onPayload(Object.assign({ type: name }, payload || {}));
+      });
+    },
+  );
+  _streamSource.addEventListener("error", () => {
+    cancelWatchdog();
+    if (_streamSource) {
+      try { _streamSource.close(); } catch (_) {}
+      _streamSource = null;
+    }
+    _consecutiveFailures += 1;
+    _scheduleReconnectOrFallback();
+  });
+}
+
+function _scheduleReconnectOrFallback() {
+  if (_pollingFallbackTimer) return; // already in fallback mode
+  if (_consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+    _activatePollingFallback(`${_consecutiveFailures} consecutive failures`);
+    return;
+  }
+  const delay = Math.min(
+    SSE_RECONNECT_BASE_MS * Math.pow(2, _consecutiveFailures - 1),
+    SSE_RECONNECT_MAX_MS,
+  );
+  setTimeout(_connectStream, delay);
+}
+
+function _activatePollingFallback(reason) {
+  if (_pollingFallbackTimer) return;
+  console.warn(`SSE polling fallback active (${reason})`);
+  if (_streamSource) {
+    try { _streamSource.close(); } catch (_) {}
+    _streamSource = null;
+  }
+  _pollingFallbackTimer = setInterval(() => {
+    loadAll().catch((e) => console.warn("polling loadAll", e));
+  }, POLL_FALLBACK_MS);
+}
+
+// Kick off the stream connection after the initial data load resolves
+// — we don't want the first frame to land before the page renders.
+window.DATA_READY.finally(() => _connectStream());
