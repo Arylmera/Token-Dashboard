@@ -19,6 +19,7 @@ use axum::{
 use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use token_dashboard_core::sources as src;
+use token_dashboard_core::tips::{all_tips, Tip};
 use token_dashboard_core::{
     cost_for, list_sources, preferences,
     queries::{
@@ -728,6 +729,11 @@ async fn sources_delete(
     Ok(Json(SourceDeleteResponse { ok: true, name }))
 }
 
+async fn tips_handler(State(s): State<AppState>) -> Result<Json<Vec<Tip>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || all_tips(path.as_ref(), None)).await
+}
+
 async fn session_tags_post(
     State(s): State<AppState>,
     AxumPath(sid): AxumPath<String>,
@@ -1108,6 +1114,7 @@ pub fn app(state: AppState) -> Router {
         // `if path == "/api/scan"`).
         .route("/api/scan", get(scan))
         .route("/api/stream", get(stream))
+        .route("/api/tips", get(tips_handler))
         .route(
             "/api/preferences",
             get(preferences_get).post(preferences_post),

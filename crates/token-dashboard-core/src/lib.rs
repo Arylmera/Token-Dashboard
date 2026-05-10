@@ -9,6 +9,7 @@ pub mod pricing;
 pub mod queries;
 pub mod scanner;
 pub mod sources;
+pub mod tips;
 
 pub use db::{default_db_path, init_db, open};
 pub use pricing::{cost_for, CostResult, Pricing, Usage};
