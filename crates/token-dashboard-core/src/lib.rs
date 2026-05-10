@@ -5,6 +5,8 @@
 
 pub mod db;
 pub mod scanner;
+pub mod sources;
 
 pub use db::{default_db_path, init_db, open};
 pub use scanner::{scan_dir, scan_file, ScanStats};
+pub use sources::{list_sources, Source};
