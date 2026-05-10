@@ -18,7 +18,7 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 
 use token_dashboard_cli::{app, AppState};
-use token_dashboard_core::{init_db, scan_dir};
+use token_dashboard_core::{init_db, scan_dir, Pricing};
 
 struct Fixture {
     _tmp: TempDir,
@@ -45,6 +45,7 @@ fn setup_with_jsonl(records: &[Value]) -> Fixture {
         _tmp: tmp,
         state: AppState {
             db_path: Arc::new(db),
+            pricing: Arc::new(Pricing::embedded()),
         },
     }
 }
@@ -128,7 +129,11 @@ async fn overview_aggregates_tokens() {
     assert_eq!(body["input_tokens"].as_i64(), Some(20)); // 10 + 10
     assert_eq!(body["output_tokens"].as_i64(), Some(80)); // 50 + 30
     assert_eq!(body["cache_read_tokens"].as_i64(), Some(10));
-    assert_eq!(body["cost_usd"].as_f64(), Some(0.0));
+    // 50 output tokens on opus + 30 on sonnet, plus inputs and caches.
+    // Just assert non-zero — exact value depends on pricing.json which
+    // ships in this repo, but small drift in rates shouldn't fail tests.
+    let cost = body["cost_usd"].as_f64().expect("cost_usd present");
+    assert!(cost > 0.0, "expected non-zero cost, got {cost}");
 }
 
 #[tokio::test]

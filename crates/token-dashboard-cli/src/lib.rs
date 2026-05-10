@@ -13,17 +13,18 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use token_dashboard_core::{
-    list_sources,
+    cost_for, list_sources,
     queries::{
         all_tags, daily_token_breakdown, model_breakdown, overview_totals, project_summary,
         tool_token_breakdown, DailyRow, ModelRow, OverviewTotals, ProjectRow, TagRow, ToolRow,
     },
-    Source,
+    Pricing, Source, Usage,
 };
 
 #[derive(Clone)]
 pub struct AppState {
     pub db_path: Arc<PathBuf>,
+    pub pricing: Arc<Pricing>,
 }
 
 #[derive(Serialize)]
@@ -65,14 +66,46 @@ async fn overview(
     Query(q): Query<RangeQs>,
 ) -> Result<Json<OverviewResponse>, ApiError> {
     let path = s.db_path.clone();
+    let path_for_models = path.clone();
+    let q_for_models = q.clone();
     let totals =
         blocking(move || overview_totals(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
             .await?
             .0;
+    let models = blocking(move || {
+        model_breakdown(
+            path_for_models.as_ref(),
+            q_for_models.since.as_deref(),
+            q_for_models.until.as_deref(),
+        )
+    })
+    .await?
+    .0;
+    let mut cost_usd = 0.0;
+    for m in models {
+        let r = cost_for(
+            &m.model,
+            &Usage {
+                input_tokens: m.input_tokens,
+                output_tokens: m.output_tokens,
+                cache_read_tokens: m.cache_read_tokens,
+                cache_create_5m_tokens: m.cache_create_5m_tokens,
+                cache_create_1h_tokens: m.cache_create_1h_tokens,
+            },
+            &s.pricing,
+        );
+        if let Some(usd) = r.usd {
+            cost_usd += usd;
+        }
+    }
     Ok(Json(OverviewResponse {
         totals,
-        cost_usd: 0.0,
+        cost_usd: round4(cost_usd),
     }))
+}
+
+fn round4(v: f64) -> f64 {
+    (v * 10_000.0).round() / 10_000.0
 }
 
 async fn projects(

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use token_dashboard_cli::{app, AppState};
-use token_dashboard_core::default_db_path;
+use token_dashboard_core::{default_db_path, Pricing};
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
     std::env::var(key)
@@ -34,8 +34,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     token_dashboard_core::init_db(&db_path)?;
 
+    let pricing = match std::env::var_os("TOKEN_DASHBOARD_PRICING") {
+        Some(p) => Pricing::from_file(p).unwrap_or_else(|e| {
+            tracing::warn!(error=%e, "could not load TOKEN_DASHBOARD_PRICING; using embedded");
+            Pricing::embedded()
+        }),
+        None => Pricing::embedded(),
+    };
+
     let state = AppState {
         db_path: Arc::new(db_path),
+        pricing: Arc::new(pricing),
     };
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
