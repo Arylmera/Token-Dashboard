@@ -145,6 +145,7 @@ function _rebuildMockData(range) {
     skills:   buildSkills(c.skills || []),
     tips:     buildTips(c.tips || []),
     hourly,
+    hourlyDetail: buildHourlyDetail(c.hourlyRaw || []),
     heatmap:  buildHeatmap(c.sessionsRaw || []),
     burn:     buildBurn(hourly, totals.week),
     plan:     c.planResp || { plan: "max" },
@@ -299,6 +300,16 @@ const buildTips = (tips) => (Array.isArray(tips) ? tips : []).map((t) => ({
 const buildHourly = (hourlyRaw) => Array.from({ length: 24 }, (_, i) => {
   const b = (Array.isArray(hourlyRaw) && hourlyRaw[i]) || null;
   return b ? (b.cost_usd || 0) : 0;
+});
+
+const buildHourlyDetail = (hourlyRaw) => Array.from({ length: 24 }, (_, i) => {
+  const b = (Array.isArray(hourlyRaw) && hourlyRaw[i]) || null;
+  return {
+    cost: b ? (b.cost_usd || 0) : 0,
+    input: b ? (b.input_tokens || 0) : 0,
+    output: b ? (b.output_tokens || 0) : 0,
+    cacheRead: b ? (b.cache_read_tokens || 0) : 0,
+  };
 });
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

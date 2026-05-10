@@ -3,6 +3,7 @@ import { D } from "../data-store.js";
 import { fmtCost, fmtCostWhole, fmtNum, fmtPct, fmtTokens } from "../format.js";
 import { HBar, KPI, ModelBadge } from "../components/atoms.jsx";
 import { AreaChart, Donut, DualAreaChart, StripSpark } from "../components/charts.jsx";
+import { SortHeader, useSortable } from "../components/sortable.jsx";
 
 const rangeDaysFromKey = (key) => {
   const k = String(key || "").toLowerCase();
@@ -43,6 +44,12 @@ const KpiRow = ({ totals }) => {
   const t = totals;
   const daily = D.daily || [];
   const rangeDays = rangeDaysFromKey(t.rangeKey);
+  // 1-day range only has a single daily bucket — fall back to the
+  // 24-slot hourly series so input/output/cache-hit sparks have
+  // enough points to draw a line.
+  const useHourly = rangeDays === 1;
+  const ioSeries = useHourly ? (D.hourlyDetail || []) : daily;
+  const ioDays = useHourly ? 24 : rangeDays;
   const windows = [
     {
       key: "range",
@@ -84,19 +91,19 @@ const KpiRow = ({ totals }) => {
         label="input"
         value={fmtTokens(t.inputTokens)}
         sub={`tokens · ${t.rangeLabel || "range"}`}
-        spark={<KpiSpark daily={daily} days={rangeDays} pick={(d) => Number(d.input) || 0} />}
+        spark={<KpiSpark daily={ioSeries} days={ioDays} pick={(d) => Number(d.input) || 0} />}
       />
       <KPI
         label="output"
         value={fmtTokens(t.outputTokens)}
         sub={`tokens · ${t.rangeLabel || "range"}`}
-        spark={<KpiSpark daily={daily} days={rangeDays} pick={(d) => Number(d.output) || 0} />}
+        spark={<KpiSpark daily={ioSeries} days={ioDays} pick={(d) => Number(d.output) || 0} />}
       />
       <KPI
         label="cache hit"
         value={fmtPct(t.cacheHitRate)}
         sub={`last ${t.rangeLabel || "range"}`}
-        spark={<KpiSpark daily={daily} days={rangeDays} pick={cacheHitOf} />}
+        spark={<KpiSpark daily={ioSeries} days={ioDays} pick={cacheHitOf} />}
       />
     </section>
   );
@@ -344,29 +351,45 @@ const DailyCharts = ({ totals }) => (
 const MODEL_COLORS = ["var(--bone)", "var(--accent)", "var(--gull)"];
 const colorFor = (i) => MODEL_COLORS[i] || "var(--gull)";
 
-const ProjectsTable = ({ totals }) => (
-  <div className="a-card">
-    <div className="a-card-head"><h2>Tokens by project</h2></div>
-    <table className="a-table">
-      <thead><tr><th>project</th><th className="num">cost</th><th className="num">tokens</th><th className="num">share</th></tr></thead>
-      <tbody>
-        {(D.projects || []).slice(0, 7).map((p) => (
-          <tr key={p.slug}>
-            <td className="mono">{p.name}</td>
-            <td className="num tone-good">{fmtCost(p.cost)}</td>
-            <td className="num">{fmtTokens(p.tokens)}</td>
-            <td className="num">
-              <div className="a-bar-cell">
-                <HBar value={p.cost} max={D.projects[0].cost} />
-                <span>{((p.cost / (totals.cost || 1)) * 100).toFixed(1)}%</span>
-              </div>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
+const ProjectsTable = ({ totals }) => {
+  const rows = (D.projects || []).slice(0, 7);
+  const barMax = Math.max(1, ...rows.map((p) => p.cost || 0));
+  const { sorted, sortState, requestSort } = useSortable(rows, "cost", "desc", {
+    name: (r) => r.name,
+    cost: (r) => r.cost || 0,
+    tokens: (r) => r.tokens || 0,
+    share: (r) => r.cost || 0,
+  });
+  const headProps = { state: sortState, requestSort };
+  return (
+    <div className="a-card">
+      <div className="a-card-head"><h2>Tokens by project</h2></div>
+      <table className="a-table">
+        <thead><tr>
+          <SortHeader sortKey="name" {...headProps}>project</SortHeader>
+          <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
+          <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
+          <SortHeader sortKey="share" className="num" {...headProps}>share</SortHeader>
+        </tr></thead>
+        <tbody>
+          {sorted.map((p) => (
+            <tr key={p.slug}>
+              <td className="mono">{p.name}</td>
+              <td className="num tone-good">{fmtCost(p.cost)}</td>
+              <td className="num">{fmtTokens(p.tokens)}</td>
+              <td className="num">
+                <div className="a-bar-cell">
+                  <HBar value={p.cost} max={barMax} />
+                  <span>{((p.cost / (totals.cost || 1)) * 100).toFixed(1)}%</span>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 const ModelsCard = () => (
   <div className="a-card">
@@ -390,37 +413,68 @@ const ModelsCard = () => (
   </div>
 );
 
-const TopToolsCard = () => (
-  <div className="a-card">
-    <div className="a-card-head">
-      <h2>Top tools</h2>
-      <span className="a-card-meta">most-used tools by call count</span>
+const TopToolsCard = () => {
+  const rows = (D.tools || []).slice(0, 5);
+  const { sorted, sortState, requestSort } = useSortable(rows, "calls", "desc", {
+    name: (r) => r.name,
+    calls: (r) => r.calls || 0,
+    tokens: (r) => r.tokens || 0,
+  });
+  const headProps = { state: sortState, requestSort };
+  return (
+    <div className="a-card">
+      <div className="a-card-head">
+        <h2>Top tools</h2>
+        <span className="a-card-meta">most-used tools by call count</span>
+      </div>
+      <table className="a-table">
+        <thead><tr>
+          <SortHeader sortKey="name" {...headProps}>tool</SortHeader>
+          <SortHeader sortKey="calls" className="num" {...headProps}>calls</SortHeader>
+          <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
+        </tr></thead>
+        <tbody>
+          {sorted.map((tool) => (
+            <tr key={tool.name}>
+              <td className="mono">{tool.name}</td>
+              <td className="num">{fmtNum(tool.calls)}</td>
+              <td className="num">{fmtTokens(tool.tokens)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
-    <table className="a-table">
-      <thead><tr><th>tool</th><th className="num">calls</th><th className="num">tokens</th></tr></thead>
-      <tbody>
-        {(D.tools || []).slice(0, 5).map((tool) => (
-          <tr key={tool.name}>
-            <td className="mono">{tool.name}</td>
-            <td className="num">{fmtNum(tool.calls)}</td>
-            <td className="num">{fmtTokens(tool.tokens)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
+  );
+};
 
 const RecentSessions = () => {
   const sessions = D.sessions || [];
   const scroll = sessions.length > 20;
+  const { sorted, sortState, requestSort } = useSortable(sessions, null, "desc", {
+    id: (r) => r.id,
+    project: (r) => r.project,
+    started: (r) => r.started,
+    model: (r) => r.model,
+    turns: (r) => r.turns || 0,
+    tokens: (r) => r.tokens || 0,
+    cost: (r) => r.cost || 0,
+  });
+  const headProps = { state: sortState, requestSort };
   const table = (
     <table className="a-table a-sticky-head">
       <thead>
-        <tr><th>session</th><th>project</th><th>started</th><th>model</th><th className="num">turns</th><th className="num">tokens</th><th className="num">cost</th></tr>
+        <tr>
+          <SortHeader sortKey="id" {...headProps}>session</SortHeader>
+          <SortHeader sortKey="project" {...headProps}>project</SortHeader>
+          <SortHeader sortKey="started" {...headProps}>started</SortHeader>
+          <SortHeader sortKey="model" {...headProps}>model</SortHeader>
+          <SortHeader sortKey="turns" className="num" {...headProps}>turns</SortHeader>
+          <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
+          <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
+        </tr>
       </thead>
       <tbody>
-        {sessions.map((s) => (
+        {sorted.map((s) => (
           <tr key={s.id} className="clickable" onClick={() => { window.location.hash = `/sessions/${encodeURIComponent(s.id)}`; }}>
             <td className="mono">{s.id}</td>
             <td className="mono">{s.project}</td>
