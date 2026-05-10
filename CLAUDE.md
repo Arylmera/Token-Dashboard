@@ -14,7 +14,15 @@ Working codebase. 68 Python unit tests (`python3 -m unittest discover tests`). S
 
 ## v4 Rust + Tauri rewrite (in progress)
 
-A 4.0 rewrite is underway on the `v4-rust` branch. See [docs/V4_RUST_TAURI_PLAN.md](docs/V4_RUST_TAURI_PLAN.md). Phase 1 (scanner + db) lives at `crates/token-dashboard-core/`. The 3.x Python codebase below stays canonical until 4.0 reaches feature parity. **R6 invariant:** any commit that touches `token_dashboard/db/schema.py` `_migrate_*` must mirror the change into `crates/token-dashboard-core/src/db.rs`. The parity binary at `crates/token-dashboard-core/examples/parity.rs` is the CI gate.
+A 4.0 rewrite is on the `v4-rust` branch. See [docs/V4_RUST_TAURI_PLAN.md](docs/V4_RUST_TAURI_PLAN.md). Workspace layout:
+
+- `crates/token-dashboard-core/` — scanner, db, queries, pricing, preferences, tips, skills_catalog, anthropic_sync, sources.
+- `crates/token-dashboard-cli/` — axum router + headless `token-dashboard` bin. Same `/api/*` surface python ships.
+- `crates/token-dashboard-tauri/` — Tauri 2 desktop shell. Single process: links the cli as a library, picks a free port, opens a webview at the bound localhost URL.
+
+The 3.x Python codebase below stays canonical until 4.0 reaches feature parity. **R6 invariant:** any commit that touches `token_dashboard/db/schema.py` `_migrate_*` must mirror the change into `crates/token-dashboard-core/src/db.rs`. The parity binary at `crates/token-dashboard-core/examples/parity.rs` is the CI gate.
+
+**Tauri build prereqs:** the frontend bundle must exist at `frontend/dist/app.js` before `cargo run -p token-dashboard-tauri` (run `cd frontend && npm install && npm run build`). Tauri's `beforeBuildCommand` runs that on `cargo tauri build`. The shell auto-detects `frontend/index.html` walking up from the binary; override with `TOKEN_DASHBOARD_STATIC` when bundling for distribution.
 
 ## Architecture
 

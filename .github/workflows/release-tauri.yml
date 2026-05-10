@@ -1,0 +1,95 @@
+name: release-tauri
+
+on:
+  push:
+    tags: ["v4.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach artifacts to (e.g. v4.0.0-rc.1)"
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            artifact_glob: |
+              crates/token-dashboard-tauri/target/release/bundle/msi/*.msi
+              crates/token-dashboard-tauri/target/release/bundle/nsis/*.exe
+          - os: macos-14
+            artifact_glob: |
+              crates/token-dashboard-tauri/target/release/bundle/dmg/*.dmg
+              crates/token-dashboard-tauri/target/release/bundle/macos/*.app.tar.gz
+          - os: ubuntu-22.04
+            artifact_glob: |
+              crates/token-dashboard-tauri/target/release/bundle/deb/*.deb
+              crates/token-dashboard-tauri/target/release/bundle/appimage/*.AppImage
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: System deps (linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend bundle
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "^2"
+
+      - name: Tauri build
+        working-directory: crates/token-dashboard-tauri
+        run: cargo tauri build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: token-dashboard-${{ matrix.os }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+
+  release:
+    name: attach to GitHub Release
+    needs: build
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/v4.')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create / update release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          fail_on_unmatched_files: false
+          generate_release_notes: true
