@@ -637,6 +637,87 @@ struct LimitsResponse {
     has_api_key: bool,
 }
 
+#[derive(Serialize)]
+struct LimitsSyncResponse {
+    status: String,
+    limits_five_hour_reset_at: Option<String>,
+    limits_weekly_reset_at: Option<String>,
+    limits_last_sync_at: Option<String>,
+    limits_last_sync_status: Option<String>,
+}
+
+async fn limits_sync(State(s): State<AppState>) -> Result<Json<LimitsSyncResponse>, ApiError> {
+    let path = s.db_path.clone();
+    let key = blocking(move || preferences::get_anthropic_api_key(path.as_ref()))
+        .await?
+        .0;
+    let key = match key {
+        Some(k) if !k.is_empty() => k,
+        _ => return Err(ApiError::bad_request("no api key saved")),
+    };
+
+    // Anthropic call runs on the blocking pool — ureq is sync.
+    let result = tokio::task::spawn_blocking(move || {
+        token_dashboard_core::anthropic_sync::sync_limits(&key)
+    })
+    .await
+    .map_err(|e| ApiError::internal(format!("join: {e}")))?;
+
+    let path = s.db_path.clone();
+    let now_iso = current_iso_z();
+    let status_clone = result.status.clone();
+    let five_clone = result.five_hour_reset_at.clone();
+    let week_clone = result.weekly_reset_at.clone();
+    let resp = blocking(move || -> rusqlite::Result<LimitsSyncResponse> {
+        let p = path.as_ref();
+        let conn = rusqlite::Connection::open(p)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_last_sync_at', ?)",
+            [&now_iso],
+        )?;
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_last_sync_status', ?)",
+            [&status_clone],
+        )?;
+        if status_clone == "ok" {
+            if let Some(v) = five_clone.as_deref() {
+                preferences::set_limit_reset_at(p, "limits_five_hour_reset_at", Some(v))?;
+            }
+            if let Some(v) = week_clone.as_deref() {
+                preferences::set_limit_reset_at(p, "limits_weekly_reset_at", Some(v))?;
+            }
+        }
+        let meta = preferences::get_limits_sync_meta(p)?;
+        Ok(LimitsSyncResponse {
+            status: status_clone,
+            limits_five_hour_reset_at: preferences::get_limit_reset_at(
+                p,
+                "limits_five_hour_reset_at",
+            )?,
+            limits_weekly_reset_at: preferences::get_limit_reset_at(p, "limits_weekly_reset_at")?,
+            limits_last_sync_at: meta.last_sync_at,
+            limits_last_sync_status: meta.last_sync_status,
+        })
+    })
+    .await?;
+    Ok(resp)
+}
+
+fn current_iso_z() -> String {
+    use std::time::SystemTime;
+    let secs = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let days = secs.div_euclid(86_400);
+    let s = secs.rem_euclid(86_400);
+    let h = s / 3600;
+    let m = (s % 3600) / 60;
+    let sec = s % 60;
+    let (y, mo, d) = days_to_ymd(days);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{sec:02}Z")
+}
+
 async fn limits_get(State(s): State<AppState>) -> Result<Json<LimitsResponse>, ApiError> {
     let path = s.db_path.clone();
     let resp = blocking(move || -> rusqlite::Result<LimitsResponse> {
@@ -1683,6 +1764,7 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/api/budget", get(budget_get).post(budget_post))
         .route("/api/limits", get(limits_get))
+        .route("/api/limits/sync", post(limits_sync))
         // POST endpoints
         .route("/api/plan", post(set_plan_handler))
         .route("/api/tips/dismiss", post(tips_dismiss_handler))

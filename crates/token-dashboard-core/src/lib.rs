@@ -3,6 +3,7 @@
 //! Phase 1 surface: SQLite schema + migrations and the JSONL transcript
 //! scanner. Endpoints, tips, and HTTP wiring land in later phases.
 
+pub mod anthropic_sync;
 pub mod db;
 pub mod preferences;
 pub mod pricing;

@@ -812,6 +812,13 @@ async fn sources_delete_removes_row() {
 }
 
 #[tokio::test]
+async fn limits_sync_400_without_api_key() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, _) = post_json(&fx.state, "/api/limits/sync", &json!({})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn limits_get_returns_defaults() {
     let fx = setup_with_jsonl(&[]);
     let (status, body) = get_json(&fx.state, "/api/limits").await;
