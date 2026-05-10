@@ -47,7 +47,7 @@ Claude Code writes one JSONL file per session to `~/.claude/projects/<project-sl
 
 ## Tauri build prereqs
 
-The frontend bundle must exist at `frontend/dist/app.js` before `cargo run -p token-dashboard-tauri`. Run `cd frontend && npm install && npm run build` once. `cargo tauri build` runs the same via the `beforeBuildCommand` in `tauri.conf.json`. The shell walks upward from the binary to find `frontend/index.html`; override with `TOKEN_DASHBOARD_STATIC` when bundling for distribution.
+The frontend bundle must exist at `frontend/dist/app.js` before `cargo run -p token-dashboard-tauri` or `cargo tauri build`. Run `cd frontend && npm install && npm run build` once. (Tauri's `beforeBuildCommand` hook is intentionally omitted: Tauri 2 picks `frontend_dir` by walking up from `tauri.conf.json` for a `package.json`; this repo has none at the workspace root, so the hook resolves outside the tree. CI's `release-tauri` workflow pre-builds the frontend explicitly.) The shell walks upward from the binary to find `frontend/index.html`; override with `TOKEN_DASHBOARD_STATIC` when bundling for distribution.
 
 ## Frontend cache (avoid re-reading hot files)
 
