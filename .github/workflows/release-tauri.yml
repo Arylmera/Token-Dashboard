@@ -20,13 +20,17 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.maybe-tag.outputs.tag }}
+      tagged: ${{ steps.maybe-tag.outputs.tagged }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Tag if Cargo.toml version is new
+      - id: maybe-tag
+        name: Tag if Cargo.toml version is new
         run: |
           ver=$(grep '^version' crates/token-dashboard-tauri/Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
           tag="v$ver"
@@ -34,19 +38,30 @@ jobs:
             echo "could not parse version" >&2
             exit 1
           fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
             echo "tag $tag already exists on origin — skipping"
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$tag" -m "Release $tag"
           git push origin "$tag"
-          echo "pushed $tag — release-tauri will fire on the tag ref"
+          echo "tagged=true" >> "$GITHUB_OUTPUT"
+          # Tags pushed via GITHUB_TOKEN do NOT trigger downstream workflow
+          # runs, so the build/release jobs below chain off this job's
+          # `tagged` output instead of waiting for the tag-push event.
 
   build:
     name: build (${{ matrix.os }})
-    if: startsWith(github.ref, 'refs/tags/v4.') || github.event_name == 'workflow_dispatch'
+    needs: [tag]
+    if: |
+      always() && (
+        startsWith(github.ref, 'refs/tags/v4.')
+        || github.event_name == 'workflow_dispatch'
+        || needs.tag.outputs.tagged == 'true'
+      )
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -112,9 +127,13 @@ jobs:
 
   release:
     name: attach to GitHub Release
-    needs: build
+    needs: [tag, build]
     runs-on: ubuntu-22.04
-    if: startsWith(github.ref, 'refs/tags/v4.')
+    if: |
+      always() && needs.build.result == 'success' && (
+        startsWith(github.ref, 'refs/tags/v4.')
+        || needs.tag.outputs.tagged == 'true'
+      )
     permissions:
       contents: write
     steps:
@@ -125,6 +144,7 @@ jobs:
       - name: Create / update release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.tag.outputs.tag || github.ref_name }}
           files: dist/**/*
           fail_on_unmatched_files: false
           generate_release_notes: true
