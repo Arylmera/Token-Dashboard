@@ -154,6 +154,134 @@ fn build_tray(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Apply native window translucency. macOS uses NSVisualEffectMaterial
+/// vibrancy; Windows 11 uses Acrylic. Linux is a no-op (CSS-only
+/// fallback) — webkit2gtk doesn't surface a stable native effect.
+fn apply_glass(win: &tauri::WebviewWindow, on: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+        if on {
+            let _ = apply_vibrancy(
+                win,
+                NSVisualEffectMaterial::UnderWindowBackground,
+                None,
+                None,
+            );
+        } else {
+            let _ = window_vibrancy::clear_vibrancy(win);
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use window_vibrancy::{apply_acrylic, clear_acrylic};
+        if on {
+            let _ = apply_acrylic(win, Some((10, 10, 10, 200)));
+        } else {
+            let _ = clear_acrylic(win);
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = (win, on);
+    }
+}
+
+/// Spawn a tokio task that refreshes the tray tooltip every 5s with the
+/// currently-selected badge metric. The `badge_metric` preference picks
+/// which value to show (tokens, cost, burn, 5h, weekly); /api/overview
+/// provides the raw numbers.
+fn spawn_tray_updater(app: AppHandle, base_url: String) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            let prefs_url = format!("{base_url}/api/preferences");
+            let overview_url = format!("{base_url}/api/overview");
+            let snapshot =
+                tokio::task::spawn_blocking(move || -> Option<(String, serde_json::Value)> {
+                    let prefs: serde_json::Value = ureq::get(&prefs_url)
+                        .timeout(Duration::from_secs(2))
+                        .call()
+                        .ok()?
+                        .into_json()
+                        .ok()?;
+                    let overview: serde_json::Value = ureq::get(&overview_url)
+                        .timeout(Duration::from_secs(2))
+                        .call()
+                        .ok()?
+                        .into_json()
+                        .ok()?;
+                    let metric = prefs
+                        .get("badge_metric")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("tokens")
+                        .to_string();
+                    Some((metric, overview))
+                })
+                .await
+                .ok()
+                .flatten();
+            let Some((metric, overview)) = snapshot else {
+                continue;
+            };
+            let tooltip = format_metric(&metric, &overview);
+            if let Some(tray) = app.tray_by_id("main") {
+                let _ = tray.set_tooltip(Some(format!("Token Dashboard\n{tooltip}")));
+            }
+        }
+    });
+}
+
+/// Format the chosen badge_metric for display in the tray tooltip.
+/// Mirrors the python tray's display logic.
+fn format_metric(metric: &str, overview: &serde_json::Value) -> String {
+    fn fmt_int(n: i64) -> String {
+        // Thousands grouping with `,` — matches python f"{n:,}".
+        let s = n.to_string();
+        let bytes = s.as_bytes();
+        let neg = bytes.first() == Some(&b'-');
+        let digits = if neg { &s[1..] } else { &s };
+        let mut out = String::new();
+        for (count, c) in digits.chars().rev().enumerate() {
+            if count > 0 && count % 3 == 0 {
+                out.push(',');
+            }
+            out.push(c);
+        }
+        let formatted: String = out.chars().rev().collect();
+        if neg {
+            format!("-{formatted}")
+        } else {
+            formatted
+        }
+    }
+
+    match metric {
+        "cost" => {
+            let usd = overview
+                .get("cost_usd")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            format!("${usd:.2}")
+        }
+        // "tokens" is the default; any unknown metric falls into the same
+        // branch (matches python tray.js behaviour).
+        _ => {
+            let inp = overview
+                .get("input_tokens")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let out = overview
+                .get("output_tokens")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let total = inp + out;
+            format!("{} tokens", fmt_int(total))
+        }
+    }
+}
+
 fn open_browser(url: &str) {
     #[cfg(target_os = "windows")]
     {
@@ -213,6 +341,12 @@ async fn main() {
     };
     let addr: SocketAddr = format!("127.0.0.1:{port}").parse().expect("addr");
 
+    // Glass mode preference is read once at startup. Reads must happen
+    // before db_path moves into AppState. Runtime toggles via
+    // /api/preferences POST; the tray-update loop re-applies on change.
+    let glass_enabled =
+        token_dashboard_core::preferences::get_glass_enabled(&db_path).unwrap_or(false);
+
     let state = AppState::new(db_path, Pricing::embedded(), projects_dir);
     let router = build_router(state);
 
@@ -241,17 +375,25 @@ async fn main() {
             let load_url = load_url.clone();
             let base_url = base_url.clone();
             move |app: &mut tauri::App| {
-                // Window — created at runtime so we can point it at the
-                // dynamically-bound localhost port.
                 let parsed = WebviewUrl::External(load_url.parse().expect("url"));
+                let bg = if glass_enabled {
+                    tauri::utils::config::Color(0, 0, 0, 0)
+                } else {
+                    tauri::utils::config::Color(0x0a, 0x0a, 0x0a, 0xff)
+                };
                 let win = WebviewWindowBuilder::new(app, "main", parsed)
                     .title("Token Dashboard")
                     .inner_size(1280.0, 800.0)
                     .min_inner_size(380.0, 200.0)
+                    .background_color(bg)
                     .visible(true)
                     .build()?;
+                if glass_enabled {
+                    apply_glass(&win, true);
+                }
                 let _ = win.set_focus();
                 build_tray(app.handle(), &base_url)?;
+                spawn_tray_updater(app.handle().clone(), base_url.clone());
                 Ok(())
             }
         })

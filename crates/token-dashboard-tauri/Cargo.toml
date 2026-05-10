@@ -18,9 +18,10 @@ tauri-build = { version = "2", features = [] }
 token-dashboard-cli = { path = "../token-dashboard-cli" }
 token-dashboard-core = { path = "../token-dashboard-core" }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
+window-vibrancy = "0.7"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
 axum = "0.7"
-ureq = "2.10"
+ureq = { version = "2.10", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
