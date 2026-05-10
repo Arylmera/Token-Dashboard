@@ -393,6 +393,24 @@ async fn plan_defaults_to_api() {
 }
 
 #[tokio::test]
+async fn sessions_list_returns_recent() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "hi"),
+        assistant("a1", "2026-04-10T00:00:01Z", "claude-opus-4-7", 50),
+    ]);
+    let (status, body) = get_json(&fx.state, "/api/sessions").await;
+    assert_eq!(status, StatusCode::OK);
+    let arr = body.as_array().expect("array");
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["session_id"].as_str(), Some("s1"));
+    assert_eq!(arr[0]["turns"].as_i64(), Some(1));
+    assert_eq!(arr[0]["model"].as_str(), Some("claude-opus-4-7"));
+    // Cost is non-zero because the assistant turn used opus pricing.
+    assert!(arr[0]["cost_usd"].as_f64().unwrap() > 0.0);
+    assert_eq!(arr[0]["tags"].as_array().map(|a| a.len()), Some(0));
+}
+
+#[tokio::test]
 async fn session_returns_turns_in_order() {
     let fx = setup_with_jsonl(&[
         user("u1", "2026-04-10T00:00:00Z", "hi"),

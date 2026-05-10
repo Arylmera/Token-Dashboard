@@ -560,6 +560,159 @@ pub fn session_turns<P: AsRef<Path>>(
     rows.collect()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionRow {
+    pub session_id: String,
+    pub project_slug: String,
+    pub project_name: String,
+    pub started: Option<String>,
+    pub ended: Option<String>,
+    pub turns: i64,
+    pub tokens: i64,
+}
+
+/// Recent sessions ordered by latest activity.
+///
+/// Mirrors python `recent_sessions(order_by="recent")`. Cost, tags, and
+/// `first_prompt` are filled in by the caller (the cli endpoint) using
+/// pricing + session_tags lookups; this query stays narrow on purpose so
+/// it works without the pricing crate dependency.
+pub fn recent_sessions<P: AsRef<Path>>(
+    db: P,
+    limit: i64,
+    since: Option<&str>,
+    until: Option<&str>,
+    tag: Option<&str>,
+) -> rusqlite::Result<Vec<SessionRow>> {
+    let (rng, args) = range_clause(since, until, "timestamp");
+    let (tag_join, tag_filter) = if tag.is_some() {
+        (
+            "JOIN session_tags st ON st.session_id = m.session_id",
+            "AND st.tag = ?",
+        )
+    } else {
+        ("", "")
+    };
+    // `m.timestamp` referenced via `m.` because of the optional join — the
+    // base WHERE uses unprefixed `timestamp` to mirror the python query.
+    let sql = format!(
+        "SELECT m.session_id AS session_id, m.project_slug AS project_slug, \
+                MIN(m.timestamp) AS started, MAX(m.timestamp) AS ended, \
+                SUM(CASE WHEN m.type='user' THEN 1 ELSE 0 END) AS turns, \
+                COALESCE(SUM(m.input_tokens),0)+COALESCE(SUM(m.output_tokens),0) AS tokens \
+         FROM messages m \
+         {tag_join} \
+         WHERE 1=1 {rng} {tag_filter} \
+         GROUP BY m.session_id \
+         ORDER BY ended DESC \
+         LIMIT ?"
+    );
+
+    // Build a single owned-string param vector. The trailing `limit`
+    // gets stringified for ergonomics — SQLite coerces text to int for
+    // numeric columns and `LIMIT` accepts that.
+    let mut all_args: Vec<String> = args;
+    if let Some(t) = tag {
+        all_args.push(t.to_string());
+    }
+    all_args.push(limit.to_string());
+
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(all_args.iter()), |r| {
+        let slug: String = r.get(1)?;
+        Ok(SessionRow {
+            session_id: r.get(0)?,
+            // best_project_name is deferred (Phase 2 follow-up); the slug
+            // is a usable display value until then.
+            project_name: slug.clone(),
+            project_slug: slug,
+            started: r.get(2)?,
+            ended: r.get(3)?,
+            turns: nullable_i64(r, 4)?,
+            tokens: r.get(5)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Per-session per-model token sums — the input the cli endpoint uses to
+/// compute per-session cost via the pricing table. Returned as a flat
+/// list keyed by (session_id, model).
+#[derive(Debug, Clone)]
+pub struct SessionModelUsage {
+    pub session_id: String,
+    pub model: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_create_5m_tokens: i64,
+    pub cache_create_1h_tokens: i64,
+}
+
+pub fn session_model_usage<P: AsRef<Path>>(
+    db: P,
+    session_ids: &[&str],
+) -> rusqlite::Result<Vec<SessionModelUsage>> {
+    if session_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = vec!["?"; session_ids.len()].join(",");
+    let sql = format!(
+        "SELECT session_id, model, \
+                COALESCE(SUM(input_tokens),0)           AS input_tokens, \
+                COALESCE(SUM(output_tokens),0)          AS output_tokens, \
+                COALESCE(SUM(cache_read_tokens),0)      AS cache_read_tokens, \
+                COALESCE(SUM(cache_create_5m_tokens),0) AS cache_create_5m_tokens, \
+                COALESCE(SUM(cache_create_1h_tokens),0) AS cache_create_1h_tokens \
+         FROM messages \
+         WHERE session_id IN ({placeholders}) AND model IS NOT NULL \
+         GROUP BY session_id, model"
+    );
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(session_ids), |r| {
+        Ok(SessionModelUsage {
+            session_id: r.get(0)?,
+            model: r.get(1)?,
+            input_tokens: r.get(2)?,
+            output_tokens: r.get(3)?,
+            cache_read_tokens: r.get(4)?,
+            cache_create_5m_tokens: r.get(5)?,
+            cache_create_1h_tokens: r.get(6)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// `{session_id: [tag, ...]}` lookup. Mirrors python `session_tags`.
+pub fn session_tags<P: AsRef<Path>>(
+    db: P,
+    session_ids: &[&str],
+) -> rusqlite::Result<std::collections::HashMap<String, Vec<String>>> {
+    if session_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders = vec!["?"; session_ids.len()].join(",");
+    let sql = format!(
+        "SELECT session_id, tag FROM session_tags \
+         WHERE session_id IN ({placeholders}) ORDER BY tag"
+    );
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(&sql)?;
+    let mut out: std::collections::HashMap<String, Vec<String>> = session_ids
+        .iter()
+        .map(|s| (s.to_string(), Vec::new()))
+        .collect();
+    let mut rows = stmt.query(rusqlite::params_from_iter(session_ids))?;
+    while let Some(r) = rows.next()? {
+        let sid: String = r.get(0)?;
+        let tag: String = r.get(1)?;
+        out.entry(sid).or_default().push(tag);
+    }
+    Ok(out)
+}
+
 /// Read the saved plan label (`api`, `pro`, `max`, `max-20x`).
 /// Mirrors `pricing.get_plan` — defaults to `api` when nothing is set.
 pub fn get_plan<P: AsRef<Path>>(db: P) -> rusqlite::Result<String> {

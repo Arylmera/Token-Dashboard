@@ -16,9 +16,10 @@ use token_dashboard_core::{
     cost_for, list_sources,
     queries::{
         all_tags, daily_token_breakdown, expensive_prompts, get_plan, hourly_breakdown,
-        model_breakdown, overview_totals, phase_split, project_summary, session_turns,
-        skill_breakdown, tool_token_breakdown, DailyRow, ExpensivePromptRow, HourlyRow, ModelRow,
-        OverviewTotals, ProjectRow, SessionTurn, SkillRow, TagRow, ToolRow,
+        model_breakdown, overview_totals, phase_split, project_summary, recent_sessions,
+        session_model_usage, session_tags, session_turns, skill_breakdown, tool_token_breakdown,
+        DailyRow, ExpensivePromptRow, HourlyRow, ModelRow, OverviewTotals, ProjectRow, SessionRow,
+        SessionTurn, SkillRow, TagRow, ToolRow,
     },
     scan_dir, Pricing, ScanStats, Source, Usage,
 };
@@ -375,6 +376,124 @@ async fn session(
     blocking(move || session_turns(path.as_ref(), &sid)).await
 }
 
+#[derive(Deserialize, Default)]
+struct SessionsQs {
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    since: Option<String>,
+    #[serde(default)]
+    until: Option<String>,
+    #[serde(default)]
+    tag: Option<String>,
+}
+
+#[derive(Serialize)]
+struct SessionsResponse {
+    #[serde(flatten)]
+    base: SessionRow,
+    cost_usd: f64,
+    cost_estimated: bool,
+    /// Top-billable model in this session (or null if no assistant turns).
+    model: Option<String>,
+    tags: Vec<String>,
+}
+
+async fn sessions(
+    State(s): State<AppState>,
+    Query(q): Query<SessionsQs>,
+) -> Result<Json<Vec<SessionsResponse>>, ApiError> {
+    let path = s.db_path.clone();
+    let limit = clamp_limit(q.limit.unwrap_or(20), 20);
+    let since = q.since;
+    let until = q.until;
+    let tag = q.tag;
+    let path_for_query = path.clone();
+    let since_q = since.clone();
+    let until_q = until.clone();
+    let tag_q = tag.clone();
+    let rows: Vec<SessionRow> = blocking(move || {
+        recent_sessions(
+            path_for_query.as_ref(),
+            limit,
+            since_q.as_deref(),
+            until_q.as_deref(),
+            tag_q.as_deref(),
+        )
+    })
+    .await?
+    .0;
+
+    let ids: Vec<String> = rows.iter().map(|r| r.session_id.clone()).collect();
+
+    // Per-session cost: sum cost_for() across each (session, model) row,
+    // tracking the top-billable model per session for display.
+    let pricing = s.pricing.clone();
+    let path_for_usage = path.clone();
+    let ids_for_usage = ids.clone();
+    let usage = blocking(move || {
+        let refs: Vec<&str> = ids_for_usage.iter().map(String::as_str).collect();
+        session_model_usage(path_for_usage.as_ref(), &refs)
+    })
+    .await?
+    .0;
+
+    use std::collections::HashMap;
+    let mut cost: HashMap<String, f64> = ids.iter().map(|s| (s.clone(), 0.0)).collect();
+    let mut estimated: HashMap<String, bool> = ids.iter().map(|s| (s.clone(), false)).collect();
+    // (model, billable_tokens) — winner has the most billable.
+    let mut top: HashMap<String, (Option<String>, i64)> =
+        ids.iter().map(|s| (s.clone(), (None, -1))).collect();
+    for u in &usage {
+        let cr = cost_for(
+            &u.model,
+            &Usage {
+                input_tokens: u.input_tokens,
+                output_tokens: u.output_tokens,
+                cache_read_tokens: u.cache_read_tokens,
+                cache_create_5m_tokens: u.cache_create_5m_tokens,
+                cache_create_1h_tokens: u.cache_create_1h_tokens,
+            },
+            &pricing,
+        );
+        if let Some(usd) = cr.usd {
+            *cost.entry(u.session_id.clone()).or_default() += usd;
+        }
+        if cr.estimated {
+            estimated.insert(u.session_id.clone(), true);
+        }
+        let billable =
+            u.input_tokens + u.output_tokens + u.cache_create_5m_tokens + u.cache_create_1h_tokens;
+        let entry = top.entry(u.session_id.clone()).or_insert((None, -1));
+        if billable > entry.1 {
+            *entry = (Some(u.model.clone()), billable);
+        }
+    }
+
+    // Tags lookup.
+    let path_for_tags = path.clone();
+    let ids_for_tags = ids.clone();
+    let mut tag_map = blocking(move || {
+        let refs: Vec<&str> = ids_for_tags.iter().map(String::as_str).collect();
+        session_tags(path_for_tags.as_ref(), &refs)
+    })
+    .await?
+    .0;
+
+    let mut out: Vec<SessionsResponse> = Vec::with_capacity(rows.len());
+    for row in rows {
+        let sid = row.session_id.clone();
+        out.push(SessionsResponse {
+            cost_usd: round6(cost.remove(&sid).unwrap_or(0.0)),
+            cost_estimated: estimated.remove(&sid).unwrap_or(false),
+            model: top.remove(&sid).and_then(|(m, _)| m),
+            tags: tag_map.remove(&sid).unwrap_or_default(),
+            base: row,
+        });
+    }
+    Ok(Json(out))
+}
+
 /// Run a blocking rusqlite call on tokio's blocking pool and wrap the
 /// result/error in a `Json<T>` response. The closure is `Send + 'static`
 /// because spawn_blocking runs it on a worker thread.
@@ -428,6 +547,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/prompts", get(prompts))
         .route("/api/skills", get(skills))
         .route("/api/plan", get(plan))
+        .route("/api/sessions", get(sessions))
         .route("/api/sessions/:sid", get(session))
         // The 3.x server accepts both GET and POST for /api/scan; we keep
         // GET for parity with `routes.py` (where it's wired in
