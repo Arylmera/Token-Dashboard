@@ -70,32 +70,34 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          save-if: ${{ startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' }}
+
       - name: System deps (linux)
         if: matrix.os == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev
+          version: 1.0
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Build frontend bundle
         working-directory: frontend
         run: |
-          npm install
+          npm ci
           npm run build
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Install tauri-cli (prebuilt)
+        uses: taiki-e/install-action@v2
         with:
-          workspaces: ". -> target"
-
-      - name: Install tauri-cli
-        run: cargo install tauri-cli --version "^2"
+          tool: tauri-cli@^2
 
       - name: Tauri build
         working-directory: crates/token-dashboard-tauri
