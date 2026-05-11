@@ -36,9 +36,16 @@ pub const WIDGET_METRICS: &[&str] = &[
     "cache_hit",
     "cache_x_cost",
     "five_h_limit",
+    "active_session",
+    "last_prompt_cost",
+    "prompts_today",
+    "idle_since",
+    "skill_of_day",
+    "wow_delta",
+    "mom_delta",
+    "peak_hour",
 ];
 pub const DEFAULT_WIDGET_METRICS: &[&str] = &["today_live", "burn_rate", "five_h_limit"];
-pub const WIDGET_METRICS_MAX: usize = 6;
 pub const DEFAULT_BADGE_METRIC: &str = "tokens";
 pub const BADGE_WINDOW_MODES: &[&str] = &["remaining", "used"];
 pub const DEFAULT_BADGE_WINDOW_MODE: &str = "remaining";
@@ -172,35 +179,43 @@ pub fn set_theme<P: AsRef<Path>>(db: P, raw: &str) -> rusqlite::Result<Option<St
 }
 
 /// Read the widget-metrics preference as a deduped, whitelisted, ordered
-/// list. Falls back to the default selection if unset/invalid.
+/// list. Returns `DEFAULT_WIDGET_METRICS` only when the row was never
+/// written; an explicit empty selection (sentinel `"[]"`) is honored.
 pub fn get_widget_metrics<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<String>> {
     let raw = read_str(db, "widget_metrics")?;
-    let parsed: Vec<String> = match raw {
+    match raw {
+        None => Ok(DEFAULT_WIDGET_METRICS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()),
+        Some(s) if s.trim() == "[]" => Ok(Vec::new()),
         Some(s) => {
             let mut seen = std::collections::HashSet::new();
-            s.split(',')
+            let parsed: Vec<String> = s
+                .split(',')
                 .map(str::trim)
                 .filter(|t| !t.is_empty())
                 .filter(|t| WIDGET_METRICS.contains(t))
                 .filter(|t| seen.insert(t.to_string()))
-                .take(WIDGET_METRICS_MAX)
                 .map(String::from)
-                .collect()
+                .collect();
+            // Empty parse from a non-sentinel string means stale/invalid
+            // ids — fall back to defaults rather than rendering blank.
+            if parsed.is_empty() {
+                Ok(DEFAULT_WIDGET_METRICS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect())
+            } else {
+                Ok(parsed)
+            }
         }
-        None => Vec::new(),
-    };
-    if parsed.is_empty() {
-        Ok(DEFAULT_WIDGET_METRICS
-            .iter()
-            .map(|s| s.to_string())
-            .collect())
-    } else {
-        Ok(parsed)
     }
 }
 
-/// Persist a deduped, whitelisted, length-capped widget-metrics list.
-/// Returns the value as stored.
+/// Persist a deduped, whitelisted widget-metrics list. An empty list is
+/// stored as the sentinel `"[]"` so a later read doesn't fall back to
+/// defaults. Returns the value as stored.
 pub fn set_widget_metrics<P: AsRef<Path>>(db: P, raw: &[String]) -> rusqlite::Result<Vec<String>> {
     let mut seen = std::collections::HashSet::new();
     let cleaned: Vec<String> = raw
@@ -209,9 +224,13 @@ pub fn set_widget_metrics<P: AsRef<Path>>(db: P, raw: &[String]) -> rusqlite::Re
         .filter(|t| !t.is_empty())
         .filter(|t| WIDGET_METRICS.contains(&t.as_str()))
         .filter(|t| seen.insert(t.clone()))
-        .take(WIDGET_METRICS_MAX)
         .collect();
-    write_str(db, "widget_metrics", &cleaned.join(","))?;
+    let stored = if cleaned.is_empty() {
+        "[]".to_string()
+    } else {
+        cleaned.join(",")
+    };
+    write_str(db, "widget_metrics", &stored)?;
     Ok(cleaned)
 }
 

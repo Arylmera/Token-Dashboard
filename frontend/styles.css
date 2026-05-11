@@ -46,9 +46,11 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
 .dir-a-root.is-glass .a-topbar,
 .dir-a-root.is-glass .a-sticky-head thead th {
   /* The translucent --panel above already gives the bg; the blur is what
-     turns it into a frosted-glass surface over the OS vibrancy. */
-  backdrop-filter: blur(28px) saturate(150%);
-  -webkit-backdrop-filter: blur(28px) saturate(150%);
+     turns it into a frosted-glass surface over the OS vibrancy. Saturate
+     and contrast bumps push back against Mica/Acrylic's desaturated noise
+     so panels read as glassy rather than flat gray at low opacity. */
+  backdrop-filter: blur(28px) saturate(180%) contrast(105%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%) contrast(105%);
 }
 .dir-a-root.is-glass .a-table thead th,
 .dir-a-root.is-glass .a-table tbody tr {
@@ -250,6 +252,24 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
   text-transform: uppercase; letter-spacing: 0.04em;
 }
 .a-range-tab.is-active { background: var(--bg); color: var(--bone); }
+.a-range-custom {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: 8px; padding: 2px 6px;
+  background: var(--panel-2); border: 1px solid var(--iron-border);
+}
+.a-range-custom input[type="date"] {
+  background: transparent; color: var(--bone); border: 0;
+  font: 500 11px "JetBrains Mono"; padding: 2px 4px; outline: none;
+  color-scheme: dark;
+}
+.a-range-custom-sep { color: var(--gull); font: 500 11px "JetBrains Mono"; }
+.a-prompt-search {
+  background: var(--panel-2); color: var(--bone);
+  border: 1px solid var(--iron-border);
+  font: 500 11px "JetBrains Mono"; padding: 4px 8px;
+  min-width: 220px; outline: none; margin-left: auto;
+}
+.a-prompt-search:focus { border-color: var(--accent); }
 .a-pill-btn {
   background: var(--panel-2); border: 1px solid var(--iron-border); cursor: pointer;
   font: 500 11px "JetBrains Mono"; color: var(--bone);
@@ -1500,9 +1520,15 @@ html:has(body.td-widget-body)::-webkit-scrollbar { width: 0; height: 0; display:
 .td-w-btn-close:hover { background: var(--bad, #8a2b2b); color: #fff; }
 .td-w-stack { display: flex; flex-direction: column; gap: 6px; overflow: visible; }
 .td-w-stack-item { display: contents; }
-.td-w-range-row { display: flex; gap: 4px; align-items: stretch; }
-.td-w-range-cell { flex: 1 1 0; min-width: 0; display: flex; }
-.td-w-range-cell > .td-w-kpi { flex: 1 1 auto; }
+.td-w-range-row {
+  display: grid;
+  grid-template-columns: repeat(var(--td-w-cols, 2), minmax(0, 1fr));
+  gap: 6px;
+  align-items: stretch;
+}
+.td-w-range-cell { min-width: 0; display: flex; }
+.td-w-range-cell > .td-w-tile-click { flex: 1 1 auto; display: flex; flex-direction: column; }
+.td-w-range-cell .td-w-kpi { flex: 1 1 auto; }
 .td-w-kpi.is-compact { padding: 4px 6px; gap: 1px; }
 .td-w-kpi.is-compact .td-w-kpi-label { font-size: 8px; }
 .td-w-kpi.is-compact .td-w-kpi-value { font-size: 13px; }
@@ -1536,6 +1562,36 @@ html:has(body.td-widget-body)::-webkit-scrollbar { width: 0; height: 0; display:
 .td-w-spark-cost { fill: none; stroke: var(--accent, #60a5fa); stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 .td-w-spark-cache { fill: none; stroke: var(--good, #6fb56f); stroke-width: 1.1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
 .td-w-spark-stack { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+
+/* Clickable tile wrapper — deep-links into the main window. The wrapper
+   carries the cursor + focus ring so the inner .td-w-kpi keeps its
+   layout. data-tauri-drag-region="false" on the wrapper means clicks
+   here open the route instead of starting a window drag. */
+.td-w-tile-click {
+  display: block; cursor: pointer; border-radius: 5px;
+  transition: transform 80ms ease-out, filter 80ms ease-out;
+}
+.td-w-tile-click:hover > .td-w-kpi { border-color: var(--accent, #d4a14a); }
+.td-w-tile-click:active { transform: translateY(1px); }
+.td-w-tile-click:focus-visible {
+  outline: 1px solid var(--accent, #d4a14a); outline-offset: 1px;
+}
+
+/* Compact widget mode — denser tiles, smaller fonts, hidden sublabels.
+   Toggled from the widget header; persists via localStorage. */
+.td-w-root.is-compact { gap: 4px; padding: 6px 8px 8px; }
+.td-w-root.is-compact .td-w-stack { gap: 3px; }
+.td-w-root.is-compact .td-w-range-row { gap: 3px; }
+.td-w-root.is-compact .td-w-kpi { padding: 3px 6px; gap: 0; }
+.td-w-root.is-compact .td-w-kpi-label { font-size: 8px; }
+.td-w-root.is-compact .td-w-kpi-value { font-size: 13px; }
+.td-w-root.is-compact .td-w-kpi-sub { display: none; }
+.td-w-root.is-compact .td-w-spark,
+.td-w-root.is-compact .td-w-spark-stack { display: none; }
+.td-w-root.is-compact .td-w-kpi-bar { padding: 3px 6px; gap: 2px; }
+.td-w-root.is-compact .td-w-kpi-value-inline { font-size: 11px; }
+.td-w-root.is-compact .td-w-kpi-reset { font-size: 9px; }
+.td-w-root.is-compact .td-w-bar { height: 3px; }
 
 .a-widget-card-sub {
   display: flex;

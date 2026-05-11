@@ -17,28 +17,57 @@ const WIDGET_METRICS = [
   { id: "cache_hit",     label: "Cache hit",       note: "today's cache-read share of total tokens" },
   { id: "cache_x_cost",  label: "Cache × cost",    note: "last-24h cache+cost sparkline" },
   { id: "five_h_limit",  label: "5h limit",        note: "rolling 5h-window %, with reset countdown" },
+  { id: "active_session",  label: "Active session",   note: "current session cost + duration (live)" },
+  { id: "last_prompt_cost", label: "Last prompt",     note: "most recent prompt's USD + tokens" },
+  { id: "prompts_today",   label: "Prompts today",    note: "count + average cost per prompt" },
+  { id: "idle_since",      label: "Idle since",       note: "minutes since last message" },
+  { id: "skill_of_day",    label: "Skill of the day", note: "most-used skill today" },
+  { id: "wow_delta",       label: "WoW delta",        note: "this week vs last week %" },
+  { id: "mom_delta",       label: "MoM delta",        note: "this month vs last month %" },
+  { id: "peak_hour",       label: "Peak hour",        note: "busiest hour today + cost" },
 ];
 
-const MAX_SELECTED = 6;
 
 export const WidgetCard = () => {
   const [selected, setSelected] = useState(["today_live", "burn_rate", "five_h_limit"]);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [widgetOpen, setWidgetOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const fetchPrefs = async () => {
+    try {
+      const r = await fetch("/api/preferences");
+      const d = await r.json();
+      if (!d) return null;
+      return d;
+    } catch (_) {
+      return null;
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/preferences")
-      .then((r) => r.json())
+    fetchPrefs()
       .then((d) => {
         if (cancelled || !d) return;
         if (Array.isArray(d.widget_metrics) && d.widget_metrics.length > 0) {
           setSelected(d.widget_metrics);
         }
+        if (typeof d.widget_open === "boolean") {
+          setWidgetOpen(d.widget_open);
+        }
       })
-      .catch(() => {})
       .finally(() => { if (!cancelled) setLoaded(true); });
-    return () => { cancelled = true; };
+    // Poll the widget_open flag — the widget's in-window close button
+    // writes through the same flag (via the tauri-side Destroyed event),
+    // so this keeps the toggle label honest without an extra channel.
+    const t = setInterval(async () => {
+      const d = await fetchPrefs();
+      if (cancelled || !d) return;
+      if (typeof d.widget_open === "boolean") setWidgetOpen(d.widget_open);
+    }, 1500);
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
 
   const persist = async (next) => {
@@ -58,9 +87,7 @@ export const WidgetCard = () => {
     let next;
     if (has) {
       next = selected.filter((s) => s !== id);
-      if (next.length === 0) return; // never let the widget go fully blank
     } else {
-      if (selected.length >= MAX_SELECTED) return;
       // Preserve catalogue order rather than insertion order so the
       // widget layout matches what users see in the picker.
       const order = WIDGET_METRICS.map((m) => m.id);
@@ -72,27 +99,25 @@ export const WidgetCard = () => {
 
   const meta = saving ? "saving…"
     : !loaded ? "loading…"
-    : `${selected.length} / ${MAX_SELECTED} selected`;
+    : `${selected.length} selected`;
 
-  const resolveInvoke = () => {
-    const g = (typeof window !== "undefined" && window.__TAURI__) || null;
-    if (g && g.core && typeof g.core.invoke === "function") return g.core.invoke.bind(g.core);
-    if (g && typeof g.invoke === "function") return g.invoke.bind(g);
-    const internals = typeof window !== "undefined" ? window.__TAURI_INTERNALS__ : null;
-    if (internals && typeof internals.invoke === "function") return internals.invoke.bind(internals);
-    return null;
-  };
-  const canOpenWidget = !!resolveInvoke();
-
-  const openWidget = () => {
-    const invoke = resolveInvoke();
-    if (!invoke) {
-      console.warn("open_widget: no tauri invoke bridge");
-      return;
+  const toggleWidget = async () => {
+    if (busy) return;
+    const next = !widgetOpen;
+    setBusy(true);
+    setWidgetOpen(next); // optimistic — reconciler picks up within 1s
+    try {
+      await fetch("/api/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ widget_open: next }),
+      });
+    } catch (err) {
+      console.error("widget_open write failed", err);
+      setWidgetOpen(!next); // roll back
+    } finally {
+      setBusy(false);
     }
-    invoke("open_widget").catch((err) => {
-      console.error("open_widget failed", err);
-    });
   };
 
   return (
@@ -103,26 +128,27 @@ export const WidgetCard = () => {
       </div>
       <div className="a-widget-card-sub">
         <span>
-          Pick up to {MAX_SELECTED} metrics to show in the floating widget window.
-          {!canOpenWidget && <> Open it from the tray menu (<em>Show Widget</em>).</>}
+          Pick which metrics to show in the floating widget window.
         </span>
-        {canOpenWidget && (
-          <button className="a-pill-btn is-active" onClick={openWidget}>Open widget</button>
-        )}
+        <button
+          className={`a-pill-btn ${widgetOpen ? "" : "is-active"}`}
+          onClick={toggleWidget}
+          disabled={busy}
+        >
+          {widgetOpen ? "Close widget" : "Open widget"}
+        </button>
       </div>
       <div className="a-widget-picker">
         {WIDGET_METRICS.map((m) => {
           const isOn = selected.includes(m.id);
-          const disabled = !isOn && selected.length >= MAX_SELECTED;
           return (
             <label
               key={m.id}
-              className={`a-widget-pick ${isOn ? "is-active" : ""} ${disabled ? "is-disabled" : ""}`}
+              className={`a-widget-pick ${isOn ? "is-active" : ""}`}
             >
               <input
                 type="checkbox"
                 checked={isOn}
-                disabled={disabled}
                 onChange={() => toggle(m.id)}
               />
               <div>

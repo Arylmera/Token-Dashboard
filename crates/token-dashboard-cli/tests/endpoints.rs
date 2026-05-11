@@ -580,6 +580,32 @@ async fn preferences_post_round_trip() {
 }
 
 #[tokio::test]
+async fn preferences_widget_open_round_trip() {
+    let fx = setup_with_jsonl(&[]);
+    // Default is false.
+    let (_, body) = get_json(&fx.state, "/api/preferences").await;
+    assert_eq!(body["widget_open"].as_bool(), Some(false));
+
+    let (status, posted) =
+        post_json(&fx.state, "/api/preferences", &json!({"widget_open": true})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(posted["widget_open"].as_bool(), Some(true));
+
+    let (_, after) = get_json(&fx.state, "/api/preferences").await;
+    assert_eq!(after["widget_open"].as_bool(), Some(true));
+
+    // Toggle back off.
+    let (_, _) = post_json(
+        &fx.state,
+        "/api/preferences",
+        &json!({"widget_open": false}),
+    )
+    .await;
+    let (_, after_off) = get_json(&fx.state, "/api/preferences").await;
+    assert_eq!(after_off["widget_open"].as_bool(), Some(false));
+}
+
+#[tokio::test]
 async fn budget_round_trip() {
     let fx = setup_with_jsonl(&[]);
     let (_, body) = post_json(
@@ -732,6 +758,65 @@ async fn export_csv_returns_valid_csv() {
     // One data row for s1.
     assert_eq!(lines.len(), 2);
     assert!(lines[1].starts_with("s1,C--work-sample,"));
+}
+
+#[tokio::test]
+async fn export_json_returns_session_rows() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "hello world"),
+        assistant("a1", "2026-04-10T00:00:01Z", "claude-opus-4-7", 50),
+    ]);
+
+    let resp = app(fx.state.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/export.json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "application/json; charset=utf-8"
+    );
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    let rows = body.as_array().expect("array");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["session_id"].as_str(), Some("s1"));
+    assert_eq!(rows[0]["project_slug"].as_str(), Some("C--work-sample"));
+    assert!(rows[0]["cost_usd"].is_number());
+    assert_eq!(rows[0]["first_prompt"].as_str(), Some("hello world"));
+}
+
+#[tokio::test]
+async fn prompts_fts_search_filters_by_query() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "rewrite the auth middleware"),
+        assistant("a1", "2026-04-10T00:00:01Z", "claude-opus-4-7", 50),
+        user("u2", "2026-04-10T00:01:00Z", "fix the date picker bug"),
+        assistant("a2", "2026-04-10T00:01:01Z", "claude-opus-4-7", 50),
+    ]);
+
+    let (status, body) = get_json(&fx.state, "/api/prompts?q=auth&sort=recent").await;
+    assert_eq!(status, StatusCode::OK);
+    let rows = body.as_array().expect("array");
+    assert_eq!(
+        rows.len(),
+        1,
+        "FTS should narrow to the one matching prompt"
+    );
+    assert_eq!(rows[0]["user_uuid"].as_str(), Some("u1"));
+
+    // No filter → both prompts come back.
+    let (_, body_all) = get_json(&fx.state, "/api/prompts?sort=recent").await;
+    assert_eq!(body_all.as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]

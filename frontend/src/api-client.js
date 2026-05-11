@@ -66,8 +66,17 @@ const isoDaysAgo = (n) => {
 };
 
 const RANGE_DAYS = { "1d": 1, "7d": 7, "30d": 30, "90d": 90, "all": null };
-const RANGE_LABELS = { "1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days", "all": "all-time" };
+const RANGE_LABELS = { "1d": "1 day", "7d": "7 days", "30d": "30 days", "90d": "90 days", "all": "all-time", "custom": "custom" };
 const RANGE_PLUS = { "1d": "7d", "7d": "30d", "30d": "90d", "90d": "all", "all": "all" };
+
+// Build the `?since=&until=` query suffix for a range that may be either a
+// preset (since-only) or "custom" (since + until from the user-picked dates).
+const rangeQuery = (rangeSince, rangeUntil) => {
+  const parts = [];
+  if (rangeSince) parts.push(`since=${encodeURIComponent(rangeSince)}`);
+  if (rangeUntil) parts.push(`until=${encodeURIComponent(rangeUntil)}`);
+  return parts.length ? `?${parts.join("&")}` : "";
+};
 const _plusKey = () => RANGE_PLUS[currentRange] || "all";
 const _plusSince = () => {
   const days = RANGE_DAYS[_plusKey()];
@@ -80,6 +89,9 @@ const billable = (o) => (o.input_tokens || 0) + (o.output_tokens || 0)
 const totalTokens = (o) => billable(o) + (o.cache_read_tokens || 0);
 
 let currentRange = "30d";
+let currentPromptQuery = "";
+let _customSince = null;
+let _customUntil = null;
 
 // Endpoint registry. Each entry declares:
 //   key       — slot in MOCK_DATA the result lands in
@@ -95,23 +107,34 @@ const REG = [
   { key: "overview7",     trigger: "days",  windowSince: () => isoDaysAgo(7),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(7))}` },
   { key: "overviewToday", trigger: "days",  windowSince: () => isoDaysAgo(0),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(0))}` },
   { key: "overviewYday",  trigger: "days",  windowSince: () => isoDaysAgo(1),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(1))}&until=${encodeURIComponent(isoDaysAgo(0))}` },
-  { key: "overviewRange", trigger: "days",  windowSince: (r) => r, url: ({ rangeSince }) => `/api/overview${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
+  { key: "overviewRange", trigger: "days",  windowSince: (r) => r, url: ({ rangeSince, rangeUntil }) => `/api/overview${rangeQuery(rangeSince, rangeUntil)}` },
   { key: "overviewPlus",  trigger: "days",  windowSince: () => _plusSince(), url: ({ plusSince }) => `/api/overview${plusSince ? `?since=${encodeURIComponent(plusSince)}` : ""}` },
-  { key: "daily",         trigger: "days",  windowSince: (r) => r, url: ({ rangeSince }) => `/api/daily${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
+  { key: "daily",         trigger: "days",  windowSince: (r) => r, url: ({ rangeSince, rangeUntil }) => `/api/daily${rangeQuery(rangeSince, rangeUntil)}` },
   { key: "dailyPlus",     trigger: "days",  windowSince: () => _plusSince(), url: ({ plusSince }) => `/api/daily${plusSince ? `?since=${encodeURIComponent(plusSince)}` : ""}` },
-  { key: "projects",      trigger: "projects", url: ({ rangeSince }) => `/api/projects${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
-  { key: "tools",         trigger: "any",   url: ({ rangeSince }) => `/api/tools${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
-  { key: "sessionsRaw",   trigger: "sessions", url: ({ rangeSince }) => `/api/sessions?${rangeSince ? `since=${encodeURIComponent(rangeSince)}&` : ""}limit=50` },
+  { key: "projects",      trigger: "projects", url: ({ rangeSince, rangeUntil }) => `/api/projects${rangeQuery(rangeSince, rangeUntil)}` },
+  { key: "tools",         trigger: "any",   url: ({ rangeSince, rangeUntil }) => `/api/tools${rangeQuery(rangeSince, rangeUntil)}` },
+  { key: "sessionsRaw",   trigger: "sessions", url: ({ rangeSince, rangeUntil }) => `/api/sessions${rangeQuery(rangeSince, rangeUntil)}${rangeQuery(rangeSince, rangeUntil) ? "&" : "?"}limit=50` },
   { key: "topSessionsRaw", trigger: "sessions", url: () => `/api/sessions?order=cost&limit=50`, fallback: () => [] },
-  { key: "skills",        trigger: "any",   url: ({ rangeSince }) => `/api/skills${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
-  { key: "byModel",       trigger: "models", url: ({ rangeSince }) => `/api/by-model${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}` },
-  { key: "prompts",       trigger: "sessions", url: ({ rangeSince }) => `/api/prompts?${rangeSince ? `since=${encodeURIComponent(rangeSince)}&` : ""}limit=20&sort=tokens` },
+  { key: "skills",        trigger: "any",   url: ({ rangeSince, rangeUntil }) => `/api/skills${rangeQuery(rangeSince, rangeUntil)}` },
+  { key: "byModel",       trigger: "models", url: ({ rangeSince, rangeUntil }) => `/api/by-model${rangeQuery(rangeSince, rangeUntil)}` },
+  { key: "prompts",       trigger: "sessions", url: ({ rangeSince, rangeUntil, promptQuery }) => {
+      const parts = [];
+      if (rangeSince) parts.push(`since=${encodeURIComponent(rangeSince)}`);
+      if (rangeUntil) parts.push(`until=${encodeURIComponent(rangeUntil)}`);
+      if (promptQuery) parts.push(`q=${encodeURIComponent(promptQuery)}`);
+      parts.push("limit=50", "sort=tokens");
+      return `/api/prompts?${parts.join("&")}`;
+    } },
   { key: "hourlyRaw",     trigger: "days",  windowSince: () => isoDaysAgo(1), url: () => "/api/hourly?hours=24", fallback: () => [] },
+  { key: "recentPromptsRaw", trigger: "sessions", url: () => "/api/prompts?sort=recent&limit=5", fallback: () => [] },
+  { key: "prevWeekOv",    trigger: "days",  windowSince: () => isoDaysAgo(14), url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(14))}&until=${encodeURIComponent(isoDaysAgo(7))}`, fallback: () => ({}) },
+  { key: "prevMonthOv",   trigger: "days",  windowSince: () => isoDaysAgo(60), url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(60))}&until=${encodeURIComponent(isoDaysAgo(30))}`, fallback: () => ({}) },
+  { key: "skillsToday",   trigger: "days",  windowSince: () => isoDaysAgo(0), url: () => `/api/skills?since=${encodeURIComponent(isoDaysAgo(0))}`, fallback: () => [] },
   { key: "tips",          trigger: "any",   url: () => "/api/tips", fallback: () => [] },
   { key: "planResp",      trigger: "static", url: () => "/api/plan",   fallback: () => ({ plan: "max" }) },
   { key: "limitsResp",    trigger: "static", url: () => "/api/limits", fallback: () => null },
   { key: "budgetResp",    trigger: "static", url: () => "/api/budget", fallback: () => null },
-  { key: "phaseResp",     trigger: "any",   url: ({ rangeSince }) => `/api/phase-split${rangeSince ? `?since=${encodeURIComponent(rangeSince)}` : ""}`, fallback: () => null },
+  { key: "phaseResp",     trigger: "any",   url: ({ rangeSince, rangeUntil }) => `/api/phase-split${rangeQuery(rangeSince, rangeUntil)}`, fallback: () => null },
   { key: "tagsResp",      trigger: "static", url: () => "/api/tags", fallback: () => [] },
   { key: "prefsResp",     trigger: "static", url: () => "/api/preferences", fallback: () => null },
 ];
@@ -133,14 +156,18 @@ async function _fetchKeys(keys, ctx) {
 }
 
 function _ctx(range) {
+  const isCustom = range === "custom";
   const days = RANGE_DAYS[range];
-  const pk = RANGE_PLUS[range] || "all";
+  const pk = isCustom ? "all" : (RANGE_PLUS[range] || "all");
   const pdays = RANGE_DAYS[pk];
+  const rangeSince = isCustom ? (_customSince || null) : (days == null ? null : isoDaysAgo(days));
   return {
     range,
-    rangeSince: days == null ? null : isoDaysAgo(days),
+    rangeSince,
+    rangeUntil: isCustom ? (_customUntil || null) : null,
     plusKey: pk,
     plusSince: pdays == null ? null : isoDaysAgo(pdays),
+    promptQuery: currentPromptQuery || null,
   };
 }
 
@@ -172,14 +199,39 @@ function _rebuildMockData(range) {
     phase:    c.phaseResp || null,
     tags:     Array.isArray(c.tagsResp) ? c.tagsResp : [],
     prefs:    c.prefsResp || null,
+    lastPrompt:    buildLastPrompt(c.recentPromptsRaw || []),
+    promptsToday:  buildPromptsToday(c.overviewToday || {}),
+    activeSession: buildActiveSession(c.sessionsRaw || []),
+    idleSince:     buildIdleSince(c.sessionsRaw || [], c.recentPromptsRaw || []),
+    skillOfDay:    buildSkillOfDay(c.skillsToday || []),
+    wow:           buildDeltaPair(c.overview7 || {}, c.prevWeekOv || {}),
+    mom:           buildDeltaPair(c.overview30 || {}, c.prevMonthOv || {}),
+    peakHour:      buildPeakHour(c.hourlyRaw || []),
   };
 }
 
 async function loadAll(range) {
-  if (range !== undefined && RANGE_DAYS[range] !== undefined) currentRange = range;
+  if (range !== undefined && (RANGE_DAYS[range] !== undefined || range === "custom")) {
+    currentRange = range;
+  }
   const r = currentRange;
   await _fetchKeys(REG.map((e) => e.key), _ctx(r));
   _rebuildMockData(r);
+}
+
+async function setCustomRange(since, until) {
+  _customSince = since || null;
+  _customUntil = until || null;
+  if (_customSince || _customUntil) {
+    await loadAll("custom");
+  }
+}
+
+async function setPromptQuery(q) {
+  currentPromptQuery = (q || "").trim();
+  // Only the prompts endpoint depends on the query; refetch just that slice.
+  await _fetchKeys(["prompts"], _ctx(currentRange));
+  _rebuildMockData(currentRange);
 }
 
 async function loadDelta(hint) {
@@ -379,6 +431,84 @@ const buildToday = (today) => {
   };
 };
 
+const buildLastPrompt = (rows) => {
+  const r = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!r) return null;
+  return {
+    cost: r.estimated_cost_usd || 0,
+    tokens: r.billable_tokens || 0,
+    model: shortModel(r.model),
+    timestamp: r.timestamp || null,
+    project: r.project_slug || null,
+  };
+};
+
+const buildPromptsToday = (today) => {
+  const count = today.turns || 0;
+  const cost = today.cost_usd || 0;
+  return { count, avgCost: count > 0 ? cost / count : 0, totalCost: cost };
+};
+
+const buildActiveSession = (rows) => {
+  const r = Array.isArray(rows) && rows[0] ? rows[0] : null;
+  if (!r || !r.started) return null;
+  const started = new Date(r.started).getTime();
+  const ended = r.ended ? new Date(r.ended).getTime() : started;
+  return {
+    id: r.session_id || null,
+    project: r.project_name || r.project_slug || "—",
+    cost: r.cost_usd || 0,
+    tokens: r.tokens || 0,
+    started: r.started,
+    ended: r.ended || r.started,
+    durationMs: Math.max(0, ended - started),
+    idleMs: Math.max(0, Date.now() - ended),
+  };
+};
+
+const buildIdleSince = (sessions, prompts) => {
+  const candidates = [];
+  if (sessions[0] && sessions[0].ended) candidates.push(new Date(sessions[0].ended).getTime());
+  if (prompts[0] && prompts[0].timestamp) candidates.push(new Date(prompts[0].timestamp).getTime());
+  if (candidates.length === 0) return null;
+  return new Date(Math.max(...candidates)).toISOString();
+};
+
+const buildSkillOfDay = (skills) => {
+  if (!Array.isArray(skills) || skills.length === 0) return null;
+  const top = skills.slice().sort((a, b) => (b.invocations || 0) - (a.invocations || 0))[0];
+  if (!top || !top.invocations) return null;
+  return {
+    name: top.skill,
+    invocations: top.invocations || 0,
+    sessions: top.sessions || 0,
+  };
+};
+
+const buildDeltaPair = (current, previous) => {
+  const cur = current.cost_usd || 0;
+  const prev = previous.cost_usd || 0;
+  const delta = cur - prev;
+  const pct = prev > 0 ? delta / prev : (cur > 0 ? 1 : 0);
+  return { current: cur, previous: prev, delta, pct };
+};
+
+const buildPeakHour = (hourlyRaw) => {
+  const arr = Array.isArray(hourlyRaw) ? hourlyRaw : [];
+  if (arr.length === 0) return null;
+  let bestIdx = -1;
+  let bestCost = -1;
+  arr.forEach((b, i) => {
+    const c = (b && b.cost_usd) || 0;
+    if (c > bestCost) { bestCost = c; bestIdx = i; }
+  });
+  if (bestIdx < 0 || bestCost <= 0) return null;
+  // hourlyRaw is oldest→newest over the last 24h; convert idx to clock hour.
+  const now = new Date();
+  const ts = new Date(now.getTime() - (arr.length - 1 - bestIdx) * 3600 * 1000);
+  return { hour: ts.getHours(), cost: bestCost };
+};
+
 const buildBurn = (hourly, weekCost) => {
   const lastHour = hourly[hourly.length - 1] || 0;
   const weeklyAvg = (weekCost / 7 / 24) || 0;
@@ -411,6 +541,8 @@ window.DATA_READY = loadAll().catch((err) => {
 window.RELOAD_DATA   = loadAll;     // back-compat alias
 window.RELOAD_DELTA  = loadDelta;
 window.RELOAD_STATIC = loadStatic;
+window.SET_CUSTOM_RANGE = setCustomRange;
+window.SET_PROMPT_QUERY = setPromptQuery;
 
 // /api/stream consumer.
 //

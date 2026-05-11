@@ -1,6 +1,6 @@
 [package]
 name = "token-dashboard-core"
-version = "4.0.4"
+version = "4.0.5"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
