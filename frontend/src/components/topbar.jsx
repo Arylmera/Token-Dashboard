@@ -2,7 +2,15 @@ import React, { useEffect, useState } from "react";
 
 const TABS = ["overview", "prompts", "sessions", "token sink", "tips", "api", "settings"];
 const ADVANCED_TABS = new Set(["api"]);
-const RANGES = ["1d", "7d", "30d", "90d", "all"];
+const RANGES = ["1d", "7d", "30d", "90d", "all", "custom"];
+
+// yyyy-mm-dd → ISO at local midnight. The backend's `range_clause` does a
+// string compare on `timestamp`, so we hand it an ISO with seconds.
+const dateToIso = (yyyymmdd, endOfDay) => {
+  if (!yyyymmdd) return null;
+  const d = new Date(yyyymmdd + (endOfDay ? "T23:59:59" : "T00:00:00"));
+  return isNaN(d) ? null : d.toISOString();
+};
 
 const useVersion = () => {
   const [version, setVersion] = useState("");
@@ -58,6 +66,18 @@ const WindowControls = () => {
 export const Topbar = ({ tab, setTab, range, setRange, advancedMode = false }) => {
   const version = useVersion();
   const visibleTabs = TABS.filter((t) => advancedMode || !ADVANCED_TABS.has(t));
+  const [customSince, setCustomSince] = useState("");
+  const [customUntil, setCustomUntil] = useState("");
+  // Push the custom dates to the data layer whenever either bound changes
+  // *and* we're actually in custom mode. Switching back to a preset clears
+  // the override; selecting "custom" with no dates yet is a no-op.
+  useEffect(() => {
+    if (range !== "custom") return;
+    if (!window.SET_CUSTOM_RANGE) return;
+    const since = dateToIso(customSince, false);
+    const until = dateToIso(customUntil, true);
+    if (since || until) window.SET_CUSTOM_RANGE(since, until);
+  }, [range, customSince, customUntil]);
   return (
   <header className="a-topbar" data-tauri-drag-region>
     <div className="a-brand a-prompt" data-tauri-drag-region>
@@ -94,6 +114,23 @@ export const Topbar = ({ tab, setTab, range, setRange, advancedMode = false }) =
           </button>
         ))}
       </div>
+      {range === "custom" && (
+        <div className="a-range-custom" data-tauri-drag-region="false">
+          <input
+            type="date"
+            aria-label="Range start"
+            value={customSince}
+            onChange={(e) => setCustomSince(e.target.value)}
+          />
+          <span className="a-range-custom-sep">→</span>
+          <input
+            type="date"
+            aria-label="Range end"
+            value={customUntil}
+            onChange={(e) => setCustomUntil(e.target.value)}
+          />
+        </div>
+      )}
       <WindowControls />
     </div>
   </header>

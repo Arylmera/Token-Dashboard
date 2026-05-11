@@ -541,6 +541,7 @@ struct PreferencesResponse {
     limits_5h_cap_override: Option<i64>,
     limits_weekly_cap_override: Option<i64>,
     widget_metrics: Vec<String>,
+    widget_open: bool,
 }
 
 async fn preferences_get(State(s): State<AppState>) -> Result<Json<PreferencesResponse>, ApiError> {
@@ -572,6 +573,7 @@ async fn preferences_get(State(s): State<AppState>) -> Result<Json<PreferencesRe
                 "limits_weekly_cap_override",
             )?,
             widget_metrics: preferences::get_widget_metrics(p)?,
+            widget_open: preferences::get_widget_open(p)?,
         })
     })
     .await?;
@@ -621,6 +623,8 @@ struct PreferencesBody {
     anthropic_api_key: Option<String>,
     #[serde(default)]
     widget_metrics: Option<Vec<String>>,
+    #[serde(default)]
+    widget_open: Option<bool>,
 }
 
 async fn preferences_post(
@@ -745,6 +749,15 @@ async fn preferences_post(
                     stored.into_iter().map(serde_json::Value::String).collect(),
                 ),
             );
+        }
+        if let Some(v) = body.widget_open {
+            // Widget open/close requests are written here; the Tauri
+            // shell reconciles the actual window state via its own poller.
+            // For headless cli runs the flag is a no-op but persists for
+            // the next launch.
+            let stored = preferences::set_widget_open(p, v)?;
+            let _ = events.send(serde_json::json!({"type": "preferences", "widget_open": stored}));
+            out.insert("widget_open".into(), serde_json::Value::Bool(stored));
         }
         Ok(serde_json::Value::Object(out))
     })
@@ -1346,6 +1359,80 @@ async fn pricing_clear(
     Ok(payload)
 }
 
+#[derive(Serialize)]
+struct SessionExportRow {
+    session_id: String,
+    project_slug: String,
+    project_name: String,
+    started: Option<String>,
+    ended: Option<String>,
+    turns: i64,
+    tokens: i64,
+    cost_usd: f64,
+    model: Option<String>,
+    tags: Vec<String>,
+    first_prompt: Option<String>,
+}
+
+fn compute_session_export(
+    path: &std::path::Path,
+    pricing: &Pricing,
+    since: Option<&str>,
+    until: Option<&str>,
+    tag: Option<&str>,
+) -> rusqlite::Result<Vec<SessionExportRow>> {
+    let rows = recent_sessions(path, 10_000, since, until, tag)?;
+    let ids: Vec<String> = rows.iter().map(|r| r.session_id.clone()).collect();
+    let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let usage = session_model_usage(path, &id_refs)?;
+    let tags_map = session_tags(path, &id_refs)?;
+    let fp_map = first_prompts(path, &id_refs)?;
+
+    use std::collections::HashMap;
+    let mut cost: HashMap<String, f64> = ids.iter().map(|s| (s.clone(), 0.0)).collect();
+    let mut top_model: HashMap<String, (Option<String>, i64)> =
+        ids.iter().map(|s| (s.clone(), (None, -1))).collect();
+    for u in &usage {
+        let cr = cost_for(
+            &u.model,
+            &Usage {
+                input_tokens: u.input_tokens,
+                output_tokens: u.output_tokens,
+                cache_read_tokens: u.cache_read_tokens,
+                cache_create_5m_tokens: u.cache_create_5m_tokens,
+                cache_create_1h_tokens: u.cache_create_1h_tokens,
+            },
+            pricing,
+        );
+        if let Some(usd) = cr.usd {
+            *cost.entry(u.session_id.clone()).or_default() += usd;
+        }
+        let billable =
+            u.input_tokens + u.output_tokens + u.cache_create_5m_tokens + u.cache_create_1h_tokens;
+        let entry = top_model.entry(u.session_id.clone()).or_insert((None, -1));
+        if billable > entry.1 {
+            *entry = (Some(u.model.clone()), billable);
+        }
+    }
+
+    Ok(rows
+        .into_iter()
+        .map(|r| SessionExportRow {
+            cost_usd: cost.get(&r.session_id).copied().unwrap_or(0.0),
+            model: top_model.get(&r.session_id).and_then(|(m, _)| m.clone()),
+            tags: tags_map.get(&r.session_id).cloned().unwrap_or_default(),
+            first_prompt: fp_map.get(&r.session_id).cloned(),
+            session_id: r.session_id,
+            project_slug: r.project_slug,
+            project_name: r.project_name,
+            started: r.started,
+            ended: r.ended,
+            turns: r.turns,
+            tokens: r.tokens,
+        })
+        .collect())
+}
+
 async fn export_csv(
     State(s): State<AppState>,
     Query(q): Query<SessionsQs>,
@@ -1354,64 +1441,20 @@ async fn export_csv(
     let pricing = s.pricing.clone();
     let tag = q.tag.clone();
     let csv_text = blocking(move || -> rusqlite::Result<String> {
-        let rows = recent_sessions(
+        let rows = compute_session_export(
             path.as_ref(),
-            10_000,
+            &pricing,
             q.since.as_deref(),
             q.until.as_deref(),
             tag.as_deref(),
         )?;
-        let ids: Vec<String> = rows.iter().map(|r| r.session_id.clone()).collect();
-        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
-        let usage = session_model_usage(path.as_ref(), &id_refs)?;
-        let tags_map = session_tags(path.as_ref(), &id_refs)?;
-        let fp_map = first_prompts(path.as_ref(), &id_refs)?;
-
-        use std::collections::HashMap;
-        let mut cost: HashMap<String, f64> = ids.iter().map(|s| (s.clone(), 0.0)).collect();
-        let mut top_model: HashMap<String, (Option<String>, i64)> =
-            ids.iter().map(|s| (s.clone(), (None, -1))).collect();
-        for u in &usage {
-            let cr = cost_for(
-                &u.model,
-                &Usage {
-                    input_tokens: u.input_tokens,
-                    output_tokens: u.output_tokens,
-                    cache_read_tokens: u.cache_read_tokens,
-                    cache_create_5m_tokens: u.cache_create_5m_tokens,
-                    cache_create_1h_tokens: u.cache_create_1h_tokens,
-                },
-                &pricing,
-            );
-            if let Some(usd) = cr.usd {
-                *cost.entry(u.session_id.clone()).or_default() += usd;
-            }
-            let billable = u.input_tokens
-                + u.output_tokens
-                + u.cache_create_5m_tokens
-                + u.cache_create_1h_tokens;
-            let entry = top_model
-                .entry(u.session_id.clone())
-                .or_insert((None, -1));
-            if billable > entry.1 {
-                *entry = (Some(u.model.clone()), billable);
-            }
-        }
-
         let mut buf = String::new();
         buf.push_str("session_id,project_slug,project_name,started,ended,turns,tokens,cost_usd,model,tags,first_prompt\n");
         for r in &rows {
-            let model = top_model
-                .get(&r.session_id)
-                .and_then(|(m, _)| m.clone())
-                .unwrap_or_default();
-            let cost_str = format!("{:.6}", cost.get(&r.session_id).copied().unwrap_or(0.0));
-            let tags = tags_map
-                .get(&r.session_id)
-                .map(|v| v.join(","))
-                .unwrap_or_default();
-            let first_prompt = fp_map
-                .get(&r.session_id)
+            let cost_str = format!("{:.6}", r.cost_usd);
+            let first_prompt = r
+                .first_prompt
+                .as_deref()
                 .map(|s| s.replace(['\r', '\n'], " "))
                 .unwrap_or_default();
             push_csv_row(
@@ -1425,8 +1468,8 @@ async fn export_csv(
                     &r.turns.to_string(),
                     &r.tokens.to_string(),
                     &cost_str,
-                    &model,
-                    &tags,
+                    r.model.as_deref().unwrap_or(""),
+                    &r.tags.join(","),
                     &first_prompt,
                 ],
             );
@@ -1445,6 +1488,45 @@ async fn export_csv(
     headers.insert(
         axum::http::header::CONTENT_DISPOSITION,
         "attachment; filename=\"token-dashboard-sessions.csv\""
+            .parse()
+            .unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        "no-store".parse().unwrap(),
+    );
+    Ok(resp)
+}
+
+async fn export_json(
+    State(s): State<AppState>,
+    Query(q): Query<SessionsQs>,
+) -> Result<axum::response::Response, ApiError> {
+    let path = s.db_path.clone();
+    let pricing = s.pricing.clone();
+    let tag = q.tag.clone();
+    let rows = blocking(move || {
+        compute_session_export(
+            path.as_ref(),
+            &pricing,
+            q.since.as_deref(),
+            q.until.as_deref(),
+            tag.as_deref(),
+        )
+    })
+    .await?
+    .0;
+    let body = serde_json::to_vec_pretty(&rows)
+        .map_err(|e| ApiError::internal(format!("serialize: {e}")))?;
+    let mut resp = axum::response::Response::new(axum::body::Body::from(body));
+    let headers = resp.headers_mut();
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        "application/json; charset=utf-8".parse().unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        "attachment; filename=\"token-dashboard-sessions.json\""
             .parse()
             .unwrap(),
     );
@@ -1674,6 +1756,8 @@ struct PromptsQs {
     since: Option<String>,
     #[serde(default)]
     until: Option<String>,
+    #[serde(default)]
+    q: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1694,6 +1778,7 @@ async fn prompts(
     let sort = q.sort.unwrap_or_else(|| "tokens".into());
     let since = q.since.clone();
     let until = q.until.clone();
+    let search = q.q.clone();
     let rows = blocking(move || {
         expensive_prompts(
             path.as_ref(),
@@ -1701,6 +1786,7 @@ async fn prompts(
             &sort,
             since.as_deref(),
             until.as_deref(),
+            search.as_deref(),
         )
     })
     .await?
@@ -2069,6 +2155,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/import.db", post(import_db))
         .route("/api/pricing", get(pricing_get))
         .route("/api/export.csv", get(export_csv))
+        .route("/api/export.json", get(export_json))
         .route("/api/export.db", get(export_db))
         .route("/api/pricing/clear-all", post(pricing_clear_all))
         .route("/api/pricing/:model", post(pricing_set))

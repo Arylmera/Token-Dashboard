@@ -7,13 +7,16 @@
 //! back-solve a cap from a percentage shown in Anthropic's statusbar.
 //!
 //! Window semantics:
-//! - 5h: anchored. If the user set `limits_five_hour_reset_at` we
-//!   honour it (anchor = reset - 5h). Otherwise we anchor to the first
-//!   assistant message in the last 5h; with no recent activity the
-//!   window is idle (anchor = null) and the frontend renders the idle
-//!   sub-label.
-//! - Weekly: anchored when `limits_weekly_reset_at` is set; otherwise
-//!   rolling over the last 7 days.
+//! - 5h: anchored. If the user set `limits_five_hour_reset_at` and it is
+//!   still in the future, we honour it (anchor = reset - 5h). A stale
+//!   reset_at (already past) is treated as expired and we fall back to
+//!   the first assistant message in the last 5h; with no recent activity
+//!   the window is idle (anchor = null) and the frontend renders the
+//!   idle sub-label.
+//! - Weekly: when `limits_weekly_reset_at` is set we roll it forward by
+//!   7-day multiples until it is in the future (Anthropic's weekly reset
+//!   is a recurring wall-clock schedule). Otherwise rolling over the
+//!   last 7 days.
 
 use std::path::Path;
 
@@ -133,11 +136,21 @@ fn resolve_5h_window(
     reset_at: Option<&str>,
 ) -> rusqlite::Result<(Option<String>, Option<String>)> {
     if let Some(r) = reset_at {
-        let anchor: String =
-            conn.query_row("SELECT datetime(?, '-5 hours')", params![r], |row| {
-                row.get(0)
-            })?;
-        return Ok((Some(anchor), Some(r.to_string())));
+        // Honour the user-set reset only while it is still in the future.
+        // A stale reset_at means the window already elapsed; fall through
+        // to message-driven anchoring so the dashboard rolls forward.
+        let in_future: i64 = conn.query_row(
+            "SELECT CASE WHEN datetime(?) > datetime('now') THEN 1 ELSE 0 END",
+            params![r],
+            |row| row.get(0),
+        )?;
+        if in_future == 1 {
+            let anchor: String =
+                conn.query_row("SELECT datetime(?, '-5 hours')", params![r], |row| {
+                    row.get(0)
+                })?;
+            return Ok((Some(anchor), Some(r.to_string())));
+        }
     }
     let first: Option<String> = conn
         .query_row(
@@ -161,17 +174,30 @@ fn resolve_5h_window(
 }
 
 /// Weekly window is always defined: rolling last-7-days when no
-/// `reset_at` is set, anchored when it is. Returns `(anchor, resets_at)`.
+/// `reset_at` is set, anchored when it is. A stale `reset_at` is rolled
+/// forward by 7-day multiples until it lands in the future, matching
+/// Anthropic's recurring weekly reset schedule. Returns `(anchor, resets_at)`.
 fn resolve_weekly_window(
     conn: &rusqlite::Connection,
     reset_at: Option<&str>,
 ) -> rusqlite::Result<(String, Option<String>)> {
     if let Some(r) = reset_at {
+        let rolled: String = conn.query_row(
+            "WITH RECURSIVE roll(ts) AS ( \
+                SELECT datetime(?) \
+                UNION ALL \
+                SELECT datetime(ts, '+7 days') FROM roll \
+                WHERE datetime(ts) <= datetime('now') \
+             ) \
+             SELECT ts FROM roll WHERE datetime(ts) > datetime('now') LIMIT 1",
+            params![r],
+            |row| row.get(0),
+        )?;
         let anchor: String =
-            conn.query_row("SELECT datetime(?, '-7 days')", params![r], |row| {
+            conn.query_row("SELECT datetime(?, '-7 days')", params![rolled], |row| {
                 row.get(0)
             })?;
-        return Ok((anchor, Some(r.to_string())));
+        return Ok((anchor, Some(rolled)));
     }
     let anchor: String =
         conn.query_row("SELECT datetime('now', '-7 days')", [], |row| row.get(0))?;
@@ -296,6 +322,50 @@ mod tests {
         assert!(snap.five_hour.calibrated);
         assert!(!snap.weekly.calibrated);
         assert_eq!(snap.weekly.cap, Some(90_000_000));
+    }
+
+    #[test]
+    fn stale_five_hour_reset_falls_back_to_idle() {
+        let f = fresh_db();
+        // reset_at set in the past → window already elapsed.
+        preferences::set_limit_reset_at(
+            f.path(),
+            "limits_five_hour_reset_at",
+            Some("2026-05-10T10:00:00Z"),
+        )
+        .unwrap();
+        let pricing = Pricing::embedded();
+        let snap = compute_limits(f.path(), &pricing).unwrap();
+        // No recent messages and reset_at stale → idle, not stuck.
+        assert!(snap.five_hour.anchor.is_none(), "expected idle 5h window");
+        assert_eq!(snap.five_hour.used, 0);
+        assert!(snap.five_hour.resets_at.is_none());
+    }
+
+    #[test]
+    fn stale_weekly_reset_rolls_forward() {
+        let f = fresh_db();
+        // reset_at set 3 weeks ago → should roll forward to a future time.
+        let conn = Connection::open(f.path()).unwrap();
+        let past_reset: String = conn
+            .query_row("SELECT datetime('now', '-21 days')", [], |r| r.get(0))
+            .unwrap();
+        drop(conn);
+        preferences::set_limit_reset_at(f.path(), "limits_weekly_reset_at", Some(&past_reset))
+            .unwrap();
+        let pricing = Pricing::embedded();
+        let snap = compute_limits(f.path(), &pricing).unwrap();
+        let next_reset = snap.weekly.resets_at.expect("rolled reset_at");
+        // The rolled reset must be in the future.
+        let conn = queries::open_ro(f.path()).unwrap();
+        let future: i64 = conn
+            .query_row(
+                "SELECT CASE WHEN datetime(?) > datetime('now') THEN 1 ELSE 0 END",
+                params![next_reset.clone()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(future, 1, "rolled weekly reset {next_reset} not in future");
     }
 
     #[test]

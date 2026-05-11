@@ -184,6 +184,55 @@ const useTopMostToggle = (win) => {
   return [pinned, toggle];
 };
 
+const COMPACT_KEY = "td-widget-compact";
+const useCompactToggle = () => {
+  const [compact, setCompact] = useState(() => {
+    try { return localStorage.getItem(COMPACT_KEY) === "1"; } catch (_) { return false; }
+  });
+  const toggle = () => {
+    setCompact((c) => {
+      const next = !c;
+      try { localStorage.setItem(COMPACT_KEY, next ? "1" : "0"); } catch (_) {}
+      return next;
+    });
+  };
+  return [compact, toggle];
+};
+
+// Deep-link from widget into the main window. Routes are sanitized
+// server-side too; passing an unknown one is a no-op there.
+const openMainRoute = (route) => {
+  const t = window.__TAURI__;
+  if (!t || !t.core || !t.core.invoke) return;
+  t.core.invoke("show_main_route", { route }).catch(() => {});
+};
+
+// Maps each tile id to the dashboard tab it should drill into. Anything
+// not listed lands on overview.
+const TILE_ROUTES = {
+  today_live:    "prompts",
+  today_graph:   "prompts",
+  burn_rate:     "sessions",
+  range_1d:      "overview",
+  range_7d:      "overview",
+  range_30d:     "overview",
+  range_90d:     "overview",
+  range_all:     "overview",
+  input_tokens:  "overview",
+  output_tokens: "overview",
+  cache_hit:     "tips",
+  cache_x_cost:  "tips",
+  five_h_limit:  "overview",
+  active_session:   "sessions",
+  last_prompt_cost: "prompts",
+  prompts_today:    "prompts",
+  idle_since:       "sessions",
+  skill_of_day:     "token-sink",
+  wow_delta:        "overview",
+  mom_delta:        "overview",
+  peak_hour:        "overview",
+};
+
 // ────────────────────────────── tiles ──────────────────────────────
 
 const Tile = ({ label, value, sub, tone, children }) => (
@@ -309,6 +358,63 @@ const CacheCostTile = ({ today, hourlyDetail }) => {
   );
 };
 
+const fmtDuration = (ms) => {
+  if (!ms || ms < 0) return "0m";
+  const m = Math.floor(ms / 60_000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return mm ? `${h}h${mm}m` : `${h}h`;
+};
+
+const fmtSignedPct = (pct) => {
+  const v = (pct || 0) * 100;
+  const sign = v > 0 ? "+" : v < 0 ? "−" : "";
+  return `${sign}${Math.abs(v).toFixed(1)}%`;
+};
+
+const ActiveSessionTile = ({ active }) => {
+  if (!active) return <Tile label="active session" value="—" sub="no recent session" />;
+  const sub = `${active.project} · ${fmtDuration(active.durationMs)} · idle ${fmtDuration(active.idleMs)}`;
+  return <Tile label="active session" value={fmtUsd(active.cost)} sub={sub} />;
+};
+
+const LastPromptTile = ({ last }) => {
+  if (!last) return <Tile label="last prompt" value="—" sub="no prompts yet" />;
+  const sub = `${fmtTokens(last.tokens)} tok · ${last.model || "—"}`;
+  return <Tile label="last prompt" value={fmtUsd(last.cost)} sub={sub} />;
+};
+
+const PromptsTodayTile = ({ pt }) => {
+  if (!pt || !pt.count) return <Tile label="prompts · today" value="0" sub="no prompts yet" />;
+  return <Tile label="prompts · today" value={String(pt.count)} sub={`avg ${fmtUsd(pt.avgCost)} / prompt`} />;
+};
+
+const IdleSinceTile = ({ idleSince }) => {
+  if (!idleSince) return <Tile label="idle since" value="—" sub="no activity" />;
+  const ms = Date.now() - new Date(idleSince).getTime();
+  const tone = ms < 5 * 60_000 ? "good" : ms < 30 * 60_000 ? "warn" : "bad";
+  return <Tile label="idle since" value={fmtDuration(ms)} sub="since last message" tone={tone} />;
+};
+
+const SkillOfDayTile = ({ skill }) => {
+  if (!skill) return <Tile label="skill · today" value="—" sub="no skills used" />;
+  return <Tile label="skill · today" value={skill.name} sub={`${skill.invocations} invocations`} />;
+};
+
+const DeltaTile = ({ label, pair }) => {
+  if (!pair) return <Tile label={label} value="—" sub="no data" />;
+  const tone = pair.delta > 0 ? "bad" : pair.delta < 0 ? "good" : null;
+  const sub = `${fmtUsd(pair.current)} vs ${fmtUsd(pair.previous)}`;
+  return <Tile label={label} value={fmtSignedPct(pair.pct)} sub={sub} tone={tone} />;
+};
+
+const PeakHourTile = ({ peak }) => {
+  if (!peak) return <Tile label="peak hour · today" value="—" sub="no data" />;
+  const hh = String(peak.hour).padStart(2, "0");
+  return <Tile label="peak hour · today" value={`${hh}:00`} sub={fmtUsd(peak.cost)} />;
+};
+
 const FiveHourLimitTile = ({ limits }) => {
   const five = limits && limits.five_hour;
   if (!five) {
@@ -331,13 +437,45 @@ const FiveHourLimitTile = ({ limits }) => {
 const RANGE_IDS = new Set(["range_1d", "range_7d", "range_30d", "range_90d", "range_all"]);
 const IO_IDS = new Set(["input_tokens", "output_tokens"]);
 const groupOf = (id) => {
-  if (RANGE_IDS.has(id)) return "range";
-  if (IO_IDS.has(id)) return "io";
+  if (RANGE_IDS.has(id) || IO_IDS.has(id)) return "small";
   return null;
 };
 
+// Wrap a tile so clicking it opens the main window on the mapped route.
+// Uses a div (not button) to preserve the existing layout/styling and to
+// keep nested SVGs accessible. Pointer events on the drag-region root are
+// already filtered by Tauri.
+const ClickableTile = ({ id, children }) => {
+  const route = TILE_ROUTES[id] || "overview";
+  const onClick = (e) => {
+    e.stopPropagation();
+    openMainRoute(route);
+  };
+  const onKey = (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openMainRoute(route);
+    }
+  };
+  return (
+    <div
+      className="td-w-tile-click"
+      role="button"
+      tabIndex={0}
+      title={`Open ${route}`}
+      onClick={onClick}
+      onKeyDown={onKey}
+      data-tauri-drag-region="false"
+    >
+      {children}
+    </div>
+  );
+};
+
 const renderTile = (id, ctx, compact = false) => {
-  const { totals, today, burn, hourly, hourlyDetail, limits, cost90 } = ctx;
+  const { totals, today, burn, hourly, hourlyDetail, limits, cost90,
+          activeSession, lastPrompt, promptsToday, idleSince, skillOfDay,
+          wow, mom, peakHour } = ctx;
   switch (id) {
     case "today_live":    return <TodayLiveTile totals={totals} />;
     case "today_graph":   return <TodayGraphTile totals={totals} hourly={hourly} />;
@@ -352,19 +490,30 @@ const renderTile = (id, ctx, compact = false) => {
     case "cache_hit":     return <CacheHitTile today={today} />;
     case "cache_x_cost":  return <CacheCostTile today={today} hourlyDetail={hourlyDetail} />;
     case "five_h_limit":  return <FiveHourLimitTile limits={limits} />;
+    case "active_session":   return <ActiveSessionTile active={activeSession} />;
+    case "last_prompt_cost": return <LastPromptTile last={lastPrompt} />;
+    case "prompts_today":    return <PromptsTodayTile pt={promptsToday} />;
+    case "idle_since":       return <IdleSinceTile idleSince={idleSince} />;
+    case "skill_of_day":     return <SkillOfDayTile skill={skillOfDay} />;
+    case "wow_delta":        return <DeltaTile label="WoW · cost" pair={wow} />;
+    case "mom_delta":        return <DeltaTile label="MoM · cost" pair={mom} />;
+    case "peak_hour":        return <PeakHourTile peak={peakHour} />;
     default: return null;
   }
 };
 
 export const Widget = () => {
   const win = getTauriWindow();
-  useTick(60_000); // re-render the resets-in label
+  useTick(15_000); // refresh durations (active_session, idle_since) + reset labels
   const data = useMockData();
   const prefs = usePrefs();
   useThemeSync(prefs);
   const [pinned, togglePinned] = useTopMostToggle(win);
+  const [compact, toggleCompact] = useCompactToggle();
 
-  const metrics = (prefs && Array.isArray(prefs.widget_metrics) && prefs.widget_metrics.length)
+  // Honor an explicit empty selection — only fall back to defaults when
+  // the prefs payload doesn't carry the field at all.
+  const metrics = (prefs && Array.isArray(prefs.widget_metrics))
     ? prefs.widget_metrics
     : ["today_live", "burn_rate", "five_h_limit"];
 
@@ -378,13 +527,25 @@ export const Widget = () => {
   const hourly = (data && data.hourly) || [];
   const hourlyDetail = (data && data.hourlyDetail) || [];
 
-  const ctx = { totals, today, burn, hourly, hourlyDetail, limits, cost90 };
+  const activeSession = (data && data.activeSession) || null;
+  const lastPrompt    = (data && data.lastPrompt) || null;
+  const promptsToday  = (data && data.promptsToday) || null;
+  const idleSince     = (data && data.idleSince) || null;
+  const skillOfDay    = (data && data.skillOfDay) || null;
+  const wow           = (data && data.wow) || null;
+  const mom           = (data && data.mom) || null;
+  const peakHour      = (data && data.peakHour) || null;
+
+  const ctx = { totals, today, burn, hourly, hourlyDetail, limits, cost90,
+    activeSession, lastPrompt, promptsToday, idleSince, skillOfDay,
+    wow, mom, peakHour };
   const rootRef = useRef(null);
-  useAutoResize(rootRef, win, metrics.join(","));
+  // Re-run auto-resize when compact toggles — the layout height changes.
+  useAutoResize(rootRef, win, `${metrics.join(",")}|c=${compact ? 1 : 0}`);
   useGlassSync(prefs, rootRef);
 
   return (
-    <div className="td-w-root dir-a-root" ref={rootRef} data-tauri-drag-region>
+    <div className={`td-w-root dir-a-root${compact ? " is-compact" : ""}`} ref={rootRef} data-tauri-drag-region>
       <div className="td-w-head" data-tauri-drag-region>
         <span className="td-w-brand">
           <span className="a-brand-dot" />
@@ -397,6 +558,15 @@ export const Widget = () => {
             onClick={togglePinned}
           >
             <svg width="11" height="11" viewBox="0 0 11 11"><path d="M5.5 1.5l1.5 2.5 2 .5-1.5 1.5.5 2.5-2.5-1-2.5 1 .5-2.5L2 4.5l2-.5z" fill={pinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1" /></svg>
+          </button>
+          <button
+            className={`td-w-btn ${compact ? "is-on" : ""}`}
+            title={compact ? "Expand widget" : "Compact widget"}
+            onClick={toggleCompact}
+          >
+            {compact
+              ? <svg width="11" height="11" viewBox="0 0 11 11"><path d="M2 4h7M2 7h7" stroke="currentColor" strokeWidth="1" fill="none" /></svg>
+              : <svg width="11" height="11" viewBox="0 0 11 11"><path d="M2 3h7M2 5.5h7M2 8h7" stroke="currentColor" strokeWidth="1" fill="none" /></svg>}
           </button>
           <button
             className="td-w-btn"
@@ -434,18 +604,24 @@ export const Widget = () => {
                 out.push(
                   <div key={`${g}-row-${group.join("-")}`} className="td-w-range-row">
                     {group.map((m) => (
-                      <div key={m} className="td-w-range-cell">{renderTile(m, ctx, true)}</div>
+                      <div key={m} className="td-w-range-cell">
+                        <ClickableTile id={m}>{renderTile(m, ctx, true)}</ClickableTile>
+                      </div>
                     ))}
                   </div>
                 );
               } else {
                 out.push(
-                  <div key={group[0]} className="td-w-stack-item">{renderTile(group[0], ctx)}</div>
+                  <div key={group[0]} className="td-w-stack-item">
+                    <ClickableTile id={group[0]}>{renderTile(group[0], ctx)}</ClickableTile>
+                  </div>
                 );
               }
             } else {
               out.push(
-                <div key={id} className="td-w-stack-item">{renderTile(id, ctx)}</div>
+                <div key={id} className="td-w-stack-item">
+                  <ClickableTile id={id}>{renderTile(id, ctx)}</ClickableTile>
+                </div>
               );
               i++;
             }

@@ -427,20 +427,29 @@ pub struct ExpensivePromptRow {
 
 /// User prompt joined with the immediately-following assistant turn's
 /// tokens. `sort` is "tokens" (default — largest billable first) or
-/// "recent" (newest first). Mirrors python `expensive_prompts`.
+/// "recent" (newest first). `q` is an optional FTS5 MATCH expression that
+/// restricts results to user prompts whose `prompt_text` matches.
+/// Mirrors python `expensive_prompts`.
 pub fn expensive_prompts<P: AsRef<Path>>(
     db: P,
     limit: i64,
     sort: &str,
     since: Option<&str>,
     until: Option<&str>,
+    q: Option<&str>,
 ) -> rusqlite::Result<Vec<ExpensivePromptRow>> {
     let order = if sort == "recent" {
         "u.timestamp DESC"
     } else {
         "billable_tokens DESC"
     };
-    let (rng, args) = range_clause(since, until, "u.timestamp");
+    let (rng, mut args) = range_clause(since, until, "u.timestamp");
+    let fts_clause = if q.map(|s| !s.trim().is_empty()).unwrap_or(false) {
+        args.push(q.unwrap().trim().to_string());
+        " AND u.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?) "
+    } else {
+        ""
+    };
     // Pair each user prompt with the *first* assistant turn after it in the
     // same session and sidechain. The earlier `a.parent_uuid = u.uuid` join
     // is unreliable because streaming-snapshot dedup evicts uuids that later
@@ -468,7 +477,7 @@ pub fn expensive_prompts<P: AsRef<Path>>(
                      AND a2.is_sidechain = u.is_sidechain \
                      AND a2.timestamp > u.timestamp \
                 ) \
-          WHERE u.type='user' AND u.prompt_text IS NOT NULL {rng} \
+          WHERE u.type='user' AND u.prompt_text IS NOT NULL {rng} {fts_clause} \
           ORDER BY {order} \
           LIMIT {limit}"
     );

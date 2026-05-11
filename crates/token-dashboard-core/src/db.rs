@@ -98,6 +98,28 @@ CREATE TABLE IF NOT EXISTS attached_sources (
 );
 "#;
 
+/// FTS5 virtual table mirroring `messages.prompt_text`, kept in sync via
+/// AFTER INSERT / UPDATE / DELETE triggers. External-content mode (`content=messages`)
+/// — the index references rows by rowid; raw text is read back from messages
+/// on query, so we don't store prompts twice.
+const FTS_SCHEMA: &str = r#"
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    prompt_text,
+    content='messages',
+    content_rowid='rowid'
+);
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(rowid, prompt_text) VALUES (new.rowid, new.prompt_text);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, prompt_text) VALUES('delete', old.rowid, old.prompt_text);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, prompt_text) VALUES('delete', old.rowid, old.prompt_text);
+  INSERT INTO messages_fts(rowid, prompt_text) VALUES (new.rowid, new.prompt_text);
+END;
+"#;
+
 pub fn default_db_path() -> PathBuf {
     let home = dirs_home();
     home.join(".claude").join("token-dashboard.db")
@@ -122,6 +144,22 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> rusqlite::Result<()> {
     migrate_add_message_id(&conn)?;
     migrate_add_tool_use_id(&conn)?;
     conn.execute_batch(SCHEMA)?;
+    migrate_add_fts(&conn)?;
+    Ok(())
+}
+
+/// Create the FTS5 mirror table and triggers, and on first creation rebuild
+/// the index from existing `messages.prompt_text` rows. Subsequent inserts
+/// are picked up by the triggers, so the rebuild only runs once per DB.
+fn migrate_add_fts(conn: &Connection) -> rusqlite::Result<()> {
+    let preexisted = table_exists(conn, "messages_fts")?;
+    conn.execute_batch(FTS_SCHEMA)?;
+    if !preexisted && table_exists(conn, "messages")? {
+        conn.execute(
+            "INSERT INTO messages_fts(messages_fts) VALUES('rebuild')",
+            [],
+        )?;
+    }
     Ok(())
 }
 

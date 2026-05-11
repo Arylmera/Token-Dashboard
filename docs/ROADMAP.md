@@ -36,14 +36,56 @@ helper.
 
 Sized at **S**.
 
-### `first_prompt` in `recent_sessions`
+### Session favorites / pinning
 
-`/api/export.csv` and the Sessions tab both have a `first_prompt`
-column that's empty for the rust port — `recent_sessions` skips the
-per-session sub-query the python helper used. Add it to
-`crates/token-dashboard-core/src/queries.rs::recent_sessions`.
+Sessions can be tagged today, but there's no first-class "favorite"
+flag — useful for marking a few investigations worth coming back to.
+Either add a dedicated `pinned INTEGER NOT NULL DEFAULT 0` column on
+a new `session_meta` table, or reserve a `__pinned` tag in
+`session_tags` and surface it in the Sessions tab as a sticky filter
++ row icon.
 
-Sized at **XS**.
+Sized at **S**.
+
+### Conversation viewer
+
+The expensive-prompts drilldown today shows cost and the first 240
+chars of the user prompt. The next obvious step is a full replay
+of the JSONL message thread — every user/assistant turn in order,
+with tool calls and tool results expanded. Reads the same `messages`
+table; needs a new `/api/sessions/:sid/transcript` endpoint and a
+new route on the frontend.
+
+Sized at **M**.
+
+### Period-over-period comparison
+
+Overview shows a single range. Adding a second card that compares
+the current range against the prior equivalent window (week-over-
+week, month-over-month) would surface cost trends at a glance.
+Backend: one extra `/api/overview?since=…&until=…` call against
+the shifted window. Frontend: a delta card next to the KPI row.
+
+Sized at **S–M**.
+
+### Budget-threshold OS notifications
+
+The budget banner is visual-only. Tauri's notification plugin can
+fire a native OS notification when the user crosses a percentage of
+their saved daily/weekly budget. Requires a small notification
+gate (don't re-fire on every scan) and a settings toggle.
+
+Sized at **M**.
+
+### Scheduled DB backups
+
+The `/api/export.db` endpoint serves an instant SQLite blob, and
+import is a one-shot upload. A scheduled rotating backup
+(e.g. nightly snapshot to `~/.claude/token-dashboard-backups/`)
+would protect against accidental DB corruption without the user
+having to remember.
+
+Sized at **S**.
 
 ### Multi-machine merge
 

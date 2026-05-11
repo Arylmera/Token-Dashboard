@@ -89,3 +89,5 @@ Frontend smoke check:
 cd frontend && npm install && npm run build && cd ..
 cargo run --release -p token-dashboard-tauri
 ```
+
+For iterative frontend work, prefer `npm run dev` (esbuild `--watch` + sourcemap) over re-running `npm run build` on every change — it stays resident and rebuilds `dist/app.js` on save.

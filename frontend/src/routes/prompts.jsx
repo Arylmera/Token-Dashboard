@@ -1,11 +1,32 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { D } from "../data-store.js";
 import { fmtCost, fmtTokens } from "../format.js";
 import { Label, ModelBadge } from "../components/atoms.jsx";
 import { SortHeader, useSortable } from "../components/sortable.jsx";
 
+// FTS5 query: 250ms debounce so each keystroke doesn't refetch.
+const usePromptSearch = () => {
+  const [query, setQuery] = useState("");
+  const timer = useRef(null);
+  useEffect(() => {
+    if (!window.SET_PROMPT_QUERY) return;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      window.SET_PROMPT_QUERY(query);
+    }, 250);
+    return () => { if (timer.current) clearTimeout(timer.current); };
+  }, [query]);
+  // Clear the server-side filter when the route unmounts so other views
+  // don't see a stale `q` on their next prompts refetch.
+  useEffect(() => () => {
+    if (window.SET_PROMPT_QUERY) window.SET_PROMPT_QUERY("");
+  }, []);
+  return [query, setQuery];
+};
+
 export const Prompts = () => {
   const [openId, setOpenId] = useState(null);
+  const [query, setQuery] = usePromptSearch();
   const { sorted, sortState, requestSort } = useSortable(D.prompts || [], "tokens", "desc", {
     preview: (r) => r.preview,
     project: (r) => r.project,
@@ -22,6 +43,14 @@ export const Prompts = () => {
         <div className="a-card-head">
           <h2>Most expensive prompts</h2>
           <span className="a-card-meta">click headers to sort · click row to expand</span>
+          <input
+            type="search"
+            className="a-prompt-search"
+            placeholder="search prompts…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search prompts"
+          />
         </div>
         <table className="a-table">
           <thead>
