@@ -208,6 +208,10 @@ function _rebuildMockData(range) {
     mom:           buildDeltaPair(c.overview30 || {}, c.prevMonthOv || {}),
     peakHour:      buildPeakHour(c.hourlyRaw || []),
   };
+  // Notify subscribers that MOCK_DATA was mutated. React components read
+  // through a Proxy so they need an external nudge to re-render after
+  // SSE-driven refreshes (range-driven loads bump their own state).
+  try { window.dispatchEvent(new CustomEvent("td:data")); } catch (_) {}
 }
 
 async function loadAll(range) {
