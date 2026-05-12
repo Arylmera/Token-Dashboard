@@ -106,7 +106,9 @@ fn codex_provider_live_smoke() {
         db_path: db_path.clone(),
         root_override: Some(sessions.clone()),
     };
-    let report = Codex.scan(&opts).expect("codex scan must not fail on live data");
+    let report = Codex
+        .scan(&opts)
+        .expect("codex scan must not fail on live data");
     eprintln!(
         "codex live: files={} messages={} tools={} sessions={} projects={} models={:?}",
         report.files,
@@ -117,8 +119,15 @@ fn codex_provider_live_smoke() {
         report.models,
     );
     assert_eq!(report.provider, "codex");
-    assert!(report.files >= 1, "expected at least one rollout under {}", sessions.display());
-    assert!(report.messages >= 1, "expected ingested messages, got {report:?}");
+    assert!(
+        report.files >= 1,
+        "expected at least one rollout under {}",
+        sessions.display()
+    );
+    assert!(
+        report.messages >= 1,
+        "expected ingested messages, got {report:?}"
+    );
 
     // Every row must be tagged `codex`.
     let c = Connection::open(&db_path).unwrap();
