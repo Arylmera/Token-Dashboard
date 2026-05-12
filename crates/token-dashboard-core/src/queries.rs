@@ -100,6 +100,13 @@ fn range_clause(since: Option<&str>, until: Option<&str>, col: &str) -> (String,
 /// Multi-provider lookups (`"claude,codex"`) split on commas; whitespace is
 /// trimmed and empty segments are dropped.
 fn provider_clause(filter: Option<&str>) -> (String, Vec<String>) {
+    provider_clause_on("provider", filter)
+}
+
+/// Same as [`provider_clause`] but accepts a qualified column reference
+/// (e.g. `"m.provider"` or `"tc.provider"`). Used when a query joins
+/// multiple tables that both carry a `provider` column.
+fn provider_clause_on(col: &str, filter: Option<&str>) -> (String, Vec<String>) {
     let raw = match filter {
         Some(s) if !s.is_empty() && !s.eq_ignore_ascii_case("all") => s,
         _ => return (String::new(), Vec::new()),
@@ -113,7 +120,7 @@ fn provider_clause(filter: Option<&str>) -> (String, Vec<String>) {
         return (String::new(), Vec::new());
     }
     let placeholders = vec!["?"; ids.len()].join(",");
-    let clause = format!(" AND provider IN ({placeholders})");
+    let clause = format!(" AND {col} IN ({placeholders})");
     (clause, ids)
 }
 
@@ -166,8 +173,11 @@ pub fn model_breakdown<P: AsRef<Path>>(
     db: P,
     since: Option<&str>,
     until: Option<&str>,
+    provider: Option<&str>,
 ) -> rusqlite::Result<Vec<ModelRow>> {
-    let (rng, args) = range_clause(since, until, "timestamp");
+    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (prov, prov_args) = provider_clause(provider);
+    args.extend(prov_args);
     let sql = format!(
         "SELECT COALESCE(model, 'unknown') AS model, \
                 COUNT(*) AS turns, \
@@ -177,7 +187,7 @@ pub fn model_breakdown<P: AsRef<Path>>(
                 COALESCE(SUM(cache_create_5m_tokens),0)  AS cache_create_5m_tokens, \
                 COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens \
          FROM messages \
-         WHERE type='assistant' {rng} \
+         WHERE type='assistant' {rng}{prov} \
          GROUP BY model \
          ORDER BY (input_tokens + output_tokens + cache_create_5m_tokens + cache_create_1h_tokens) DESC"
     );
@@ -201,8 +211,11 @@ pub fn project_summary<P: AsRef<Path>>(
     db: P,
     since: Option<&str>,
     until: Option<&str>,
+    provider: Option<&str>,
 ) -> rusqlite::Result<Vec<ProjectRow>> {
-    let (rng, args) = range_clause(since, until, "timestamp");
+    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (prov, prov_args) = provider_clause(provider);
+    args.extend(prov_args);
     let sql = format!(
         "SELECT project_slug, \
                 COUNT(DISTINCT session_id) AS sessions, \
@@ -214,7 +227,7 @@ pub fn project_summary<P: AsRef<Path>>(
                 COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens, \
                 MAX(timestamp) AS last_active \
          FROM messages \
-         WHERE 1=1 {rng} \
+         WHERE 1=1 {rng}{prov} \
          GROUP BY project_slug \
          ORDER BY billable_tokens DESC"
     );
@@ -243,8 +256,11 @@ pub fn tool_token_breakdown<P: AsRef<Path>>(
     db: P,
     since: Option<&str>,
     until: Option<&str>,
+    provider: Option<&str>,
 ) -> rusqlite::Result<Vec<ToolRow>> {
-    let (rng, args) = range_clause(since, until, "tc.timestamp");
+    let (rng, mut args) = range_clause(since, until, "tc.timestamp");
+    let (prov, prov_args) = provider_clause_on("tc.provider", provider);
+    args.extend(prov_args);
     let sql = format!(
         "SELECT tc.tool_name AS tool_name, \
                 COUNT(*) AS calls, \
@@ -254,7 +270,7 @@ pub fn tool_token_breakdown<P: AsRef<Path>>(
                 ON tr.tool_name = '_tool_result' \
                AND tr.session_id = tc.session_id \
                AND tr.use_id = tc.use_id \
-         WHERE tc.tool_name != '_tool_result' {rng} \
+         WHERE tc.tool_name != '_tool_result' {rng}{prov} \
          GROUP BY tc.tool_name \
          ORDER BY calls DESC"
     );
@@ -274,8 +290,11 @@ pub fn daily_token_breakdown<P: AsRef<Path>>(
     db: P,
     since: Option<&str>,
     until: Option<&str>,
+    provider: Option<&str>,
 ) -> rusqlite::Result<Vec<DailyRow>> {
-    let (rng, args) = range_clause(since, until, "timestamp");
+    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (prov, prov_args) = provider_clause(provider);
+    args.extend(prov_args);
     let sql = format!(
         "SELECT substr(timestamp, 1, 10) AS day, \
                 COALESCE(SUM(input_tokens),0)      AS input_tokens, \
@@ -284,7 +303,7 @@ pub fn daily_token_breakdown<P: AsRef<Path>>(
                 COALESCE(SUM(cache_create_5m_tokens),0) \
                   + COALESCE(SUM(cache_create_1h_tokens),0) AS cache_create_tokens \
          FROM messages \
-         WHERE timestamp IS NOT NULL {rng} \
+         WHERE timestamp IS NOT NULL {rng}{prov} \
          GROUP BY day \
          ORDER BY day ASC"
     );
@@ -313,10 +332,15 @@ pub struct HourlyRow {
     pub cache_create_1h_tokens: i64,
 }
 
-pub fn hourly_breakdown<P: AsRef<Path>>(db: P, hours: i64) -> rusqlite::Result<Vec<HourlyRow>> {
+pub fn hourly_breakdown<P: AsRef<Path>>(
+    db: P,
+    hours: i64,
+    provider: Option<&str>,
+) -> rusqlite::Result<Vec<HourlyRow>> {
     let c = open_ro(db)?;
     let cutoff = format!("-{} hours", hours.max(1));
-    let mut stmt = c.prepare(
+    let (prov, prov_args) = provider_clause(provider);
+    let sql = format!(
         "SELECT CAST((strftime('%s','now') - strftime('%s', timestamp)) / 3600 AS INT) AS hour_ago, \
                 COALESCE(model, 'unknown') AS model, \
                 COALESCE(SUM(input_tokens),0)            AS input_tokens, \
@@ -326,10 +350,13 @@ pub fn hourly_breakdown<P: AsRef<Path>>(db: P, hours: i64) -> rusqlite::Result<V
                 COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens \
          FROM messages \
          WHERE type='assistant' AND timestamp IS NOT NULL \
-           AND timestamp >= datetime('now', ?) \
-         GROUP BY hour_ago, model",
-    )?;
-    let rows = stmt.query_map([cutoff], |r| {
+           AND timestamp >= datetime('now', ?){prov} \
+         GROUP BY hour_ago, model"
+    );
+    let mut stmt = c.prepare(&sql)?;
+    let mut args: Vec<String> = vec![cutoff];
+    args.extend(prov_args);
+    let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
         Ok(HourlyRow {
             hour_ago: r.get(0)?,
             model: r.get(1)?,
@@ -372,8 +399,11 @@ pub fn phase_split<P: AsRef<Path>>(
     db: P,
     since: Option<&str>,
     until: Option<&str>,
+    provider: Option<&str>,
 ) -> rusqlite::Result<Vec<PhaseSplitRow>> {
-    let (rng, args) = range_clause(since, until, "m.timestamp");
+    let (rng, mut args) = range_clause(since, until, "m.timestamp");
+    let (prov, prov_args) = provider_clause_on("m.provider", provider);
+    args.extend(prov_args);
     let plan_in = vec!["?"; PLAN_TOOLS.len()].join(",");
     let exec_in = vec!["?"; EXECUTE_TOOLS.len()].join(",");
     let sql = format!(
@@ -393,7 +423,7 @@ pub fn phase_split<P: AsRef<Path>>(
          FROM messages m \
          LEFT JOIN tool_calls tc \
                 ON tc.message_uuid = m.uuid AND tc.tool_name != '_tool_result' \
-         WHERE m.type='assistant' AND m.is_sidechain = 0 {rng} \
+         WHERE m.type='assistant' AND m.is_sidechain = 0 {rng}{prov} \
          GROUP BY m.uuid"
     );
 
@@ -464,6 +494,7 @@ pub fn expensive_prompts<P: AsRef<Path>>(
     since: Option<&str>,
     until: Option<&str>,
     q: Option<&str>,
+    provider: Option<&str>,
 ) -> rusqlite::Result<Vec<ExpensivePromptRow>> {
     let order = if sort == "recent" {
         "u.timestamp DESC"
@@ -471,12 +502,18 @@ pub fn expensive_prompts<P: AsRef<Path>>(
         "billable_tokens DESC"
     };
     let (rng, mut args) = range_clause(since, until, "u.timestamp");
+    // Filter on the assistant turn's provider — that's where the cost
+    // lands. Filtering the user prompt's provider would also work in
+    // practice (a session is single-provider today) but pinning to the
+    // assistant turn matches how the cost columns are computed below.
+    let (prov, prov_args) = provider_clause_on("a.provider", provider);
     let fts_clause = if q.map(|s| !s.trim().is_empty()).unwrap_or(false) {
         args.push(q.unwrap().trim().to_string());
         " AND u.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?) "
     } else {
         ""
     };
+    args.extend(prov_args);
     // Pair each user prompt with the *first* assistant turn after it in the
     // same session and sidechain. The earlier `a.parent_uuid = u.uuid` join
     // is unreliable because streaming-snapshot dedup evicts uuids that later
@@ -504,7 +541,7 @@ pub fn expensive_prompts<P: AsRef<Path>>(
                      AND a2.is_sidechain = u.is_sidechain \
                      AND a2.timestamp > u.timestamp \
                 ) \
-          WHERE u.type='user' AND u.prompt_text IS NOT NULL {rng} {fts_clause} \
+          WHERE u.type='user' AND u.prompt_text IS NOT NULL {rng} {fts_clause}{prov} \
           ORDER BY {order} \
           LIMIT {limit}"
     );
@@ -543,15 +580,18 @@ pub fn skill_breakdown<P: AsRef<Path>>(
     db: P,
     since: Option<&str>,
     until: Option<&str>,
+    provider: Option<&str>,
 ) -> rusqlite::Result<Vec<SkillRow>> {
-    let (rng, args) = range_clause(since, until, "timestamp");
+    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (prov, prov_args) = provider_clause(provider);
+    args.extend(prov_args);
     let sql = format!(
         "SELECT target AS skill, \
                 COUNT(*) AS invocations, \
                 COUNT(DISTINCT session_id) AS sessions, \
                 MAX(timestamp) AS last_used \
          FROM tool_calls \
-         WHERE tool_name = 'Skill' AND target IS NOT NULL AND target != '' {rng} \
+         WHERE tool_name = 'Skill' AND target IS NOT NULL AND target != '' {rng}{prov} \
          GROUP BY target \
          ORDER BY invocations DESC"
     );
@@ -651,8 +691,10 @@ pub fn recent_sessions<P: AsRef<Path>>(
     since: Option<&str>,
     until: Option<&str>,
     tag: Option<&str>,
+    provider: Option<&str>,
 ) -> rusqlite::Result<Vec<SessionRow>> {
     let (rng, args) = range_clause(since, until, "timestamp");
+    let (prov, prov_args) = provider_clause_on("m.provider", provider);
     let (tag_join, tag_filter) = if tag.is_some() {
         (
             "JOIN session_tags st ON st.session_id = m.session_id",
@@ -670,7 +712,7 @@ pub fn recent_sessions<P: AsRef<Path>>(
                 COALESCE(SUM(m.input_tokens),0)+COALESCE(SUM(m.output_tokens),0) AS tokens \
          FROM messages m \
          {tag_join} \
-         WHERE 1=1 {rng} {tag_filter} \
+         WHERE 1=1 {rng} {tag_filter}{prov} \
          GROUP BY m.session_id \
          ORDER BY ended DESC \
          LIMIT ?"
@@ -683,6 +725,7 @@ pub fn recent_sessions<P: AsRef<Path>>(
     if let Some(t) = tag {
         all_args.push(t.to_string());
     }
+    all_args.extend(prov_args);
     all_args.push(limit.to_string());
 
     let c = open_ro(db)?;

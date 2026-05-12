@@ -10,7 +10,7 @@ import { BackupCard } from "./settings/backup-card.jsx";
 import { SourcesCard } from "./settings/sources-card.jsx";
 import { GlassCard } from "./settings/glass-card.jsx";
 import { WidgetCard } from "./settings/widget-card.jsx";
-import { AdvancedModeCard, DensityCard, DeveloperCard, AboutCard, Glossary } from "./settings/misc-cards.jsx";
+import { AdvancedModeCard, DensityCard, DeveloperCard, AboutCard, Glossary, MultiProviderCard } from "./settings/misc-cards.jsx";
 import { broadcastAdvancedMode } from "../use-advanced-mode.js";
 
 export const Settings = ({ themeIdx, onPickTheme }) => {
@@ -22,6 +22,9 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
   const [advancedMode, setAdvancedMode] = useState(false);
   const [advancedSaving, setAdvancedSaving] = useState(false);
   const [advancedLoaded, setAdvancedLoaded] = useState(false);
+  const [multiProviderEnabled, setMultiProviderEnabled] = useState(false);
+  const [multiProviderSaving, setMultiProviderSaving] = useState(false);
+  const [multiProviderLoaded, setMultiProviderLoaded] = useState(false);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/preferences")
@@ -30,12 +33,14 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
         if (cancelled || !d) return;
         if (typeof d.limits_enabled === "boolean") setLimitsEnabled(d.limits_enabled);
         if (typeof d.advanced_mode === "boolean") setAdvancedMode(d.advanced_mode);
+        if (typeof d.multi_provider_enabled === "boolean") setMultiProviderEnabled(d.multi_provider_enabled);
       })
       .catch(() => {})
       .finally(() => {
         if (cancelled) return;
         setLimitsLoaded(true);
         setAdvancedLoaded(true);
+        setMultiProviderLoaded(true);
       });
     return () => { cancelled = true; };
   }, []);
@@ -52,6 +57,19 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
       if (window.RELOAD_STATIC) window.RELOAD_STATIC();
     } catch (_) {}
     setAdvancedSaving(false);
+  };
+  const onToggleMultiProvider = async (next) => {
+    setMultiProviderEnabled(next);
+    setMultiProviderSaving(true);
+    try {
+      await fetch("/api/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ multi_provider_enabled: next }),
+      });
+      if (window.RELOAD_STATIC) window.RELOAD_STATIC();
+    } catch (_) {}
+    setMultiProviderSaving(false);
   };
   const onToggleLimits = async (next) => {
     setLimitsEnabled(next);
@@ -114,6 +132,14 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
           <LimitsToggleCard enabled={limitsEnabled} onChange={onToggleLimits} loaded={limitsLoaded} saving={limitsSaving} />
         )}
         {advancedMode && limitsEnabled && <LimitResetCard />}
+        {advancedMode && (
+          <MultiProviderCard
+            enabled={multiProviderEnabled}
+            onChange={onToggleMultiProvider}
+            loaded={multiProviderLoaded}
+            saving={multiProviderSaving}
+          />
+        )}
         {showDev && <DeveloperCard />}
       </SettingsGroup>
 
