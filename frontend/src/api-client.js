@@ -90,8 +90,18 @@ const totalTokens = (o) => billable(o) + (o.cache_read_tokens || 0);
 
 let currentRange = "30d";
 let currentPromptQuery = "";
+let currentProvider = "all";
 let _customSince = null;
 let _customUntil = null;
+
+// Append `provider=` to an existing URL (which may or may not already have
+// a query string). "all" / falsy = no-op since the backend treats absence
+// as "no filter".
+const withProvider = (url) => {
+  if (!currentProvider || currentProvider === "all") return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}provider=${encodeURIComponent(currentProvider)}`;
+};
 
 // Endpoint registry. Each entry declares:
 //   key       — slot in MOCK_DATA the result lands in
@@ -102,39 +112,39 @@ let _customUntil = null;
 //
 // loadAll runs every entry. (Tasks 4–5 add loadDelta + loadStatic.)
 const REG = [
-  { key: "overviewAll",   trigger: "any",   url: () => "/api/overview" },
-  { key: "overview30",    trigger: "days",  windowSince: () => isoDaysAgo(30), url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(30))}` },
-  { key: "overview7",     trigger: "days",  windowSince: () => isoDaysAgo(7),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(7))}` },
-  { key: "overviewToday", trigger: "days",  windowSince: () => isoDaysAgo(0),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(0))}` },
-  { key: "overviewYday",  trigger: "days",  windowSince: () => isoDaysAgo(1),  url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(1))}&until=${encodeURIComponent(isoDaysAgo(0))}` },
-  { key: "overviewRange", trigger: "days",  windowSince: (r) => r, url: ({ rangeSince, rangeUntil }) => `/api/overview${rangeQuery(rangeSince, rangeUntil)}` },
-  { key: "overviewPlus",  trigger: "days",  windowSince: () => _plusSince(), url: ({ plusSince }) => `/api/overview${plusSince ? `?since=${encodeURIComponent(plusSince)}` : ""}` },
-  { key: "daily",         trigger: "days",  windowSince: (r) => r, url: ({ rangeSince, rangeUntil }) => `/api/daily${rangeQuery(rangeSince, rangeUntil)}` },
-  { key: "dailyPlus",     trigger: "days",  windowSince: () => _plusSince(), url: ({ plusSince }) => `/api/daily${plusSince ? `?since=${encodeURIComponent(plusSince)}` : ""}` },
-  { key: "projects",      trigger: "projects", url: ({ rangeSince, rangeUntil }) => `/api/projects${rangeQuery(rangeSince, rangeUntil)}` },
-  { key: "tools",         trigger: "any",   url: ({ rangeSince, rangeUntil }) => `/api/tools${rangeQuery(rangeSince, rangeUntil)}` },
-  { key: "sessionsRaw",   trigger: "sessions", url: ({ rangeSince, rangeUntil }) => `/api/sessions${rangeQuery(rangeSince, rangeUntil)}${rangeQuery(rangeSince, rangeUntil) ? "&" : "?"}limit=50` },
-  { key: "topSessionsRaw", trigger: "sessions", url: () => `/api/sessions?order=cost&limit=50`, fallback: () => [] },
-  { key: "skills",        trigger: "any",   url: ({ rangeSince, rangeUntil }) => `/api/skills${rangeQuery(rangeSince, rangeUntil)}` },
-  { key: "byModel",       trigger: "models", url: ({ rangeSince, rangeUntil }) => `/api/by-model${rangeQuery(rangeSince, rangeUntil)}` },
+  { key: "overviewAll",   trigger: "any",   url: () => withProvider("/api/overview") },
+  { key: "overview30",    trigger: "days",  windowSince: () => isoDaysAgo(30), url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(30))}`) },
+  { key: "overview7",     trigger: "days",  windowSince: () => isoDaysAgo(7),  url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(7))}`) },
+  { key: "overviewToday", trigger: "days",  windowSince: () => isoDaysAgo(0),  url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(0))}`) },
+  { key: "overviewYday",  trigger: "days",  windowSince: () => isoDaysAgo(1),  url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(1))}&until=${encodeURIComponent(isoDaysAgo(0))}`) },
+  { key: "overviewRange", trigger: "days",  windowSince: (r) => r, url: ({ rangeSince, rangeUntil }) => withProvider(`/api/overview${rangeQuery(rangeSince, rangeUntil)}`) },
+  { key: "overviewPlus",  trigger: "days",  windowSince: () => _plusSince(), url: ({ plusSince }) => withProvider(`/api/overview${plusSince ? `?since=${encodeURIComponent(plusSince)}` : ""}`) },
+  { key: "daily",         trigger: "days",  windowSince: (r) => r, url: ({ rangeSince, rangeUntil }) => withProvider(`/api/daily${rangeQuery(rangeSince, rangeUntil)}`) },
+  { key: "dailyPlus",     trigger: "days",  windowSince: () => _plusSince(), url: ({ plusSince }) => withProvider(`/api/daily${plusSince ? `?since=${encodeURIComponent(plusSince)}` : ""}`) },
+  { key: "projects",      trigger: "projects", url: ({ rangeSince, rangeUntil }) => withProvider(`/api/projects${rangeQuery(rangeSince, rangeUntil)}`) },
+  { key: "tools",         trigger: "any",   url: ({ rangeSince, rangeUntil }) => withProvider(`/api/tools${rangeQuery(rangeSince, rangeUntil)}`) },
+  { key: "sessionsRaw",   trigger: "sessions", url: ({ rangeSince, rangeUntil }) => withProvider(`/api/sessions${rangeQuery(rangeSince, rangeUntil)}${rangeQuery(rangeSince, rangeUntil) ? "&" : "?"}limit=50`) },
+  { key: "topSessionsRaw", trigger: "sessions", url: () => withProvider(`/api/sessions?order=cost&limit=50`), fallback: () => [] },
+  { key: "skills",        trigger: "any",   url: ({ rangeSince, rangeUntil }) => withProvider(`/api/skills${rangeQuery(rangeSince, rangeUntil)}`) },
+  { key: "byModel",       trigger: "models", url: ({ rangeSince, rangeUntil }) => withProvider(`/api/by-model${rangeQuery(rangeSince, rangeUntil)}`) },
   { key: "prompts",       trigger: "sessions", url: ({ rangeSince, rangeUntil, promptQuery }) => {
       const parts = [];
       if (rangeSince) parts.push(`since=${encodeURIComponent(rangeSince)}`);
       if (rangeUntil) parts.push(`until=${encodeURIComponent(rangeUntil)}`);
       if (promptQuery) parts.push(`q=${encodeURIComponent(promptQuery)}`);
       parts.push("limit=50", "sort=tokens");
-      return `/api/prompts?${parts.join("&")}`;
+      return withProvider(`/api/prompts?${parts.join("&")}`);
     } },
-  { key: "hourlyRaw",     trigger: "days",  windowSince: () => isoDaysAgo(1), url: () => "/api/hourly?hours=24", fallback: () => [] },
-  { key: "recentPromptsRaw", trigger: "sessions", url: () => "/api/prompts?sort=recent&limit=5", fallback: () => [] },
-  { key: "prevWeekOv",    trigger: "days",  windowSince: () => isoDaysAgo(14), url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(14))}&until=${encodeURIComponent(isoDaysAgo(7))}`, fallback: () => ({}) },
-  { key: "prevMonthOv",   trigger: "days",  windowSince: () => isoDaysAgo(60), url: () => `/api/overview?since=${encodeURIComponent(isoDaysAgo(60))}&until=${encodeURIComponent(isoDaysAgo(30))}`, fallback: () => ({}) },
-  { key: "skillsToday",   trigger: "days",  windowSince: () => isoDaysAgo(0), url: () => `/api/skills?since=${encodeURIComponent(isoDaysAgo(0))}`, fallback: () => [] },
+  { key: "hourlyRaw",     trigger: "days",  windowSince: () => isoDaysAgo(1), url: () => withProvider("/api/hourly?hours=24"), fallback: () => [] },
+  { key: "recentPromptsRaw", trigger: "sessions", url: () => withProvider("/api/prompts?sort=recent&limit=5"), fallback: () => [] },
+  { key: "prevWeekOv",    trigger: "days",  windowSince: () => isoDaysAgo(14), url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(14))}&until=${encodeURIComponent(isoDaysAgo(7))}`), fallback: () => ({}) },
+  { key: "prevMonthOv",   trigger: "days",  windowSince: () => isoDaysAgo(60), url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(60))}&until=${encodeURIComponent(isoDaysAgo(30))}`), fallback: () => ({}) },
+  { key: "skillsToday",   trigger: "days",  windowSince: () => isoDaysAgo(0), url: () => withProvider(`/api/skills?since=${encodeURIComponent(isoDaysAgo(0))}`), fallback: () => [] },
   { key: "tips",          trigger: "any",   url: () => "/api/tips", fallback: () => [] },
   { key: "planResp",      trigger: "static", url: () => "/api/plan",   fallback: () => ({ plan: "max" }) },
   { key: "limitsResp",    trigger: "static", url: () => "/api/limits", fallback: () => null },
   { key: "budgetResp",    trigger: "static", url: () => "/api/budget", fallback: () => null },
-  { key: "phaseResp",     trigger: "any",   url: ({ rangeSince, rangeUntil }) => `/api/phase-split${rangeQuery(rangeSince, rangeUntil)}`, fallback: () => null },
+  { key: "phaseResp",     trigger: "any",   url: ({ rangeSince, rangeUntil }) => withProvider(`/api/phase-split${rangeQuery(rangeSince, rangeUntil)}`), fallback: () => null },
   { key: "tagsResp",      trigger: "static", url: () => "/api/tags", fallback: () => [] },
   { key: "prefsResp",     trigger: "static", url: () => "/api/preferences", fallback: () => null },
 ];
@@ -208,6 +218,10 @@ function _rebuildMockData(range) {
     mom:           buildDeltaPair(c.overview30 || {}, c.prevMonthOv || {}),
     peakHour:      buildPeakHour(c.hourlyRaw || []),
   };
+  // Notify subscribers that MOCK_DATA was mutated. React components read
+  // through a Proxy so they need an external nudge to re-render after
+  // SSE-driven refreshes (range-driven loads bump their own state).
+  try { window.dispatchEvent(new CustomEvent("td:data")); } catch (_) {}
 }
 
 async function loadAll(range) {
@@ -543,6 +557,11 @@ window.RELOAD_DELTA  = loadDelta;
 window.RELOAD_STATIC = loadStatic;
 window.SET_CUSTOM_RANGE = setCustomRange;
 window.SET_PROMPT_QUERY = setPromptQuery;
+// Provider filter — currentProvider is read lazily by withProvider()
+// inside the REG entries, so caller doesn't need to refetch here. The
+// next loadAll/loadDelta picks up the new value. App.jsx calls this
+// just before RELOAD_DATA on every provider change.
+window.SET_PROVIDER = (p) => { currentProvider = p || "all"; };
 
 // /api/stream consumer.
 //

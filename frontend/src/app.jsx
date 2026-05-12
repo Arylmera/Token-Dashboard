@@ -60,16 +60,54 @@ const useHashRouter = (initialTab, lockTab) => {
   return [tab, setTab];
 };
 
-const useRangeReload = (range) => {
+const useRangeReload = (range, provider, multiProviderEnabled) => {
   const [, setNonce] = useState(0);
   useEffect(() => {
     if (!window.RELOAD_DATA) return;
     let cancelled = false;
+    const effective = multiProviderEnabled ? provider : "all";
+    if (window.SET_PROVIDER) window.SET_PROVIDER(effective);
     window.RELOAD_DATA(range).then(() => {
       if (!cancelled) setNonce((n) => n + 1);
     });
     return () => { cancelled = true; };
-  }, [range]);
+  }, [range, provider, multiProviderEnabled]);
+  // Re-render on SSE-driven MOCK_DATA refreshes so the dashboard stays
+  // live even when the user isn't interacting with the app.
+  useEffect(() => {
+    const bump = () => setNonce((n) => n + 1);
+    window.addEventListener("td:data", bump);
+    return () => window.removeEventListener("td:data", bump);
+  }, []);
+};
+
+const useMultiProviderPref = () => {
+  const [enabled, setEnabled] = useState(false);
+  const refresh = () => {
+    fetch("/api/preferences", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && typeof d.multi_provider_enabled === "boolean") {
+          setEnabled(d.multi_provider_enabled);
+        }
+      })
+      .catch(() => {});
+  };
+  useEffect(() => {
+    refresh();
+    // Settings page triggers RELOAD_STATIC after toggling — piggyback on the
+    // same signal so the topbar reflects the change without a full reload.
+    const prev = window.RELOAD_STATIC;
+    if (typeof prev === "function") {
+      window.RELOAD_STATIC = async (...args) => {
+        const out = await prev.apply(window, args);
+        refresh();
+        return out;
+      };
+      return () => { window.RELOAD_STATIC = prev; };
+    }
+  }, []);
+  return enabled;
 };
 
 const useTheme = () => {
@@ -128,10 +166,12 @@ const useGlassBootstrap = () => {
 export const DirectionA = ({ initialTab, lockTab = false }) => {
   const [tab, setTab] = useHashRouter(initialTab, lockTab);
   const [range, setRange] = useState("30d");
+  const [provider, setProvider] = useState("all");
   const [themeIdx, setThemeIdx] = useTheme();
   const [advancedMode, advancedLoaded] = useAdvancedMode();
+  const multiProviderEnabled = useMultiProviderPref();
   useGlassBootstrap();
-  useRangeReload(range);
+  useRangeReload(range, provider, multiProviderEnabled);
   // Bounce off an advanced-only tab as soon as we know the toggle is off,
   // so users can't linger on hidden routes after disabling advanced mode.
   useEffect(() => {
@@ -142,7 +182,7 @@ export const DirectionA = ({ initialTab, lockTab = false }) => {
   const Route = ROUTES[effectiveTab] || Overview;
   return (
     <>
-      <Topbar tab={effectiveTab} setTab={setTab} range={range} setRange={setRange} advancedMode={advancedMode} />
+      <Topbar tab={effectiveTab} setTab={setTab} range={range} setRange={setRange} provider={provider} setProvider={multiProviderEnabled ? setProvider : null} advancedMode={advancedMode} />
       <main className="a-main-area">
         <Route themeIdx={themeIdx} onPickTheme={setThemeIdx} advancedMode={advancedMode} />
       </main>

@@ -60,6 +60,21 @@ export const AdvancedModeCard = ({ enabled, onChange, loaded, saving }) => (
   </section>
 );
 
+export const MultiProviderCard = ({ enabled, onChange, loaded, saving }) => (
+  <section className="a-card">
+    <div className="a-card-head">
+      <h2>Multi-provider filter</h2>
+      <span className="a-card-meta">{saving ? "saving…" : (loaded ? "preview — limited data" : "loading…")}</span>
+    </div>
+    <SettingRow
+      title="Show provider selector in topbar"
+      description="Adds an ALL / Claude / Codex switch next to the range tabs. Off by default — current data only contains Claude transcripts, so Codex returns empty until v4.2 lands the ingest path."
+      checked={enabled}
+      onChange={onChange}
+    />
+  </section>
+);
+
 export const DeveloperCard = () => {
   if (!window.td || typeof window.td.toggleDevTools !== "function") return null;
   return (
