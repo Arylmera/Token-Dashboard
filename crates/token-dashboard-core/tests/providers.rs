@@ -50,10 +50,22 @@ fn claude_provider_scan_writes_rows_with_provider_claude() {
         root_override: Some(projects_root.clone()),
     };
     let reports = scan_all(&opts).unwrap();
-    assert_eq!(reports.len(), 1, "v4.1 registers exactly one provider");
-    let claude = &reports[0];
-    assert_eq!(claude.provider, "claude");
+    assert!(
+        reports.iter().any(|r| r.provider == "claude"),
+        "claude provider must be registered, got {reports:?}"
+    );
+    let claude = reports
+        .iter()
+        .find(|r| r.provider == "claude")
+        .expect("claude report");
     assert!(claude.messages >= 1, "expected ≥1 message, got {claude:?}");
+    // Codex shares the registry; with a Claude-shaped root_override it
+    // walks the same tree but skips files lacking `session_meta`, so it
+    // ingests zero rows here.
+    if let Some(codex) = reports.iter().find(|r| r.provider == "codex") {
+        assert_eq!(codex.messages, 0, "codex must not claim claude rows");
+        assert_eq!(codex.files, 0);
+    }
 
     // Verify the stored row is tagged 'claude'.
     let c = Connection::open(&db_path).unwrap();

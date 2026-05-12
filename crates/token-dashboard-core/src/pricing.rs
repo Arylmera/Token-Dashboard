@@ -365,6 +365,26 @@ mod tests {
     }
 
     #[test]
+    fn cost_for_codex_models_uses_table() {
+        let p = Pricing::embedded();
+        for model in ["gpt-5", "gpt-5-codex", "gpt-5.2-codex", "gpt-5.4"] {
+            let r = cost_for(
+                model,
+                &Usage {
+                    input_tokens: 1_000_000,
+                    output_tokens: 1_000_000,
+                    cache_read_tokens: 0,
+                    cache_create_5m_tokens: 0,
+                    cache_create_1h_tokens: 0,
+                },
+                &p,
+            );
+            assert!(!r.estimated, "{model}: should resolve to exact rates");
+            assert_eq!(r.usd, Some(11.25), "{model}: $1.25 input + $10 output");
+        }
+    }
+
+    #[test]
     fn date_suffix_stripped() {
         assert_eq!(
             strip_date_suffix("claude-opus-4-7-20260214"),

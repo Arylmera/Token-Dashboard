@@ -12,6 +12,7 @@
 use std::path::PathBuf;
 
 pub mod claude;
+pub mod codex;
 
 /// Options passed to [`Provider::scan`].
 ///
@@ -68,14 +69,20 @@ pub trait Provider: Send + Sync {
     fn scan(&self, opts: &ScanOpts) -> rusqlite::Result<ScanReport>;
 }
 
-/// Return every provider compiled into this build. v4.1 ships only Claude;
-/// v4.2 appends `codex::Codex`, v4.3 appends `ollama::Ollama`.
+/// Return every provider compiled into this build. v4.2 adds
+/// [`codex::Codex`]; v4.3 appends `ollama::Ollama`.
 ///
 /// The registry is a function (not a static) so call sites pay nothing
 /// until a scan is actually requested, and tests can construct ad-hoc
 /// providers without touching global state.
+///
+/// Note: the registry uses each provider's default discovery root for
+/// non-Claude entries when [`ScanOpts::root_override`] is set — the
+/// override is Claude-shaped (`~/.claude/projects`), so Codex falls back
+/// to its own resolver (env var → `~/.codex/sessions`). Tests that want
+/// to point both providers at fixtures construct providers directly.
 pub fn registered() -> Vec<Box<dyn Provider>> {
-    vec![Box::new(claude::Claude)]
+    vec![Box::new(claude::Claude), Box::new(codex::Codex)]
 }
 
 /// Run every registered provider's scan against the same DB, merging

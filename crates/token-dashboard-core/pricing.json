@@ -11,7 +11,14 @@
     "claude-sonnet-3-7":   { "tier": "sonnet", "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
     "claude-haiku-4-5":    { "tier": "haiku",  "input":  1.00, "output":  5.00, "cache_read": 0.10, "cache_create_5m":  1.25, "cache_create_1h":  2.00 },
     "claude-haiku-3-5":    { "tier": "haiku",  "input":  0.80, "output":  4.00, "cache_read": 0.08, "cache_create_5m":  1.00, "cache_create_1h":  1.60 },
-    "claude-haiku-3":      { "tier": "haiku",  "input":  0.25, "output":  1.25, "cache_read": 0.03, "cache_create_5m":  0.30, "cache_create_1h":  0.50 }
+    "claude-haiku-3":      { "tier": "haiku",  "input":  0.25, "output":  1.25, "cache_read": 0.03, "cache_create_5m":  0.30, "cache_create_1h":  0.50 },
+
+    "gpt-5":               { "tier": "gpt-5",  "input":  1.25, "output": 10.00, "cache_read": 0.125, "cache_create_5m": 1.25, "cache_create_1h": 1.25 },
+    "gpt-5-mini":          { "tier": "gpt-5",  "input":  0.25, "output":  2.00, "cache_read": 0.025, "cache_create_5m": 0.25, "cache_create_1h": 0.25 },
+    "gpt-5-nano":          { "tier": "gpt-5",  "input":  0.05, "output":  0.40, "cache_read": 0.005, "cache_create_5m": 0.05, "cache_create_1h": 0.05 },
+    "gpt-5-codex":         { "tier": "gpt-5",  "input":  1.25, "output": 10.00, "cache_read": 0.125, "cache_create_5m": 1.25, "cache_create_1h": 1.25 },
+    "gpt-5.2-codex":       { "tier": "gpt-5",  "input":  1.25, "output": 10.00, "cache_read": 0.125, "cache_create_5m": 1.25, "cache_create_1h": 1.25 },
+    "gpt-5.4":             { "tier": "gpt-5",  "input":  1.25, "output": 10.00, "cache_read": 0.125, "cache_create_5m": 1.25, "cache_create_1h": 1.25 }
   },
   "tier_fallback": {
     "opus":   { "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
