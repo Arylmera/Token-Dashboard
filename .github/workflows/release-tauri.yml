@@ -148,3 +148,124 @@ jobs:
           files: dist/**/*
           fail_on_unmatched_files: false
           generate_release_notes: true
+
+  winget:
+    name: Submit to winget-pkgs
+    needs: [tag, release]
+    if: |
+      always() && needs.release.result == 'success' && (
+        startsWith(github.ref, 'refs/tags/v4.')
+        || needs.tag.outputs.tagged == 'true'
+      )
+    runs-on: windows-latest
+    # Non-blocking: winget-releaser only updates EXISTING manifests. The
+    # initial Arylmera.TokenDashboard submission must be done manually via
+    # `wingetcreate new` (one-time). Until merged into microsoft/winget-pkgs,
+    # this job will fail — that should not mark the release red.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag/version
+        id: v
+        shell: bash
+        run: |
+          tag="${{ needs.tag.outputs.tag || github.ref_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Check WINGET_TOKEN
+        id: check
+        shell: bash
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if [ -z "${WINGET_TOKEN:-}" ]; then
+            echo "WINGET_TOKEN not set — skipping winget submission."
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Submit manifest
+        if: steps.check.outputs.has_token == 'true'
+        uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          identifier: Arylmera.TokenDashboard
+          version: ${{ steps.v.outputs.version }}
+          installers-regex: 'Token\.Dashboard_.*_x64_en-US\.msi$'
+          release-tag: ${{ steps.v.outputs.tag }}
+          token: ${{ secrets.WINGET_TOKEN }}
+          max-versions-to-keep: 5
+          fork-user: Arylmera
+
+  homebrew:
+    name: Update Homebrew tap
+    needs: [tag, release]
+    if: |
+      always() && needs.release.result == 'success' && (
+        startsWith(github.ref, 'refs/tags/v4.')
+        || needs.tag.outputs.tagged == 'true'
+      )
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag/version
+        id: v
+        run: |
+          tag="${{ needs.tag.outputs.tag || github.ref_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: token-dashboard-macos-14
+          path: dist
+
+      - name: Update Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.v.outputs.version }}
+          TAP_REPO: Arylmera/homebrew-token-dashboard
+        run: |
+          set -euo pipefail
+          if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_TOKEN secret not set — skipping tap update."
+            exit 0
+          fi
+          dmg=$(ls dist/*.dmg 2>/dev/null | head -1 || true)
+          if [ -z "$dmg" ] || [ ! -f "$dmg" ]; then
+            echo "No DMG found in downloaded artifact — skipping tap update." >&2
+            ls -la dist/ || true
+            exit 0
+          fi
+          sha=$(sha256sum "$dmg" | awk '{print $1}')
+          echo "DMG: $dmg"
+          echo "sha256: $sha"
+
+          tmp=$(mktemp -d)
+          git clone --depth=1 \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git" \
+            "$tmp/tap"
+          mkdir -p "$tmp/tap/Casks"
+          cp Casks/token-dashboard.rb "$tmp/tap/Casks/token-dashboard.rb"
+          sed -i.bak -E \
+            -e "s/^  version \".*\"$/  version \"${VERSION}\"/" \
+            -e "s/^  sha256 \".*\"$/  sha256 \"${sha}\"/" \
+            "$tmp/tap/Casks/token-dashboard.rb"
+          rm -f "$tmp/tap/Casks/token-dashboard.rb.bak"
+
+          cd "$tmp/tap"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/token-dashboard.rb
+          if git diff --cached --quiet; then
+            echo "Cask already up to date."
+          else
+            git commit -m "token-dashboard ${VERSION}"
+            # Empty repos have no default branch yet; push to main explicitly.
+            git branch -M main
+            git push -u origin main
+          fi
