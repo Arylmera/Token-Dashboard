@@ -70,6 +70,13 @@ const useRangeReload = (range) => {
     });
     return () => { cancelled = true; };
   }, [range]);
+  // Re-render on SSE-driven MOCK_DATA refreshes so the dashboard stays
+  // live even when the user isn't interacting with the app.
+  useEffect(() => {
+    const bump = () => setNonce((n) => n + 1);
+    window.addEventListener("td:data", bump);
+    return () => window.removeEventListener("td:data", bump);
+  }, []);
 };
 
 const useTheme = () => {
