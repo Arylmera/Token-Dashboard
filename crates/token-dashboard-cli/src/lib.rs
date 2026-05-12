@@ -142,6 +142,7 @@ async fn overview(
             path_for_models.as_ref(),
             q_for_models.since.as_deref(),
             q_for_models.until.as_deref(),
+            q_for_models.provider.as_deref(),
         )
     })
     .await?
@@ -178,7 +179,15 @@ async fn projects(
     Query(q): Query<RangeQs>,
 ) -> Result<Json<Vec<ProjectRow>>, ApiError> {
     let path = s.db_path.clone();
-    blocking(move || project_summary(path.as_ref(), q.since.as_deref(), q.until.as_deref())).await
+    blocking(move || {
+        project_summary(
+            path.as_ref(),
+            q.since.as_deref(),
+            q.until.as_deref(),
+            q.provider.as_deref(),
+        )
+    })
+    .await
 }
 
 async fn tools(
@@ -186,8 +195,15 @@ async fn tools(
     Query(q): Query<RangeQs>,
 ) -> Result<Json<Vec<ToolRow>>, ApiError> {
     let path = s.db_path.clone();
-    blocking(move || tool_token_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
-        .await
+    blocking(move || {
+        tool_token_breakdown(
+            path.as_ref(),
+            q.since.as_deref(),
+            q.until.as_deref(),
+            q.provider.as_deref(),
+        )
+    })
+    .await
 }
 
 async fn daily(
@@ -195,8 +211,15 @@ async fn daily(
     Query(q): Query<RangeQs>,
 ) -> Result<Json<Vec<DailyRow>>, ApiError> {
     let path = s.db_path.clone();
-    blocking(move || daily_token_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
-        .await
+    blocking(move || {
+        daily_token_breakdown(
+            path.as_ref(),
+            q.since.as_deref(),
+            q.until.as_deref(),
+            q.provider.as_deref(),
+        )
+    })
+    .await
 }
 
 #[derive(Serialize)]
@@ -211,10 +234,16 @@ async fn by_model(
     Query(q): Query<RangeQs>,
 ) -> Result<Json<Vec<ModelRowWithCost>>, ApiError> {
     let path = s.db_path.clone();
-    let rows =
-        blocking(move || model_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
-            .await?
-            .0;
+    let rows = blocking(move || {
+        model_breakdown(
+            path.as_ref(),
+            q.since.as_deref(),
+            q.until.as_deref(),
+            q.provider.as_deref(),
+        )
+    })
+    .await?
+    .0;
     let pricing = s.pricing.clone();
     let out = rows
         .into_iter()
@@ -248,6 +277,8 @@ async fn tags(State(s): State<AppState>) -> Result<Json<Vec<TagRow>>, ApiError> 
 struct HourlyQs {
     #[serde(default)]
     hours: Option<i64>,
+    #[serde(default)]
+    provider: Option<String>,
 }
 
 /// One slot in the hourly response — fields the frontend's
@@ -271,7 +302,8 @@ async fn hourly(
 ) -> Result<Json<Vec<HourlySlot>>, ApiError> {
     let path = s.db_path.clone();
     let hours = q.hours.unwrap_or(24).max(1);
-    let rows = blocking(move || hourly_breakdown(path.as_ref(), hours))
+    let provider = q.provider.clone();
+    let rows = blocking(move || hourly_breakdown(path.as_ref(), hours, provider.as_deref()))
         .await?
         .0;
     // Bucket the (hour_ago, model) rows into per-hour slots, summing
@@ -343,9 +375,16 @@ async fn phase_split_endpoint(
     Query(q): Query<RangeQs>,
 ) -> Result<Json<PhaseSplitResponse>, ApiError> {
     let path = s.db_path.clone();
-    let rows = blocking(move || phase_split(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
-        .await?
-        .0;
+    let rows = blocking(move || {
+        phase_split(
+            path.as_ref(),
+            q.since.as_deref(),
+            q.until.as_deref(),
+            q.provider.as_deref(),
+        )
+    })
+    .await?
+    .0;
     let pricing = s.pricing.clone();
     let mut plan = PhaseBin::default();
     let mut execute = PhaseBin::default();
@@ -545,6 +584,7 @@ struct PreferencesResponse {
     badge_menubar_enabled: bool,
     limits_enabled: bool,
     advanced_mode: bool,
+    multi_provider_enabled: bool,
     theme: Option<String>,
     glass_enabled: bool,
     glass_opacity: i64,
@@ -568,6 +608,7 @@ async fn preferences_get(State(s): State<AppState>) -> Result<Json<PreferencesRe
             badge_menubar_enabled: preferences::get_badge_menubar_enabled(p)?,
             limits_enabled: preferences::get_limits_enabled(p)?,
             advanced_mode: preferences::get_advanced_mode(p)?,
+            multi_provider_enabled: preferences::get_multi_provider_enabled(p)?,
             theme: preferences::get_theme(p)?,
             glass_enabled: preferences::get_glass_enabled(p)?,
             glass_opacity: preferences::get_glass_opacity(p)?,
@@ -622,6 +663,8 @@ struct PreferencesBody {
     limits_enabled: Option<bool>,
     #[serde(default)]
     advanced_mode: Option<bool>,
+    #[serde(default)]
+    multi_provider_enabled: Option<bool>,
     #[serde(default)]
     theme: Option<String>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
@@ -703,6 +746,15 @@ async fn preferences_post(
             let _ =
                 events.send(serde_json::json!({"type": "preferences", "advanced_mode": stored}));
             out.insert("advanced_mode".into(), serde_json::Value::Bool(stored));
+        }
+        if let Some(v) = body.multi_provider_enabled {
+            let stored = preferences::set_multi_provider_enabled(p, v)?;
+            let _ = events
+                .send(serde_json::json!({"type": "preferences", "multi_provider_enabled": stored}));
+            out.insert(
+                "multi_provider_enabled".into(),
+                serde_json::Value::Bool(stored),
+            );
         }
         if let Some(v) = body.theme {
             let stored = preferences::set_theme(p, &v)?;
@@ -1393,8 +1445,9 @@ fn compute_session_export(
     since: Option<&str>,
     until: Option<&str>,
     tag: Option<&str>,
+    provider: Option<&str>,
 ) -> rusqlite::Result<Vec<SessionExportRow>> {
-    let rows = recent_sessions(path, 10_000, since, until, tag)?;
+    let rows = recent_sessions(path, 10_000, since, until, tag, provider)?;
     let ids: Vec<String> = rows.iter().map(|r| r.session_id.clone()).collect();
     let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
     let usage = session_model_usage(path, &id_refs)?;
@@ -1460,6 +1513,7 @@ async fn export_csv(
             q.since.as_deref(),
             q.until.as_deref(),
             tag.as_deref(),
+            q.provider.as_deref(),
         )?;
         let mut buf = String::new();
         buf.push_str("session_id,project_slug,project_name,started,ended,turns,tokens,cost_usd,model,tags,first_prompt\n");
@@ -1525,6 +1579,7 @@ async fn export_json(
             q.since.as_deref(),
             q.until.as_deref(),
             tag.as_deref(),
+            q.provider.as_deref(),
         )
     })
     .await?
@@ -1771,6 +1826,8 @@ struct PromptsQs {
     until: Option<String>,
     #[serde(default)]
     q: Option<String>,
+    #[serde(default)]
+    provider: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1792,6 +1849,7 @@ async fn prompts(
     let since = q.since.clone();
     let until = q.until.clone();
     let search = q.q.clone();
+    let provider = q.provider.clone();
     let rows = blocking(move || {
         expensive_prompts(
             path.as_ref(),
@@ -1800,6 +1858,7 @@ async fn prompts(
             since.as_deref(),
             until.as_deref(),
             search.as_deref(),
+            provider.as_deref(),
         )
     })
     .await?
@@ -1862,10 +1921,16 @@ async fn skills(
     Query(q): Query<RangeQs>,
 ) -> Result<Json<Vec<EnrichedSkillRow>>, ApiError> {
     let path = s.db_path.clone();
-    let rows =
-        blocking(move || skill_breakdown(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
-            .await?
-            .0;
+    let rows = blocking(move || {
+        skill_breakdown(
+            path.as_ref(),
+            q.since.as_deref(),
+            q.until.as_deref(),
+            q.provider.as_deref(),
+        )
+    })
+    .await?
+    .0;
     let catalog = tokio::task::spawn_blocking(token_dashboard_core::skills_catalog::cached_catalog)
         .await
         .map_err(|e| ApiError::internal(format!("join: {e}")))?;
@@ -1938,6 +2003,8 @@ struct SessionsQs {
     until: Option<String>,
     #[serde(default)]
     tag: Option<String>,
+    #[serde(default)]
+    provider: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1963,10 +2030,12 @@ async fn sessions(
     let since = q.since;
     let until = q.until;
     let tag = q.tag;
+    let provider = q.provider;
     let path_for_query = path.clone();
     let since_q = since.clone();
     let until_q = until.clone();
     let tag_q = tag.clone();
+    let provider_q = provider.clone();
     let rows: Vec<SessionRow> = blocking(move || {
         recent_sessions(
             path_for_query.as_ref(),
@@ -1974,6 +2043,7 @@ async fn sessions(
             since_q.as_deref(),
             until_q.as_deref(),
             tag_q.as_deref(),
+            provider_q.as_deref(),
         )
     })
     .await?

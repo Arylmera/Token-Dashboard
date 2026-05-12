@@ -3,6 +3,11 @@ import React, { useEffect, useState } from "react";
 const TABS = ["overview", "prompts", "sessions", "token sink", "tips", "api", "settings"];
 const ADVANCED_TABS = new Set(["api"]);
 const RANGES = ["1d", "7d", "30d", "90d", "all", "custom"];
+const PROVIDERS = [
+  { id: "all", label: "all" },
+  { id: "claude", label: "claude" },
+  { id: "codex", label: "codex" },
+];
 
 // yyyy-mm-dd → ISO at local midnight. The backend's `range_clause` does a
 // string compare on `timestamp`, so we hand it an ISO with seconds.
@@ -63,7 +68,7 @@ const WindowControls = () => {
   );
 };
 
-export const Topbar = ({ tab, setTab, range, setRange, advancedMode = false }) => {
+export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProvider, advancedMode = false }) => {
   const version = useVersion();
   const visibleTabs = TABS.filter((t) => advancedMode || !ADVANCED_TABS.has(t));
   const [customSince, setCustomSince] = useState("");
@@ -114,6 +119,19 @@ export const Topbar = ({ tab, setTab, range, setRange, advancedMode = false }) =
           </button>
         ))}
       </div>
+      {setProvider && (
+        <div className="a-range" role="group" aria-label="Provider filter">
+          {PROVIDERS.map((p) => (
+            <button
+              key={p.id}
+              className={`a-range-tab ${provider === p.id ? "is-active" : ""}`}
+              onClick={() => setProvider(p.id)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
       {range === "custom" && (
         <div className="a-range-custom" data-tauri-drag-region="false">
           <input

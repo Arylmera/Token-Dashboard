@@ -161,6 +161,17 @@ pub fn set_advanced_mode<P: AsRef<Path>>(db: P, v: bool) -> rusqlite::Result<boo
     set_bool(db, "advanced_mode", v)
 }
 
+/// Hide the provider/model picker in the topbar by default. When off, the
+/// frontend behaves as if `provider=all` regardless of what's stored. Lives
+/// behind advanced mode because filter coverage is partial until v4.2 ships
+/// Codex ingest.
+pub fn get_multi_provider_enabled<P: AsRef<Path>>(db: P) -> rusqlite::Result<bool> {
+    get_bool(db, "multi_provider_enabled", false)
+}
+pub fn set_multi_provider_enabled<P: AsRef<Path>>(db: P, v: bool) -> rusqlite::Result<bool> {
+    set_bool(db, "multi_provider_enabled", v)
+}
+
 /// Theme id chosen in the UI. Stored verbatim as an opaque string so the
 /// backend doesn't have to track the frontend's theme catalog. Empty/missing
 /// returns None so the UI can fall back to its built-in default.
