@@ -75,6 +75,13 @@ struct Health {
 struct RangeQs {
     since: Option<String>,
     until: Option<String>,
+    /// Optional provider filter for multi-AI support. Accepts a single id
+    /// (`"claude"`, `"codex"`, `"ollama"`), a comma-separated list
+    /// (`"claude,codex"`), `"all"`, or omitted — all four behave as
+    /// no-filter on v4.0.x data where every row is `'claude'`. Threaded
+    /// through queries that join `messages` / `tool_calls`.
+    #[serde(default)]
+    provider: Option<String>,
 }
 
 /// `/api/overview` JSON adds a `cost_usd` placeholder (0.0 until the
@@ -120,10 +127,16 @@ async fn overview(
     let path = s.db_path.clone();
     let path_for_models = path.clone();
     let q_for_models = q.clone();
-    let totals =
-        blocking(move || overview_totals(path.as_ref(), q.since.as_deref(), q.until.as_deref()))
-            .await?
-            .0;
+    let totals = blocking(move || {
+        overview_totals(
+            path.as_ref(),
+            q.since.as_deref(),
+            q.until.as_deref(),
+            q.provider.as_deref(),
+        )
+    })
+    .await?
+    .0;
     let models = blocking(move || {
         model_breakdown(
             path_for_models.as_ref(),

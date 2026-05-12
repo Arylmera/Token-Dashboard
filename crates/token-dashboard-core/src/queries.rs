@@ -93,6 +93,30 @@ fn range_clause(since: Option<&str>, until: Option<&str>, col: &str) -> (String,
     (clause, args)
 }
 
+/// Build a `WHERE provider` clause + parameter list. `None` or the sentinel
+/// `"all"` returns `("", [])` so existing call sites are no-ops — useful
+/// during the v4.1 rollout when only Claude data exists.
+///
+/// Multi-provider lookups (`"claude,codex"`) split on commas; whitespace is
+/// trimmed and empty segments are dropped.
+fn provider_clause(filter: Option<&str>) -> (String, Vec<String>) {
+    let raw = match filter {
+        Some(s) if !s.is_empty() && !s.eq_ignore_ascii_case("all") => s,
+        _ => return (String::new(), Vec::new()),
+    };
+    let ids: Vec<String> = raw
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if ids.is_empty() {
+        return (String::new(), Vec::new());
+    }
+    let placeholders = vec!["?"; ids.len()].join(",");
+    let clause = format!(" AND provider IN ({placeholders})");
+    (clause, ids)
+}
+
 pub(crate) fn open_ro<P: AsRef<Path>>(db: P) -> rusqlite::Result<Connection> {
     let c = Connection::open(db.as_ref())?;
     c.busy_timeout(std::time::Duration::from_secs(30))?;
@@ -103,8 +127,11 @@ pub fn overview_totals<P: AsRef<Path>>(
     db: P,
     since: Option<&str>,
     until: Option<&str>,
+    provider: Option<&str>,
 ) -> rusqlite::Result<OverviewTotals> {
-    let (rng, args) = range_clause(since, until, "timestamp");
+    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (prov, prov_args) = provider_clause(provider);
+    args.extend(prov_args);
     let sql = format!(
         "SELECT COUNT(DISTINCT session_id) AS sessions, \
                 SUM(CASE WHEN type='user' THEN 1 ELSE 0 END) AS turns, \
@@ -113,7 +140,7 @@ pub fn overview_totals<P: AsRef<Path>>(
                 COALESCE(SUM(cache_read_tokens),0)       AS cache_read_tokens, \
                 COALESCE(SUM(cache_create_5m_tokens),0)  AS cache_create_5m_tokens, \
                 COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens \
-         FROM messages WHERE 1=1 {rng}"
+         FROM messages WHERE 1=1 {rng}{prov}"
     );
     let c = open_ro(db)?;
     let totals = c.query_row(&sql, rusqlite::params_from_iter(args.iter()), |r| {
