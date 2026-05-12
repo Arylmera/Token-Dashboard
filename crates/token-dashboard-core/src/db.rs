@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS files (
   path        TEXT PRIMARY KEY,
   mtime       REAL    NOT NULL,
   bytes_read  INTEGER NOT NULL,
-  scanned_at  REAL    NOT NULL
+  scanned_at  REAL    NOT NULL,
+  provider    TEXT    NOT NULL DEFAULT 'claude'
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -45,7 +46,8 @@ CREATE TABLE IF NOT EXISTS messages (
   cache_create_1h_tokens  INTEGER NOT NULL DEFAULT 0,
   prompt_text             TEXT,
   prompt_chars            INTEGER,
-  tool_calls_json         TEXT
+  tool_calls_json         TEXT,
+  provider                TEXT    NOT NULL DEFAULT 'claude'
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session   ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_messages_project   ON messages(project_slug);
@@ -53,6 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_model     ON messages(model);
 CREATE INDEX IF NOT EXISTS idx_messages_msgid     ON messages(session_id, message_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread    ON messages(session_id, type, is_sidechain, timestamp);
+CREATE INDEX IF NOT EXISTS idx_messages_provider  ON messages(provider);
 
 CREATE TABLE IF NOT EXISTS tool_calls (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +67,8 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   use_id        TEXT,
   result_tokens INTEGER,
   is_error      INTEGER NOT NULL DEFAULT 0,
-  timestamp     TEXT    NOT NULL
+  timestamp     TEXT    NOT NULL,
+  provider      TEXT    NOT NULL DEFAULT 'claude'
 );
 CREATE INDEX IF NOT EXISTS idx_tools_session ON tool_calls(session_id);
 CREATE INDEX IF NOT EXISTS idx_tools_name    ON tool_calls(tool_name);
@@ -143,8 +147,29 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> rusqlite::Result<()> {
     let conn = Connection::open(path)?;
     migrate_add_message_id(&conn)?;
     migrate_add_tool_use_id(&conn)?;
+    migrate_add_provider(&conn)?;
     conn.execute_batch(SCHEMA)?;
     migrate_add_fts(&conn)?;
+    Ok(())
+}
+
+/// Add `provider` column to `messages`, `tool_calls`, `files`.
+///
+/// Why: multi-provider support (Codex, Ollama). Existing rows are all
+/// Claude — default value backfills them in a single statement, no
+/// truncation needed. How to apply: idempotent; no-op on fresh DBs (the
+/// SCHEMA above already defines the column).
+fn migrate_add_provider(conn: &Connection) -> rusqlite::Result<()> {
+    for table in ["messages", "tool_calls", "files"] {
+        if !table_exists(conn, table)? {
+            continue;
+        }
+        if column_exists(conn, table, "provider")? {
+            continue;
+        }
+        let sql = format!("ALTER TABLE {table} ADD COLUMN provider TEXT NOT NULL DEFAULT 'claude'");
+        conn.execute(&sql, [])?;
+    }
     Ok(())
 }
 

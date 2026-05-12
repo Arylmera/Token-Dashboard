@@ -14,6 +14,7 @@ pub mod db;
 pub mod limits;
 pub mod preferences;
 pub mod pricing;
+pub mod providers;
 pub mod queries;
 pub mod scanner;
 pub mod skills_catalog;
