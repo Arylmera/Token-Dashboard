@@ -16,6 +16,144 @@ export const LimitsToggleCard = ({ enabled, onChange, loaded, saving }) => (
   </section>
 );
 
+export const LimitsSourceCard = () => {
+  const [source, setSource] = useState("jsonl");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
+  const [lastSyncStatus, setLastSyncStatus] = useState(null);
+
+  const reload = async () => {
+    try {
+      const r = await fetch("/api/preferences", { cache: "no-store" });
+      const d = await r.json();
+      if (d.limits_source === "oauth" || d.limits_source === "jsonl") setSource(d.limits_source);
+      setLastSyncAt(d.limits_last_sync_at || null);
+      setLastSyncStatus(d.limits_last_sync_status || null);
+    } catch (_) {}
+    setLoaded(true);
+  };
+
+  useEffect(() => { reload(); }, []);
+
+  const onPick = async (next) => {
+    if (next === source) return;
+    setSaving(true);
+    setSource(next);
+    try {
+      await fetch("/api/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limits_source: next }),
+      });
+      if (window.RELOAD_STATIC) window.RELOAD_STATIC();
+    } catch (_) {}
+    setSaving(false);
+  };
+
+  const onSync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const r = await fetch("/api/limits/sync_oauth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setSyncMsg({ tone: "bad", text: d.error || `HTTP ${r.status}` });
+      } else {
+        setLastSyncStatus(d.limits_last_sync_status || d.status || null);
+        setLastSyncAt(d.limits_last_sync_at || null);
+        if (d.status === "ok") {
+          setSyncMsg({ tone: "good", text: "Synced — Overview will show live values." });
+        } else if (d.status === "unsupported") {
+          setSyncMsg({ tone: "bad", text: "Your account doesn't expose unified-window rate-limit headers." });
+        } else {
+          setSyncMsg({ tone: "bad", text: `Sync failed: ${(d.status || "").replace(/^error:/, "")}` });
+        }
+      }
+      if (window.RELOAD_STATIC) window.RELOAD_STATIC();
+    } catch (e) {
+      setSyncMsg({ tone: "bad", text: "Sync request failed." });
+    }
+    setSyncing(false);
+  };
+
+  const options = [
+    {
+      id: "jsonl",
+      title: "Local transcripts",
+      desc: "Sum tokens from ~/.claude/projects/ files against a configured cap. Always available; cap is a community estimate unless you calibrate.",
+    },
+    {
+      id: "oauth",
+      title: "Claude subscription (live)",
+      desc: "Read live 5h / weekly utilization directly from Anthropic's rate-limit headers, using the OAuth token your `claude` login stored. Experimental — undocumented Anthropic flow, may stop working without notice. On macOS the first sync prompts your Keychain for access to the Claude Code credential.",
+    },
+  ];
+
+  return (
+    <section className="a-card">
+      <div className="a-card-head">
+        <h2>Limits data source</h2>
+        <span className="a-card-meta">
+          {saving ? "saving…" : (loaded ? "drives the Overview 5h / weekly card" : "loading…")}
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {options.map((o) => (
+          <label key={o.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
+            <input
+              type="radio"
+              name="limits_source"
+              checked={source === o.id}
+              onChange={() => onPick(o.id)}
+              style={{ marginTop: 4 }}
+            />
+            <div>
+              <div className="a-plan-title">{o.title}</div>
+              <div className="a-plan-note">{o.desc}</div>
+            </div>
+          </label>
+        ))}
+      </div>
+      {source === "oauth" && (
+        <>
+          <div className="a-card-divider" />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button type="button" className="a-pill-btn" onClick={onSync} disabled={syncing}>
+              {syncing ? "syncing…" : "Sync now"}
+            </button>
+            <span className="a-card-meta">
+              Reads ~/.claude credentials and pings Anthropic for the current rate-limit headers.
+            </span>
+          </div>
+          {(syncMsg || lastSyncStatus) && (
+            <div
+              className={`a-card-meta ${
+                (syncMsg && syncMsg.tone === "good") || lastSyncStatus === "ok"
+                  ? "tone-good"
+                  : "tone-bad"
+              }`}
+              style={{ marginTop: 8 }}
+            >
+              {syncMsg
+                ? syncMsg.text
+                : lastSyncStatus === "ok"
+                  ? `Last sync ${lastSyncAt ? new Date(lastSyncAt).toLocaleString() : ""}`
+                  : `Last sync: ${lastSyncStatus}`}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+};
+
 const _isoToParts = (iso) => {
   const empty = { h: "", m: "" };
   if (!iso) return empty;

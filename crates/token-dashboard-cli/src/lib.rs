@@ -593,6 +593,7 @@ struct PreferencesResponse {
     limits_weekly_reset_at: Option<String>,
     limits_5h_cap_override: Option<i64>,
     limits_weekly_cap_override: Option<i64>,
+    limits_source: String,
     widget_metrics: Vec<String>,
     widget_open: bool,
 }
@@ -626,6 +627,7 @@ async fn preferences_get(State(s): State<AppState>) -> Result<Json<PreferencesRe
                 p,
                 "limits_weekly_cap_override",
             )?,
+            limits_source: preferences::get_limits_source(p)?,
             widget_metrics: preferences::get_widget_metrics(p)?,
             widget_open: preferences::get_widget_open(p)?,
         })
@@ -677,6 +679,8 @@ struct PreferencesBody {
     limits_weekly_cap_override: Option<Option<i64>>,
     #[serde(default)]
     anthropic_api_key: Option<String>,
+    #[serde(default)]
+    limits_source: Option<String>,
     #[serde(default)]
     widget_metrics: Option<Vec<String>>,
     #[serde(default)]
@@ -803,6 +807,12 @@ async fn preferences_post(
             let raw = if v.is_empty() { None } else { Some(v.as_str()) };
             preferences::set_anthropic_api_key(p, raw)?;
             // Don't echo the key back — keep it out of the response shape.
+        }
+        if let Some(v) = body.limits_source {
+            let stored = preferences::set_limits_source(p, &v)?;
+            let _ =
+                events.send(serde_json::json!({"type": "preferences", "limits_source": stored}));
+            out.insert("limits_source".into(), serde_json::Value::String(stored));
         }
         if let Some(v) = body.widget_metrics {
             let stored = preferences::set_widget_metrics(p, &v)?;
@@ -960,6 +970,74 @@ async fn limits_sync(State(s): State<AppState>) -> Result<Json<LimitsSyncRespons
                 preferences::set_limit_reset_at(p, "limits_five_hour_reset_at", Some(v))?;
             }
             if let Some(v) = week_clone.as_deref() {
+                preferences::set_limit_reset_at(p, "limits_weekly_reset_at", Some(v))?;
+            }
+        }
+        let meta = preferences::get_limits_sync_meta(p)?;
+        Ok(LimitsSyncResponse {
+            status: status_clone,
+            limits_five_hour_reset_at: preferences::get_limit_reset_at(
+                p,
+                "limits_five_hour_reset_at",
+            )?,
+            limits_weekly_reset_at: preferences::get_limit_reset_at(p, "limits_weekly_reset_at")?,
+            limits_last_sync_at: meta.last_sync_at,
+            limits_last_sync_status: meta.last_sync_status,
+        })
+    })
+    .await?;
+    Ok(resp)
+}
+
+async fn limits_sync_oauth(
+    State(s): State<AppState>,
+) -> Result<Json<LimitsSyncResponse>, ApiError> {
+    // Keychain access can block on a user prompt; spawn_blocking keeps
+    // the runtime healthy regardless.
+    let token_result =
+        tokio::task::spawn_blocking(token_dashboard_core::credentials::read_oauth_token)
+            .await
+            .map_err(|e| ApiError::internal(format!("join: {e}")))?;
+    let token = match token_result {
+        Ok(t) => t,
+        Err(e) => return Err(ApiError::bad_request(e.user_message())),
+    };
+
+    let result = tokio::task::spawn_blocking(move || {
+        token_dashboard_core::anthropic_sync::sync_limits_oauth(&token)
+    })
+    .await
+    .map_err(|e| ApiError::internal(format!("join: {e}")))?;
+
+    let path = s.db_path.clone();
+    let now_iso = current_iso_z();
+    let status_clone = result.status.clone();
+    let resp = blocking(move || -> rusqlite::Result<LimitsSyncResponse> {
+        let p = path.as_ref();
+        let conn = rusqlite::Connection::open(p)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_last_sync_at', ?)",
+            [&now_iso],
+        )?;
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_last_sync_status', ?)",
+            [&status_clone],
+        )?;
+        if status_clone == "ok" {
+            preferences::set_limits_server_snapshot(
+                p,
+                &preferences::LimitsServerSnapshot {
+                    five_hour_utilization: result.five_hour_utilization,
+                    five_hour_status: result.five_hour_status.clone(),
+                    weekly_utilization: result.weekly_utilization,
+                    weekly_status: result.weekly_status.clone(),
+                    synced_at: Some(now_iso.clone()),
+                },
+            )?;
+            if let Some(v) = result.five_hour_reset_at.as_deref() {
+                preferences::set_limit_reset_at(p, "limits_five_hour_reset_at", Some(v))?;
+            }
+            if let Some(v) = result.weekly_reset_at.as_deref() {
                 preferences::set_limit_reset_at(p, "limits_weekly_reset_at", Some(v))?;
             }
         }
@@ -2228,6 +2306,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/budget", get(budget_get).post(budget_post))
         .route("/api/limits", get(limits_get))
         .route("/api/limits/sync", post(limits_sync))
+        .route("/api/limits/sync_oauth", post(limits_sync_oauth))
         // POST endpoints
         .route("/api/plan", post(set_plan_handler))
         .route("/api/tips/dismiss", post(tips_dismiss_handler))

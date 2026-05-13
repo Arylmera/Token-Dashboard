@@ -31,9 +31,14 @@ use crate::queries;
 pub struct LimitWindow {
     /// Plan cap, sonnet-equivalent tokens. `None` when the plan has no
     /// configured cap (e.g. `api`) or pricing has no entry for the plan.
+    /// Always `None` for `source = "server"` since Anthropic doesn't
+    /// expose absolute caps over the API.
     pub cap: Option<i64>,
+    /// Sonnet-equivalent tokens consumed in the window. Always `0` for
+    /// `source = "server"` (the headers only carry a percentage).
     pub used: i64,
-    /// 0.0..1.0; 0 when cap is unknown.
+    /// 0.0..1.0. For `source = "jsonl"` this is `used / cap`, clamped;
+    /// for `source = "server"` it's the verbatim utilization header.
     pub pct_used: f64,
     pub pct_remaining: f64,
     pub resets_at: Option<String>,
@@ -41,8 +46,14 @@ pub struct LimitWindow {
     /// active session" to the frontend (it inspects `"anchor" in win`).
     pub anchor: Option<String>,
     /// True when the cap came from a user-calibrated override rather
-    /// than the embedded pricing defaults.
+    /// than the embedded pricing defaults. Always `false` for `source
+    /// = "server"`.
     pub calibrated: bool,
+    /// Where this window's numbers came from. `"jsonl"` = local
+    /// transcript sum vs configured cap. `"server"` = Anthropic
+    /// rate-limit headers via the OAuth sync. The frontend uses this
+    /// to decide which sub-label to render.
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -61,10 +72,19 @@ pub struct LimitsSnapshot {
 
 /// Compute the live 5h + weekly snapshot for the dashboard. The
 /// connection is opened read-only; callers responsible for thread/blocking.
+///
+/// Dispatches on the `limits_source` preference. When `"oauth"`,
+/// returns the cached server snapshot from preferences verbatim — no
+/// JSONL access. When `"jsonl"` (default), sums local transcript
+/// tokens against the configured cap.
 pub fn compute_limits<P: AsRef<Path>>(
     db: P,
     pricing: &Pricing,
 ) -> rusqlite::Result<LimitsSnapshot> {
+    let source = preferences::get_limits_source(db.as_ref())?;
+    if source == "oauth" {
+        return compute_limits_from_server(db);
+    }
     let plan = queries::get_plan(db.as_ref())?;
     let reset_5h = preferences::get_limit_reset_at(db.as_ref(), "limits_five_hour_reset_at")?;
     let reset_wk = preferences::get_limit_reset_at(db.as_ref(), "limits_weekly_reset_at")?;
@@ -127,6 +147,52 @@ fn build_window(
         resets_at,
         anchor,
         calibrated,
+        source: "jsonl".into(),
+    }
+}
+
+/// Build a server-sourced LimitsSnapshot from the cached OAuth-sync
+/// snapshot. Reads only from the `plan` (k/v) table — does not touch
+/// the `messages` table.
+fn compute_limits_from_server<P: AsRef<Path>>(db: P) -> rusqlite::Result<LimitsSnapshot> {
+    let plan = queries::get_plan(db.as_ref())?;
+    let snap = preferences::get_limits_server_snapshot(db.as_ref())?;
+    let reset_5h = preferences::get_limit_reset_at(db.as_ref(), "limits_five_hour_reset_at")?;
+    let reset_wk = preferences::get_limit_reset_at(db.as_ref(), "limits_weekly_reset_at")?;
+    Ok(LimitsSnapshot {
+        plan,
+        meta: LimitsMetaOut {
+            last_verified: snap.synced_at.clone(),
+            source_note: Some(
+                "Live values from Anthropic rate-limit headers (Claude subscription).".into(),
+            ),
+        },
+        five_hour: server_window(snap.five_hour_utilization, reset_5h),
+        weekly: server_window(snap.weekly_utilization, reset_wk),
+    })
+}
+
+fn server_window(util: Option<f64>, resets_at: Option<String>) -> LimitWindow {
+    let pct_used = util.unwrap_or(0.0).clamp(0.0, 1.0);
+    let pct_remaining = if util.is_some() { 1.0 - pct_used } else { 0.0 };
+    // `anchor = Some(...)` is the "active session" signal for the
+    // frontend; we don't have the open time but we do know the window
+    // is live whenever we have any server data, so use the reset
+    // timestamp as a proxy. The frontend only checks presence, not value.
+    let anchor = if util.is_some() {
+        resets_at.clone().or_else(|| Some("server".into()))
+    } else {
+        None
+    };
+    LimitWindow {
+        cap: None,
+        used: 0,
+        pct_used,
+        pct_remaining,
+        resets_at,
+        anchor,
+        calibrated: false,
+        source: "server".into(),
     }
 }
 
@@ -366,6 +432,57 @@ mod tests {
             )
             .unwrap();
         assert_eq!(future, 1, "rolled weekly reset {next_reset} not in future");
+    }
+
+    #[test]
+    fn oauth_source_returns_server_snapshot() {
+        let f = fresh_db();
+        preferences::set_limits_source(f.path(), "oauth").unwrap();
+        preferences::set_limits_server_snapshot(
+            f.path(),
+            &preferences::LimitsServerSnapshot {
+                five_hour_utilization: Some(0.42),
+                five_hour_status: Some("allowed".into()),
+                weekly_utilization: Some(0.18),
+                weekly_status: Some("allowed".into()),
+                synced_at: Some("2026-05-13T12:00:00Z".into()),
+            },
+        )
+        .unwrap();
+        preferences::set_limit_reset_at(
+            f.path(),
+            "limits_five_hour_reset_at",
+            Some("2030-01-01T00:00:00Z"),
+        )
+        .unwrap();
+        let pricing = Pricing::embedded();
+        let snap = compute_limits(f.path(), &pricing).unwrap();
+        assert_eq!(snap.five_hour.source, "server");
+        assert_eq!(snap.weekly.source, "server");
+        assert!(snap.five_hour.cap.is_none());
+        assert_eq!(snap.five_hour.used, 0);
+        assert!((snap.five_hour.pct_used - 0.42).abs() < 1e-9);
+        assert!((snap.weekly.pct_used - 0.18).abs() < 1e-9);
+        assert!(snap.five_hour.anchor.is_some());
+        assert_eq!(
+            snap.five_hour.resets_at.as_deref(),
+            Some("2030-01-01T00:00:00Z")
+        );
+        assert_eq!(
+            snap.meta.last_verified.as_deref(),
+            Some("2026-05-13T12:00:00Z")
+        );
+    }
+
+    #[test]
+    fn oauth_source_with_no_snapshot_is_idle() {
+        let f = fresh_db();
+        preferences::set_limits_source(f.path(), "oauth").unwrap();
+        let pricing = Pricing::embedded();
+        let snap = compute_limits(f.path(), &pricing).unwrap();
+        assert_eq!(snap.five_hour.source, "server");
+        assert!(snap.five_hour.anchor.is_none(), "idle when no util");
+        assert_eq!(snap.five_hour.pct_used, 0.0);
     }
 
     #[test]

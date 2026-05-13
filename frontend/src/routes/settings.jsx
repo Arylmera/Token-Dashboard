@@ -4,7 +4,7 @@ import { SettingsGroup } from "./settings/atoms.jsx";
 import { ThemeCard } from "./settings/theme-card.jsx";
 import { PlanCard, PricingTable } from "./settings/plan-card.jsx";
 import { BadgeCard } from "./settings/badge-card.jsx";
-import { LimitsToggleCard, LimitResetCard } from "./settings/limits-card.jsx";
+import { LimitsToggleCard, LimitResetCard, LimitsSourceCard } from "./settings/limits-card.jsx";
 import { BudgetCard } from "./settings/budget-card.jsx";
 import { BackupCard } from "./settings/backup-card.jsx";
 import { SourcesCard } from "./settings/sources-card.jsx";
@@ -131,6 +131,7 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
         {advancedMode && (
           <LimitsToggleCard enabled={limitsEnabled} onChange={onToggleLimits} loaded={limitsLoaded} saving={limitsSaving} />
         )}
+        {advancedMode && limitsEnabled && <LimitsSourceCard />}
         {advancedMode && limitsEnabled && <LimitResetCard />}
         {advancedMode && (
           <MultiProviderCard

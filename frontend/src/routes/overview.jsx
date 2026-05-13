@@ -154,7 +154,37 @@ const fmtResetIn = (resetsAt) => {
 };
 
 const LimitWindow = ({ label, sub, win, plan }) => {
-  if (!win || win.cap == null) {
+  if (!win) return null;
+  const isServer = win.source === "server";
+  if (isServer) {
+    if (win.anchor == null) {
+      return (
+        <div className="a-limit">
+          <div className="a-label">{label}</div>
+          <div className="a-limit-num">—</div>
+          <div className="a-strip-sub">{sub} · run “Sync now” in Settings to fetch live values</div>
+        </div>
+      );
+    }
+    const pctRem = (win.pct_remaining || 0) * 100;
+    const pctUsed = (win.pct_used || 0) * 100;
+    const tone = toneFor(win.pct_used);
+    const resetIn = fmtResetIn(win.resets_at);
+    const subText = resetIn ? `${sub} · ${resetIn} · live` : `${sub} · live`;
+    return (
+      <div className="a-limit">
+        <div className="a-label">{label}</div>
+        <div className={`a-limit-num ${tone}`}>≈{pctRem.toFixed(0)}%<span className="a-strip-unit">left</span></div>
+        <div className="a-gauge">
+          <div className="a-gauge-track">
+            <div className={`a-gauge-fill ${tone}`} style={{ width: `${Math.min(pctUsed, 100)}%` }} />
+          </div>
+        </div>
+        <div className="a-strip-sub">{subText}</div>
+      </div>
+    );
+  }
+  if (win.cap == null) {
     const hint = plan === "api"
       ? "no cap on API plan"
       : `no cap configured for "${plan}" — pick a Claude plan in Settings`;
@@ -290,26 +320,37 @@ const PhaseSplitCard = ({ phase }) => {
 
 const LimitsCard = ({ limits, enabled }) => {
   if (enabled === false) return null;
-  if (!limits || limits.plan === "api") return null;
+  if (!limits) return null;
+  const isServer = limits.five_hour?.source === "server" || limits.weekly?.source === "server";
+  if (!isServer && limits.plan === "api") return null;
   const meta = limits.meta || {};
-  const verifiedSuffix = meta.last_verified ? ` · verified ${meta.last_verified}` : "";
+  const verifiedSuffix = meta.last_verified
+    ? ` · synced ${new Date(meta.last_verified).toLocaleString()}`
+    : "";
   const bothCalibrated = limits.five_hour?.calibrated && limits.weekly?.calibrated;
   const anyCalibrated = limits.five_hour?.calibrated || limits.weekly?.calibrated;
-  const defaultNote = bothCalibrated
-    ? "Caps calibrated from your Anthropic statusbar. Re-calibrate in Settings if your plan changes."
-    : anyCalibrated
-      ? "One window is calibrated; the other uses a rough community estimate. Calibrate the rest in Settings."
-      : "Anthropic doesn't publish exact token caps; defaults are rough community estimates. Calibrate from your statusbar in Settings.";
-  const note = meta.source_note || defaultNote;
+  const defaultNote = isServer
+    ? "Live values from Anthropic rate-limit headers via your Claude subscription. Click “Sync now” in Settings to refresh."
+    : bothCalibrated
+      ? "Caps calibrated from your Anthropic statusbar. Re-calibrate in Settings if your plan changes."
+      : anyCalibrated
+        ? "One window is calibrated; the other uses a rough community estimate. Calibrate the rest in Settings."
+        : "Anthropic doesn't publish exact token caps; defaults are rough community estimates. Calibrate from your statusbar in Settings.";
+  const note = (!isServer && meta.source_note) || defaultNote;
+  const sub5h = isServer ? "5h window" : "anchored";
+  const subWeek = isServer ? "7d window" : "last 7 days";
+  const headMeta = isServer
+    ? `live · Anthropic rate-limit headers${verifiedSuffix}`
+    : `${limits.plan} plan · sonnet-equiv tokens${verifiedSuffix}`;
   return (
     <section className="a-card a-limits">
       <div className="a-card-head">
         <h2>Plan limits remaining</h2>
-        <span className="a-card-meta">{limits.plan} plan · sonnet-equiv tokens{verifiedSuffix}</span>
+        <span className="a-card-meta">{headMeta}</span>
       </div>
       <div className="a-limits-grid">
-        <LimitWindow label="5h session" sub="anchored" win={limits.five_hour} plan={limits.plan} />
-        <LimitWindow label="weekly window" sub="last 7 days" win={limits.weekly} plan={limits.plan} />
+        <LimitWindow label="5h session" sub={sub5h} win={limits.five_hour} plan={limits.plan} />
+        <LimitWindow label="weekly window" sub={subWeek} win={limits.weekly} plan={limits.plan} />
       </div>
       <div className="a-limits-note">⚠ {note}</div>
     </section>
