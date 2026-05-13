@@ -1,22 +1,16 @@
 //! One-shot probe of Anthropic's Messages API to read rate-limit headers.
 //!
-//! Two auth modes — both call the same endpoint with the same probe
-//! body, only the auth/headers differ:
+//! Reads the OAuth access token Claude Code stored when the user logged
+//! in, sends `Authorization: Bearer` plus the `anthropic-beta:
+//! oauth-2025-04-20` header and Claude Code's UA. Counts against the
+//! user's subscription (Pro / Max) window — no separate API credits
+//! needed. Undocumented / experimental — Anthropic may change or revoke
+//! this flow at any time.
 //!
-//! - **API key** (`sync_limits`): legacy path used by `/api/limits/sync`.
-//!   Sends `x-api-key`. The user-saved Anthropic API key billing model
-//!   applies.
-//! - **OAuth** (`sync_limits_oauth`): reads the access token Claude Code
-//!   stored when the user logged in, sends `Authorization: Bearer` plus
-//!   the `anthropic-beta: oauth-2025-04-20` header and Claude Code's UA.
-//!   Counts against the user's subscription (Pro / Max) window — no
-//!   separate API credits needed. Undocumented / experimental — Anthropic
-//!   may change or revoke this flow at any time.
-//!
-//! Both modes return a populated `SyncResult` carrying utilization
-//! (0..1), status, and reset timestamps for the unified 5h and 7d
-//! windows when the account exposes them. Accounts that don't expose
-//! unified-window headers return `status: "unsupported"`.
+//! Returns a populated `SyncResult` carrying utilization (0..1), status,
+//! and reset timestamps for the unified 5h and 7d windows when the
+//! account exposes them. Accounts that don't expose unified-window
+//! headers return `status: "unsupported"`.
 //!
 //! `ureq` ships with rustls so the binary stays self-contained — no
 //! system-OpenSSL dependency. The whole call is synchronous; callers
@@ -109,23 +103,7 @@ fn parse_util(value: &str) -> Option<f64> {
 }
 
 #[cfg(feature = "http")]
-enum Auth<'a> {
-    ApiKey(&'a str),
-    Oauth(&'a str),
-}
-
-#[cfg(feature = "http")]
-pub fn sync_limits(api_key: &str) -> SyncResult {
-    sync_with_auth(Auth::ApiKey(api_key))
-}
-
-#[cfg(feature = "http")]
 pub fn sync_limits_oauth(access_token: &str) -> SyncResult {
-    sync_with_auth(Auth::Oauth(access_token))
-}
-
-#[cfg(feature = "http")]
-fn sync_with_auth(auth: Auth) -> SyncResult {
     use std::time::Duration;
 
     let body = serde_json::json!({
@@ -137,21 +115,13 @@ fn sync_with_auth(auth: Auth) -> SyncResult {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(TIMEOUT_S))
         .build();
-    let mut req = agent
+    let req = agent
         .post(ENDPOINT)
         .set("anthropic-version", ANTHROPIC_VERSION)
-        .set("content-type", "application/json");
-    match auth {
-        Auth::ApiKey(k) => {
-            req = req.set("x-api-key", k);
-        }
-        Auth::Oauth(t) => {
-            req = req
-                .set("authorization", &format!("Bearer {t}"))
-                .set("anthropic-beta", OAUTH_BETA_HEADER)
-                .set("user-agent", OAUTH_USER_AGENT);
-        }
-    }
+        .set("content-type", "application/json")
+        .set("authorization", &format!("Bearer {access_token}"))
+        .set("anthropic-beta", OAUTH_BETA_HEADER)
+        .set("user-agent", OAUTH_USER_AGENT);
 
     let (headers, error_status) = match req.send_json(body) {
         Ok(resp) => (collect_headers(&resp), None),
@@ -222,11 +192,6 @@ fn parse_headers(
         five_hour_status: five_status,
         weekly_status: week_status,
     }
-}
-
-#[cfg(not(feature = "http"))]
-pub fn sync_limits(_api_key: &str) -> SyncResult {
-    SyncResult::error("http feature disabled".into())
 }
 
 #[cfg(not(feature = "http"))]

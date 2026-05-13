@@ -554,7 +554,6 @@ async fn preferences_get_defaults() {
     assert_eq!(body["advanced_mode"].as_bool(), Some(false));
     assert_eq!(body["glass_enabled"].as_bool(), Some(false));
     assert_eq!(body["glass_opacity"].as_i64(), Some(25));
-    assert!(body["anthropic_api_key"].is_null());
 }
 
 #[tokio::test]
@@ -670,6 +669,13 @@ fn make_synthetic_db() -> Vec<u8> {
         [],
     )
     .unwrap();
+    conn.execute(
+        "INSERT INTO tool_calls (message_uuid, session_id, project_slug, tool_name, \
+         target, use_id, result_tokens, is_error, timestamp) VALUES \
+         ('imp-1', 'imp-s', 'imp-proj', 'Read', '/x.rs', 'u1', 0, 0, '2026-04-10T00:00:00Z')",
+        [],
+    )
+    .unwrap();
     drop(conn);
     std::fs::read(&p).unwrap()
 }
@@ -707,12 +713,27 @@ async fn import_db_merges_messages() {
     let v: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["ok"].as_bool(), Some(true));
     assert_eq!(v["messages_added"].as_i64(), Some(1));
+    assert_eq!(v["tool_calls_imported"].as_i64(), Some(1));
 
-    // Re-import: same row, dedup via uuid PK → 0 added.
+    // Re-import: same row, dedup via uuid PK → nothing added, and the
+    // existing tool_call row is left in place (no delete-then-reinsert).
     let blob = make_synthetic_db();
     let (_, body2) = post_bytes(&fx.state, "/api/import.db", blob, &[]).await;
     let v2: Value = serde_json::from_slice(&body2).unwrap();
     assert_eq!(v2["messages_added"].as_i64(), Some(0));
+    assert_eq!(v2["tool_calls_imported"].as_i64(), Some(0));
+
+    // Verify exactly one tool_call row exists locally — the re-import did
+    // not duplicate it and did not wipe the original.
+    let conn = rusqlite::Connection::open(fx.state.db_path.as_ref()).unwrap();
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM tool_calls WHERE message_uuid = 'imp-1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 1);
 }
 
 #[tokio::test]
@@ -945,19 +966,11 @@ async fn sources_delete_removes_row() {
 }
 
 #[tokio::test]
-async fn limits_sync_400_without_api_key() {
-    let fx = setup_with_jsonl(&[]);
-    let (status, _) = post_json(&fx.state, "/api/limits/sync", &json!({})).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
 async fn limits_get_returns_defaults() {
     let fx = setup_with_jsonl(&[]);
     let (status, body) = get_json(&fx.state, "/api/limits").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["enabled"].as_bool(), Some(false));
-    assert_eq!(body["has_api_key"].as_bool(), Some(false));
     assert!(body["last_sync_at"].is_null());
 }
 

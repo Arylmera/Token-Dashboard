@@ -3,7 +3,7 @@
   "info": {
     "title": "Token Dashboard API",
     "version": "4.0.0",
-    "description": "Local HTTP API for the Token Dashboard. Reads `~/.claude/projects/` JSONL transcripts into SQLite, exposes per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine. Everything runs locally; no auth, no telemetry. The only outbound network call is the user-initiated `POST /api/limits/sync` probe to api.anthropic.com.",
+    "description": "Local HTTP API for the Token Dashboard. Reads `~/.claude/projects/` JSONL transcripts into SQLite, exposes per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine. Everything runs locally; no auth, no telemetry. The only outbound network call is the user-initiated `POST /api/limits/sync_oauth` probe to api.anthropic.com.",
     "license": { "name": "MIT" }
   },
   "servers": [
@@ -225,7 +225,6 @@
           "theme": { "type": ["string", "null"] },
           "glass_enabled": { "type": "boolean" },
           "glass_opacity": { "type": "integer", "minimum": 0, "maximum": 100 },
-          "anthropic_api_key": { "type": ["string", "null"] },
           "limits_five_hour_reset_at": { "type": ["string", "null"] },
           "limits_weekly_reset_at": { "type": ["string", "null"] },
           "limits_5h_cap_override": { "type": ["integer", "null"] },
@@ -241,8 +240,7 @@
           "limits_5h_cap_override": { "type": ["integer", "null"] },
           "limits_weekly_cap_override": { "type": ["integer", "null"] },
           "last_sync_at": { "type": ["string", "null"] },
-          "last_sync_status": { "type": ["string", "null"] },
-          "has_api_key": { "type": "boolean" }
+          "last_sync_status": { "type": ["string", "null"] }
         }
       },
       "Budget": {
@@ -534,13 +532,28 @@
         "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Limits" } } } } }
       }
     },
-    "/api/limits/sync": {
+    "/api/limits/sync_oauth": {
       "post": {
         "tags": ["write"],
-        "summary": "User-initiated Anthropic API probe (only when an API key is saved)",
+        "summary": "User-initiated Anthropic rate-limit probe via the Claude Code OAuth token",
         "responses": {
           "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } },
-          "400": { "description": "no api key saved", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "400": { "description": "no oauth token available", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/limits/oauth_status": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Whether a usable Claude Code OAuth credential is currently readable",
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": {
+            "type": "object",
+            "properties": {
+              "available": { "type": "boolean" },
+              "reason":    { "type": ["string", "null"] }
+            }
+          } } } }
         }
       }
     },

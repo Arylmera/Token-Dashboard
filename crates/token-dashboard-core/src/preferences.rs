@@ -285,28 +285,6 @@ pub fn set_glass_opacity<P: AsRef<Path>>(db: P, v: i64) -> rusqlite::Result<i64>
     Ok(n)
 }
 
-/// Optional Anthropic API key for the limits-sync probe. Empty string
-/// values are normalised to None on both read and write.
-pub fn get_anthropic_api_key<P: AsRef<Path>>(db: P) -> rusqlite::Result<Option<String>> {
-    Ok(read_str(db, "anthropic_api_key")?.filter(|s| !s.is_empty()))
-}
-pub fn set_anthropic_api_key<P: AsRef<Path>>(
-    db: P,
-    raw: Option<&str>,
-) -> rusqlite::Result<Option<String>> {
-    let trimmed = raw.map(|s| s.trim()).filter(|s| !s.is_empty());
-    match trimmed {
-        Some(v) => {
-            write_str(db, "anthropic_api_key", v)?;
-            Ok(Some(v.to_string()))
-        }
-        None => {
-            delete_key(db, "anthropic_api_key")?;
-            Ok(None)
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct Budgets {
     pub daily: Option<f64>,

@@ -12,6 +12,9 @@ export const LimitsCard = ({ enabled, onChange, loaded, saving }) => {
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [lastSyncStatus, setLastSyncStatus] = useState(null);
   const [refreshTick, setRefreshTick] = useState(0);
+  // null = not yet probed; the OAuth probe can prompt the macOS Keychain
+  // on first access, so we only fire it once per Settings mount.
+  const [oauth, setOauth] = useState(null);
 
   const reload = async () => {
     try {
@@ -23,6 +26,20 @@ export const LimitsCard = ({ enabled, onChange, loaded, saving }) => {
   };
 
   useEffect(() => { reload(); }, [refreshTick]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/limits/oauth_status", { cache: "no-store" });
+        const d = await r.json();
+        if (!cancelled) setOauth({ available: !!d.available, reason: d.reason || null });
+      } catch (_) {
+        if (!cancelled) setOauth({ available: false, reason: "status check failed" });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Pick up background syncs fired by the scanner hook.
   useEffect(() => {
@@ -70,6 +87,15 @@ export const LimitsCard = ({ enabled, onChange, loaded, saving }) => {
     return null;
   })();
 
+  // Hide the toggle when we know there's no usable Claude Code OAuth
+  // token — the feature can't function without it, so offering the
+  // switch would just lead to a sync that always fails. While the probe
+  // is in flight (`oauth === null`) we keep the existing UI so the
+  // toggle doesn't flicker on every Settings open. If the user has
+  // somehow already enabled it (e.g. credential later expired), we keep
+  // showing the toggle so they can turn it back off.
+  const oauthReady = oauth == null || oauth.available || enabled;
+
   return (
     <section className="a-card">
       <div className="a-card-head">
@@ -78,12 +104,19 @@ export const LimitsCard = ({ enabled, onChange, loaded, saving }) => {
           {saving ? "saving…" : loaded ? "5h + weekly windows via your Claude subscription" : "loading…"}
         </span>
       </div>
-      <SettingRow
-        title="Track 5h and weekly windows"
-        description="Reads live utilization from Anthropic rate-limit headers via the OAuth token your `claude` login stored. Refreshes automatically when you use Claude Code (≈10 s cadence). macOS will prompt your Keychain on the first sync — click Always Allow to make later syncs silent. Experimental: undocumented Anthropic flow, may stop working without notice."
-        checked={enabled}
-        onChange={onChange}
-      />
+      {oauthReady ? (
+        <SettingRow
+          title="Track 5h and weekly windows"
+          description="Reads live utilization from Anthropic rate-limit headers via the OAuth token your `claude` login stored. Refreshes automatically when you use Claude Code (≈10 s cadence). macOS will prompt your Keychain on the first sync — click Always Allow to make later syncs silent. Experimental: undocumented Anthropic flow, may stop working without notice."
+          checked={enabled}
+          onChange={onChange}
+        />
+      ) : (
+        <div className="a-card-meta" style={{ padding: "8px 0" }}>
+          Log in with <code>claude</code> first to enable live 5h / weekly limits.
+          {oauth && oauth.reason ? <> · <span className="tone-bad">{oauth.reason}</span></> : null}
+        </div>
+      )}
       {enabled && (
         <>
           <div className="a-card-divider" />
