@@ -1,6 +1,6 @@
 # Token Dashboard
 
-<a href="https://www.buymeacoffee.com/Arylmera"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=Arylmera&button_colour=40DCA5&font_colour=ffffff&font_family=Poppins&outline_colour=000000&coffee_colour=FFDD00" alt="Buy Me a Coffee" /></a>
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Arylmera-40DCA5?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/Arylmera)
 
 **See exactly where your Claude Code tokens go.** A local desktop app
 that turns the JSONL transcripts in `~/.claude/projects/` into per-prompt
