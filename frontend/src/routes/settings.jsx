@@ -4,7 +4,7 @@ import { SettingsGroup } from "./settings/atoms.jsx";
 import { ThemeCard } from "./settings/theme-card.jsx";
 import { PlanCard, PricingTable } from "./settings/plan-card.jsx";
 import { BadgeCard } from "./settings/badge-card.jsx";
-import { LimitsToggleCard, LimitResetCard } from "./settings/limits-card.jsx";
+import { LimitsCard } from "./settings/limits-card.jsx";
 import { BudgetCard } from "./settings/budget-card.jsx";
 import { BackupCard } from "./settings/backup-card.jsx";
 import { SourcesCard } from "./settings/sources-card.jsx";
@@ -75,10 +75,16 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
     setLimitsEnabled(next);
     setLimitsSaving(true);
     try {
+      // Enabling implicitly selects the OAuth source — it's the only
+      // path the UI exposes now. Persist both keys in one POST so the
+      // backend's compute_limits dispatch sees a consistent state.
       await fetch("/api/preferences", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limits_enabled: next }),
+        body: JSON.stringify({
+          limits_enabled: next,
+          ...(next ? { limits_source: "oauth" } : {}),
+        }),
       });
       if (window.RELOAD_STATIC) window.RELOAD_STATIC();
     } catch (_) {}
@@ -109,11 +115,17 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
       <SettingsGroup title="Pricing &amp; budgets" description="how cost and quotas are calculated">
         <PlanCard plan={plan} saving={saving} onPick={onPick} />
         <BudgetCard />
+        <LimitsCard
+          enabled={limitsEnabled}
+          onChange={onToggleLimits}
+          loaded={limitsLoaded}
+          saving={limitsSaving}
+        />
         <PricingTable readOnly={!advancedMode} />
       </SettingsGroup>
 
       <SettingsGroup title="Limits &amp; alerts" description="dock/menubar indicator">
-        <BadgeCard limitsEnabled={advancedMode && limitsEnabled} />
+        <BadgeCard limitsEnabled={limitsEnabled} />
       </SettingsGroup>
 
       <SettingsGroup title="Data" description="export, portability, and external sources">
@@ -128,10 +140,6 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
           loaded={advancedLoaded}
           saving={advancedSaving}
         />
-        {advancedMode && (
-          <LimitsToggleCard enabled={limitsEnabled} onChange={onToggleLimits} loaded={limitsLoaded} saving={limitsSaving} />
-        )}
-        {advancedMode && limitsEnabled && <LimitResetCard />}
         {advancedMode && (
           <MultiProviderCard
             enabled={multiProviderEnabled}

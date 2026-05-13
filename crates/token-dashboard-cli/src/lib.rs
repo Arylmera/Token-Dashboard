@@ -500,6 +500,15 @@ async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, String> {
         "days": stats.days,
         "models": stats.models,
     }));
+    // When the OAuth limits source is active, piggy-back on the
+    // activity signal from the scan to refresh the rate-limit headers
+    // — but throttle so a chatty session doesn't burn a Haiku token
+    // per message. Runs detached; failures stay quiet (see helper).
+    let stats_for_hook = stats.clone();
+    let state_for_hook = s.clone();
+    tokio::spawn(async move {
+        maybe_activity_oauth_sync(state_for_hook, stats_for_hook).await;
+    });
     Ok(stats)
 }
 
@@ -588,11 +597,11 @@ struct PreferencesResponse {
     theme: Option<String>,
     glass_enabled: bool,
     glass_opacity: i64,
-    anthropic_api_key: Option<String>,
     limits_five_hour_reset_at: Option<String>,
     limits_weekly_reset_at: Option<String>,
     limits_5h_cap_override: Option<i64>,
     limits_weekly_cap_override: Option<i64>,
+    limits_source: String,
     widget_metrics: Vec<String>,
     widget_open: bool,
 }
@@ -612,7 +621,6 @@ async fn preferences_get(State(s): State<AppState>) -> Result<Json<PreferencesRe
             theme: preferences::get_theme(p)?,
             glass_enabled: preferences::get_glass_enabled(p)?,
             glass_opacity: preferences::get_glass_opacity(p)?,
-            anthropic_api_key: preferences::get_anthropic_api_key(p)?,
             limits_five_hour_reset_at: preferences::get_limit_reset_at(
                 p,
                 "limits_five_hour_reset_at",
@@ -626,6 +634,7 @@ async fn preferences_get(State(s): State<AppState>) -> Result<Json<PreferencesRe
                 p,
                 "limits_weekly_cap_override",
             )?,
+            limits_source: preferences::get_limits_source(p)?,
             widget_metrics: preferences::get_widget_metrics(p)?,
             widget_open: preferences::get_widget_open(p)?,
         })
@@ -676,7 +685,7 @@ struct PreferencesBody {
     #[serde(default, deserialize_with = "deserialize_double_option")]
     limits_weekly_cap_override: Option<Option<i64>>,
     #[serde(default)]
-    anthropic_api_key: Option<String>,
+    limits_source: Option<String>,
     #[serde(default)]
     widget_metrics: Option<Vec<String>>,
     #[serde(default)]
@@ -797,12 +806,11 @@ async fn preferences_post(
                 );
             }
         }
-        if let Some(v) = body.anthropic_api_key {
-            // Empty string means clear; that's how the frontend signals
-            // a deletion via the same key.
-            let raw = if v.is_empty() { None } else { Some(v.as_str()) };
-            preferences::set_anthropic_api_key(p, raw)?;
-            // Don't echo the key back — keep it out of the response shape.
+        if let Some(v) = body.limits_source {
+            let stored = preferences::set_limits_source(p, &v)?;
+            let _ =
+                events.send(serde_json::json!({"type": "preferences", "limits_source": stored}));
+            out.insert("limits_source".into(), serde_json::Value::String(stored));
         }
         if let Some(v) = body.widget_metrics {
             let stored = preferences::set_widget_metrics(p, &v)?;
@@ -906,7 +914,6 @@ struct LimitsResponse {
     limits_weekly_cap_override: Option<i64>,
     last_sync_at: Option<String>,
     last_sync_status: Option<String>,
-    has_api_key: bool,
     // Live snapshot consumed by the Overview "Plan limits remaining" card
     // and the Settings calibrator (which reads `five_hour.used`).
     #[serde(flatten)]
@@ -922,29 +929,96 @@ struct LimitsSyncResponse {
     limits_last_sync_status: Option<String>,
 }
 
-async fn limits_sync(State(s): State<AppState>) -> Result<Json<LimitsSyncResponse>, ApiError> {
-    let path = s.db_path.clone();
-    let key = blocking(move || preferences::get_anthropic_api_key(path.as_ref()))
-        .await?
-        .0;
-    let key = match key {
-        Some(k) if !k.is_empty() => k,
-        _ => return Err(ApiError::bad_request("no api key saved")),
-    };
+async fn limits_sync_oauth(
+    State(s): State<AppState>,
+) -> Result<Json<LimitsSyncResponse>, ApiError> {
+    let outcome = run_oauth_sync(s.db_path.clone(), s.events.clone())
+        .await
+        .map_err(|e| match e {
+            OAuthSyncError::Credential(msg) => ApiError::bad_request(msg),
+            OAuthSyncError::Persist(e) => ApiError::internal(format!("persist: {e}")),
+            OAuthSyncError::Join(e) => ApiError::internal(format!("join: {e}")),
+        })?;
+    Ok(Json(outcome.response))
+}
 
-    // Anthropic call runs on the blocking pool — ureq is sync.
+#[derive(Serialize)]
+struct OAuthStatusResponse {
+    available: bool,
+    reason: Option<String>,
+}
+
+/// Cheap probe used by the Settings card to decide whether the limits
+/// toggle should be offered. Reads the Claude Code credential blob; on
+/// macOS this can prompt the Keychain the first time, so we only call
+/// it from Settings (not from the dashboard's static reload path).
+/// Never returns the token — only whether it could be read.
+async fn limits_oauth_status() -> Json<OAuthStatusResponse> {
+    // `has_usable_oauth` checks for either a fresh access token OR a
+    // refresh token we could use — so an expired-but-refreshable
+    // login still reports as available. The probe stays cheap (no
+    // network call) because the actual refresh happens lazily inside
+    // the sync path.
+    let result =
+        tokio::task::spawn_blocking(token_dashboard_core::credentials::has_usable_oauth).await;
+    let resp = match result {
+        Ok(Ok(true)) => OAuthStatusResponse {
+            available: true,
+            reason: None,
+        },
+        Ok(Ok(false)) => OAuthStatusResponse {
+            available: false,
+            reason: Some("no refresh token in credential store — run `claude` to log in".into()),
+        },
+        Ok(Err(e)) => OAuthStatusResponse {
+            available: false,
+            reason: Some(e.user_message()),
+        },
+        Err(e) => OAuthStatusResponse {
+            available: false,
+            reason: Some(format!("join: {e}")),
+        },
+    };
+    Json(resp)
+}
+
+#[derive(Debug)]
+enum OAuthSyncError {
+    Credential(String),
+    Persist(String),
+    Join(String),
+}
+
+struct OAuthSyncOutcome {
+    response: LimitsSyncResponse,
+}
+
+/// Shared OAuth-sync pipeline used by both the `/api/limits/sync_oauth`
+/// route and the activity-triggered scanner hook. Reads the credential,
+/// hits Anthropic, persists the snapshot, and broadcasts a
+/// `limits_refreshed` SSE event on success so the frontend can refetch
+/// the Overview card without waiting for the next scan tick.
+async fn run_oauth_sync(
+    db_path: std::sync::Arc<std::path::PathBuf>,
+    events: tokio::sync::broadcast::Sender<serde_json::Value>,
+) -> Result<OAuthSyncOutcome, OAuthSyncError> {
+    let token_result =
+        tokio::task::spawn_blocking(token_dashboard_core::credentials::read_oauth_token)
+            .await
+            .map_err(|e| OAuthSyncError::Join(e.to_string()))?;
+    let token = token_result.map_err(|e| OAuthSyncError::Credential(e.user_message()))?;
+
     let result = tokio::task::spawn_blocking(move || {
-        token_dashboard_core::anthropic_sync::sync_limits(&key)
+        token_dashboard_core::anthropic_sync::sync_limits_oauth(&token)
     })
     .await
-    .map_err(|e| ApiError::internal(format!("join: {e}")))?;
+    .map_err(|e| OAuthSyncError::Join(e.to_string()))?;
 
-    let path = s.db_path.clone();
+    let path = db_path.clone();
     let now_iso = current_iso_z();
     let status_clone = result.status.clone();
-    let five_clone = result.five_hour_reset_at.clone();
-    let week_clone = result.weekly_reset_at.clone();
-    let resp = blocking(move || -> rusqlite::Result<LimitsSyncResponse> {
+    let persisted = status_clone == "ok";
+    let response = tokio::task::spawn_blocking(move || -> rusqlite::Result<LimitsSyncResponse> {
         let p = path.as_ref();
         let conn = rusqlite::Connection::open(p)?;
         conn.execute(
@@ -955,11 +1029,21 @@ async fn limits_sync(State(s): State<AppState>) -> Result<Json<LimitsSyncRespons
             "INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_last_sync_status', ?)",
             [&status_clone],
         )?;
-        if status_clone == "ok" {
-            if let Some(v) = five_clone.as_deref() {
+        if persisted {
+            preferences::set_limits_server_snapshot(
+                p,
+                &preferences::LimitsServerSnapshot {
+                    five_hour_utilization: result.five_hour_utilization,
+                    five_hour_status: result.five_hour_status.clone(),
+                    weekly_utilization: result.weekly_utilization,
+                    weekly_status: result.weekly_status.clone(),
+                    synced_at: Some(now_iso.clone()),
+                },
+            )?;
+            if let Some(v) = result.five_hour_reset_at.as_deref() {
                 preferences::set_limit_reset_at(p, "limits_five_hour_reset_at", Some(v))?;
             }
-            if let Some(v) = week_clone.as_deref() {
+            if let Some(v) = result.weekly_reset_at.as_deref() {
                 preferences::set_limit_reset_at(p, "limits_weekly_reset_at", Some(v))?;
             }
         }
@@ -975,8 +1059,65 @@ async fn limits_sync(State(s): State<AppState>) -> Result<Json<LimitsSyncRespons
             limits_last_sync_status: meta.last_sync_status,
         })
     })
-    .await?;
-    Ok(resp)
+    .await
+    .map_err(|e| OAuthSyncError::Join(e.to_string()))?
+    .map_err(|e| OAuthSyncError::Persist(e.to_string()))?;
+
+    if persisted {
+        let _ = events.send(serde_json::json!({
+            "type": "limits_refreshed",
+            "source": "oauth",
+        }));
+    }
+
+    Ok(OAuthSyncOutcome { response })
+}
+
+/// Activity-triggered sync hook. Called by `run_scan_and_broadcast`
+/// after a successful scan. Aligned with the 10s scan tick so an
+/// active prompt-cycle yields one fresh sync per response — Claude
+/// Code rarely emits more than one message group in a 10s window,
+/// and chatty bursts cost a few extra Haiku tokens off the user's
+/// own quota (negligible).
+const ACTIVITY_SYNC_THROTTLE_SECONDS: i64 = 10;
+
+async fn maybe_activity_oauth_sync(state: AppState, stats: ScanStats) {
+    if stats.messages == 0 {
+        return;
+    }
+    let path = state.db_path.clone();
+    let gate = tokio::task::spawn_blocking(move || -> rusqlite::Result<bool> {
+        let p = path.as_ref();
+        if preferences::get_limits_source(p)? != "oauth" {
+            return Ok(false);
+        }
+        let snap = preferences::get_limits_server_snapshot(p)?;
+        match snap.synced_at.as_deref() {
+            None => Ok(true),
+            Some(synced) => {
+                // SQLite's datetime() avoids needing a Rust ISO parser.
+                let conn = rusqlite::Connection::open(p)?;
+                let stale: i64 = conn.query_row(
+                    "SELECT CASE WHEN datetime(?) <= datetime('now', ?) THEN 1 ELSE 0 END",
+                    rusqlite::params![synced, format!("-{ACTIVITY_SYNC_THROTTLE_SECONDS} seconds")],
+                    |r| r.get(0),
+                )?;
+                Ok(stale == 1)
+            }
+        }
+    })
+    .await;
+    let should_run = matches!(gate, Ok(Ok(true)));
+    if !should_run {
+        return;
+    }
+    // Fire-and-forget. Errors during background syncs (expired token,
+    // network blip) shouldn't surface to the user — they'll see the
+    // stale "synced X min ago" timestamp in the UI and can click Sync
+    // manually to get the explicit error.
+    if let Err(e) = run_oauth_sync(state.db_path, state.events).await {
+        tracing::debug!(?e, "activity-triggered oauth sync failed (background)");
+    }
 }
 
 fn current_iso_z() -> String {
@@ -1018,7 +1159,6 @@ async fn limits_get(State(s): State<AppState>) -> Result<Json<LimitsResponse>, A
             )?,
             last_sync_at: meta.last_sync_at,
             last_sync_status: meta.last_sync_status,
-            has_api_key: preferences::get_anthropic_api_key(p)?.is_some(),
             snapshot,
         })
     })
@@ -1186,14 +1326,20 @@ async fn import_db(
 
                 conn.execute("BEGIN", [])
                     .map_err(|e| format!("begin: {e}"))?;
-                // Count newly-added messages before the INSERT runs.
+
+                // Stage the set of message uuids that don't exist locally yet.
+                // We scope the tool_calls insert to this set so messages already
+                // present (from a prior import or a local scan) keep their
+                // existing tool_calls untouched.
+                conn.execute(
+                    "CREATE TEMP TABLE _td_new_msgs AS \
+                     SELECT s.uuid AS uuid FROM src.messages s \
+                     WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.uuid = s.uuid)",
+                    [],
+                )
+                .map_err(|e| format!("stage new msgs: {e}"))?;
                 let msg_added: i64 = conn
-                    .query_row(
-                        "SELECT COUNT(*) FROM src.messages s \
-                         WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.uuid = s.uuid)",
-                        [],
-                        |r| r.get(0),
-                    )
+                    .query_row("SELECT COUNT(*) FROM _td_new_msgs", [], |r| r.get(0))
                     .map_err(|e| format!("count msgs: {e}"))?;
 
                 // Build column intersection for messages.
@@ -1214,13 +1360,6 @@ async fn import_db(
                 )
                 .map_err(|e| format!("insert messages: {e}"))?;
 
-                conn.execute(
-                    "DELETE FROM tool_calls \
-                     WHERE message_uuid IN (SELECT uuid FROM src.messages)",
-                    [],
-                )
-                .map_err(|e| format!("delete tool_calls: {e}"))?;
-
                 let tc_cols = pragma_columns(&conn, "tool_calls")?;
                 let src_tc_cols = pragma_columns_attached(&conn, "src", "tool_calls")?;
                 let shared_tc: Vec<String> = tc_cols
@@ -1232,14 +1371,22 @@ async fn import_db(
                 conn.execute(
                     &format!(
                         "INSERT INTO tool_calls ({tc_col_list}) \
-                         SELECT {tc_col_list} FROM src.tool_calls"
+                         SELECT {tc_col_list} FROM src.tool_calls \
+                         WHERE message_uuid IN (SELECT uuid FROM _td_new_msgs)"
                     ),
                     [],
                 )
                 .map_err(|e| format!("insert tool_calls: {e}"))?;
                 let tc_added: i64 = conn
-                    .query_row("SELECT COUNT(*) FROM src.tool_calls", [], |r| r.get(0))
+                    .query_row(
+                        "SELECT COUNT(*) FROM src.tool_calls \
+                         WHERE message_uuid IN (SELECT uuid FROM _td_new_msgs)",
+                        [],
+                        |r| r.get(0),
+                    )
                     .map_err(|e| format!("count tool_calls: {e}"))?;
+                conn.execute("DROP TABLE _td_new_msgs", [])
+                    .map_err(|e| format!("drop temp: {e}"))?;
 
                 let mut tags_added: i64 = 0;
                 if src_tables.contains("session_tags") {
@@ -2227,7 +2374,8 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/api/budget", get(budget_get).post(budget_post))
         .route("/api/limits", get(limits_get))
-        .route("/api/limits/sync", post(limits_sync))
+        .route("/api/limits/sync_oauth", post(limits_sync_oauth))
+        .route("/api/limits/oauth_status", get(limits_oauth_status))
         // POST endpoints
         .route("/api/plan", post(set_plan_handler))
         .route("/api/tips/dismiss", post(tips_dismiss_handler))

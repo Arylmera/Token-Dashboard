@@ -59,6 +59,16 @@ pub const BUDGET_KEYS: &[&str] = &[
 pub const LIMIT_RESET_KEYS: &[&str] = &["limits_five_hour_reset_at", "limits_weekly_reset_at"];
 pub const LIMIT_CAP_KEYS: &[&str] = &["limits_5h_cap_override", "limits_weekly_cap_override"];
 
+/// Which source feeds the Overview "Plan limits remaining" card.
+/// `oauth` (default): read server-reported utilization headers via
+/// `sync_limits_oauth` and surface them verbatim. `jsonl`: legacy
+/// path — sum local transcript tokens against a configured cap. The
+/// UI no longer exposes the legacy path, but the dispatch in
+/// `compute_limits` stays so the JSONL data path keeps working as a
+/// fallback for users who haven't synced yet (returns idle/empty).
+pub const LIMITS_SOURCES: &[&str] = &["jsonl", "oauth"];
+pub const DEFAULT_LIMITS_SOURCE: &str = "oauth";
+
 fn open<P: AsRef<Path>>(db: P) -> rusqlite::Result<Connection> {
     let c = Connection::open(db.as_ref())?;
     c.busy_timeout(std::time::Duration::from_secs(30))?;
@@ -275,28 +285,6 @@ pub fn set_glass_opacity<P: AsRef<Path>>(db: P, v: i64) -> rusqlite::Result<i64>
     Ok(n)
 }
 
-/// Optional Anthropic API key for the limits-sync probe. Empty string
-/// values are normalised to None on both read and write.
-pub fn get_anthropic_api_key<P: AsRef<Path>>(db: P) -> rusqlite::Result<Option<String>> {
-    Ok(read_str(db, "anthropic_api_key")?.filter(|s| !s.is_empty()))
-}
-pub fn set_anthropic_api_key<P: AsRef<Path>>(
-    db: P,
-    raw: Option<&str>,
-) -> rusqlite::Result<Option<String>> {
-    let trimmed = raw.map(|s| s.trim()).filter(|s| !s.is_empty());
-    match trimmed {
-        Some(v) => {
-            write_str(db, "anthropic_api_key", v)?;
-            Ok(Some(v.to_string()))
-        }
-        None => {
-            delete_key(db, "anthropic_api_key")?;
-            Ok(None)
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct Budgets {
     pub daily: Option<f64>,
@@ -404,6 +392,113 @@ pub fn set_limit_cap_override<P: AsRef<Path>>(
             delete_key(db, key)?;
             Ok(None)
         }
+    }
+}
+
+pub fn get_limits_source<P: AsRef<Path>>(db: P) -> rusqlite::Result<String> {
+    Ok(read_str(db, "limits_source")?
+        .filter(|v| LIMITS_SOURCES.contains(&v.as_str()))
+        .unwrap_or_else(|| DEFAULT_LIMITS_SOURCE.into()))
+}
+
+pub fn set_limits_source<P: AsRef<Path>>(db: P, raw: &str) -> rusqlite::Result<String> {
+    let v = if LIMITS_SOURCES.contains(&raw) {
+        raw.to_string()
+    } else {
+        DEFAULT_LIMITS_SOURCE.to_string()
+    };
+    write_str(db, "limits_source", &v)?;
+    Ok(v)
+}
+
+/// Server-reported utilization snapshot from the OAuth sync. Each
+/// field corresponds to one Anthropic response header; `synced_at` is
+/// the wall-clock time we received the response. All fields default
+/// to None when no sync has happened yet.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct LimitsServerSnapshot {
+    pub five_hour_utilization: Option<f64>,
+    pub five_hour_status: Option<String>,
+    pub weekly_utilization: Option<f64>,
+    pub weekly_status: Option<String>,
+    pub synced_at: Option<String>,
+}
+
+pub fn get_limits_server_snapshot<P: AsRef<Path>>(db: P) -> rusqlite::Result<LimitsServerSnapshot> {
+    let mut out = LimitsServerSnapshot::default();
+    let c = open(db)?;
+    let mut stmt = c.prepare(
+        "SELECT k, v FROM plan WHERE k IN ( \
+            'limits_5h_pct_server', \
+            'limits_5h_status_server', \
+            'limits_weekly_pct_server', \
+            'limits_weekly_status_server', \
+            'limits_server_synced_at' \
+         )",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(r) = rows.next()? {
+        let k: String = r.get(0)?;
+        let v: String = r.get(1)?;
+        match k.as_str() {
+            "limits_5h_pct_server" => {
+                out.five_hour_utilization = v.parse::<f64>().ok().map(|f| f.clamp(0.0, 1.0));
+            }
+            "limits_5h_status_server" => out.five_hour_status = Some(v),
+            "limits_weekly_pct_server" => {
+                out.weekly_utilization = v.parse::<f64>().ok().map(|f| f.clamp(0.0, 1.0));
+            }
+            "limits_weekly_status_server" => out.weekly_status = Some(v),
+            "limits_server_synced_at" => out.synced_at = Some(v),
+            _ => {}
+        }
+    }
+    Ok(out)
+}
+
+/// Atomically replace the server snapshot. `None` fields delete the
+/// corresponding row so a partial response from Anthropic doesn't
+/// leave stale stale values in place.
+pub fn set_limits_server_snapshot<P: AsRef<Path>>(
+    db: P,
+    snap: &LimitsServerSnapshot,
+) -> rusqlite::Result<()> {
+    let p = db.as_ref();
+    write_or_delete_f64(p, "limits_5h_pct_server", snap.five_hour_utilization)?;
+    write_or_delete_str(
+        p,
+        "limits_5h_status_server",
+        snap.five_hour_status.as_deref(),
+    )?;
+    write_or_delete_f64(p, "limits_weekly_pct_server", snap.weekly_utilization)?;
+    write_or_delete_str(
+        p,
+        "limits_weekly_status_server",
+        snap.weekly_status.as_deref(),
+    )?;
+    write_or_delete_str(p, "limits_server_synced_at", snap.synced_at.as_deref())?;
+    Ok(())
+}
+
+fn write_or_delete_str<P: AsRef<Path>>(
+    db: P,
+    key: &str,
+    value: Option<&str>,
+) -> rusqlite::Result<()> {
+    match value.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(v) => write_str(db, key, v),
+        None => delete_key(db, key),
+    }
+}
+
+fn write_or_delete_f64<P: AsRef<Path>>(
+    db: P,
+    key: &str,
+    value: Option<f64>,
+) -> rusqlite::Result<()> {
+    match value {
+        Some(v) => write_str(db, key, &v.to_string()),
+        None => delete_key(db, key),
     }
 }
 

@@ -600,6 +600,7 @@ function _onPayload(payload) {
     case "plan":
     case "sources":
     case "tags":
+    case "limits_refreshed":
       loadStatic().catch((e) => console.warn("loadStatic", e));
       break;
     default:
@@ -644,7 +645,7 @@ function _connectStream() {
   // Real events. Tauri shell's bus emits typed events; the EventSource
   // default `message` channel only receives events without a `type`
   // field, so we listen to specific names.
-  ["scan_complete", "preferences", "plan", "sources", "tags", "lagged"].forEach(
+  ["scan_complete", "preferences", "plan", "sources", "tags", "limits_refreshed", "lagged"].forEach(
     (name) => {
       _streamSource.addEventListener(name, (ev) => {
         cancelWatchdog();
