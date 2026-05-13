@@ -1,5 +1,7 @@
 # Token Dashboard
 
+<a href="https://www.buymeacoffee.com/Arylmera"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=Arylmera&button_colour=40DCA5&font_colour=ffffff&font_family=Poppins&outline_colour=000000&coffee_colour=FFDD00" alt="Buy Me a Coffee" /></a>
+
 **See exactly where your Claude Code tokens go.** A local desktop app
 that turns the JSONL transcripts in `~/.claude/projects/` into per-prompt
 cost analytics, tool/file heatmaps, subagent attribution, cache
