@@ -1,0 +1,41 @@
+{
+  "version": "4.0.0",
+  "description": "Local desktop dashboard for Claude Code token usage, costs, and session analytics.",
+  "homepage": "https://github.com/Arylmera/Token-Dashboard",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/Arylmera/Token-Dashboard/releases/download/v4.0.0/Token.Dashboard_x64_en-US.msi",
+      "hash": "REPLACE_WITH_SHA256_OF_MSI"
+    }
+  },
+  "installer": {
+    "script": [
+      "Start-Process -Wait msiexec -ArgumentList @('/i', \"$dir\\Token.Dashboard_x64_en-US.msi\", '/qn', 'INSTALLDIR=\"' + $dir + '\\app\"')"
+    ]
+  },
+  "uninstaller": {
+    "script": [
+      "Start-Process -Wait msiexec -ArgumentList @('/x', \"$dir\\Token.Dashboard_x64_en-US.msi\", '/qn')"
+    ]
+  },
+  "shortcuts": [
+    [
+      "app\\Token Dashboard.exe",
+      "Token Dashboard"
+    ]
+  ],
+  "checkver": {
+    "github": "https://github.com/Arylmera/Token-Dashboard"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/Arylmera/Token-Dashboard/releases/download/v$version/Token.Dashboard_x64_en-US.msi"
+      }
+    },
+    "hash": {
+      "url": "$url.sha256"
+    }
+  }
+}

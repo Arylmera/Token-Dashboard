@@ -1,5 +1,11 @@
 # Token Dashboard
 
+**See exactly where your Claude Code tokens go.** A local desktop app that turns the JSONL transcripts in `~/.claude/projects/` into per-prompt cost analytics, tool and file heatmaps, subagent attribution, cache analytics, and a tips engine that flags expensive patterns before your next bill does.
+
+100% local · no telemetry · no login · MIT · Windows / macOS / Linux · ~7 MB installer.
+
+[![Latest release](https://img.shields.io/github/v/release/Arylmera/Token-Dashboard?style=for-the-badge&label=download)](https://github.com/Arylmera/Token-Dashboard/releases/latest)
+[![License](https://img.shields.io/github/license/Arylmera/Token-Dashboard?style=for-the-badge)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Arylmera-40DCA5?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/Arylmera)
 
 ![Token Dashboard overview](docs/images/dashboard-wide.png)
@@ -10,6 +16,21 @@ Pre-built installers ship for every `v4.*` tag —
 [**latest release**](https://github.com/Arylmera/Token-Dashboard/releases/latest).
 
 ### Windows (.msi)
+
+**winget** (recommended once published):
+
+```powershell
+winget install Arylmera.TokenDashboard
+```
+
+**Scoop** (from the dedicated bucket):
+
+```powershell
+scoop bucket add token-dashboard https://github.com/Arylmera/scoop-token-dashboard
+scoop install token-dashboard
+```
+
+**Direct MSI:**
 
 ```powershell
 curl.exe -L -o token-dashboard.msi https://github.com/Arylmera/Token-Dashboard/releases/latest/download/Token.Dashboard_x64_en-US.msi
@@ -23,7 +44,14 @@ for now.
 
 ### macOS (Apple Silicon)
 
-One-line install:
+**Homebrew tap:**
+
+```bash
+brew tap Arylmera/token-dashboard
+brew install --cask token-dashboard
+```
+
+**One-line installer:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Arylmera/Token-Dashboard/main/scripts/install.sh | bash
@@ -61,17 +89,6 @@ sudo dpkg -i token-dashboard.deb
 
 > Single binary, ~5–10 MB installer. No Python, no Node, no Chromium —
 > Tauri 2 + WebView2 / WebKit on the system side.
-
-## About
-
-**See exactly where your Claude Code tokens go.** Token Dashboard is a
-local desktop app that turns the JSONL transcripts in
-`~/.claude/projects/` into per-prompt cost analytics, tool and file
-heatmaps, subagent attribution, cache analytics, project comparisons,
-and a tips engine that flags expensive patterns before your next bill
-does.
-
-100% local. No telemetry. No login. No data leaves your machine.
 
 ## What you get
 
