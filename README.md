@@ -85,11 +85,6 @@ does.
 | **Tips** | Rule-based suggestions: low cache hit rate, repeated file reads, Opus-on-tiny-turns, retry storms, oversized tool results. |
 | **Settings** | Plan, budget caps, badge metric, glass mode, source attachment, pricing overrides. |
 
-Inspired by [phuryn/claude-usage](https://github.com/phuryn/claude-usage)
-— diverges in scope (expensive-prompt drill-down, skills, tips,
-streaming-snapshot dedup) and in look (dark theme, hash router, SSE
-refresh).
-
 ## Privacy
 
 Fully offline. The one optional network call is the **Sync limits**
