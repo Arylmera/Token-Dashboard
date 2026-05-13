@@ -954,12 +954,21 @@ struct OAuthStatusResponse {
 /// it from Settings (not from the dashboard's static reload path).
 /// Never returns the token — only whether it could be read.
 async fn limits_oauth_status() -> Json<OAuthStatusResponse> {
+    // `has_usable_oauth` checks for either a fresh access token OR a
+    // refresh token we could use — so an expired-but-refreshable
+    // login still reports as available. The probe stays cheap (no
+    // network call) because the actual refresh happens lazily inside
+    // the sync path.
     let result =
-        tokio::task::spawn_blocking(token_dashboard_core::credentials::read_oauth_token).await;
+        tokio::task::spawn_blocking(token_dashboard_core::credentials::has_usable_oauth).await;
     let resp = match result {
-        Ok(Ok(_)) => OAuthStatusResponse {
+        Ok(Ok(true)) => OAuthStatusResponse {
             available: true,
             reason: None,
+        },
+        Ok(Ok(false)) => OAuthStatusResponse {
+            available: false,
+            reason: Some("no refresh token in credential store — run `claude` to log in".into()),
         },
         Ok(Err(e)) => OAuthStatusResponse {
             available: false,
