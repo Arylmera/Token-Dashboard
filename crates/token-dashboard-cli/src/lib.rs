@@ -954,8 +954,8 @@ struct OAuthStatusResponse {
 /// it from Settings (not from the dashboard's static reload path).
 /// Never returns the token — only whether it could be read.
 async fn limits_oauth_status() -> Json<OAuthStatusResponse> {
-    let result = tokio::task::spawn_blocking(token_dashboard_core::credentials::read_oauth_token)
-        .await;
+    let result =
+        tokio::task::spawn_blocking(token_dashboard_core::credentials::read_oauth_token).await;
     let resp = match result {
         Ok(Ok(_)) => OAuthStatusResponse {
             available: true,
