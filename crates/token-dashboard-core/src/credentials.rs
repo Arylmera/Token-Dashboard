@@ -8,9 +8,9 @@
 //!   subsequent reads silent. The ACL is bound to the requesting
 //!   binary's signature — unsigned dev builds and signed release builds
 //!   each prompt once.
-//! - **Linux:** `~/.claude/.credentials.json` (plain JSON file).
-//! - **Windows:** Claude Code uses the Windows Credential Manager (wincred);
-//!   not yet supported here — caller gets `NotFound`.
+//! - **Linux / Windows:** `~/.claude/.credentials.json` (plain JSON file).
+//!   Resolved via `HOME` (set on *nix; some Windows shells set it too)
+//!   with a `USERPROFILE` fallback for native Windows.
 //!
 //! The stored blob is JSON of shape
 //! `{ "claudeAiOauth": { "accessToken": "...", "refreshToken": "...", ... } }`.
@@ -25,8 +25,7 @@ use serde::Deserialize;
 
 #[derive(Debug)]
 pub enum CredentialError {
-    /// Credential store has no Claude Code entry — user never logged in,
-    /// or this is a platform we don't read from yet (Windows).
+    /// Credential store has no Claude Code entry — user never logged in.
     NotFound,
     /// Blob exists but doesn't have the expected JSON shape.
     ParseFailed(String),
@@ -267,26 +266,25 @@ fn read_credentials_blob() -> Result<String, CredentialError> {
     String::from_utf8(output.stdout).map_err(|e| CredentialError::ParseFailed(e.to_string()))
 }
 
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+#[cfg(not(target_os = "macos"))]
 fn read_credentials_blob() -> Result<String, CredentialError> {
-    let home = std::env::var_os("HOME").ok_or_else(|| CredentialError::Io("no HOME set".into()))?;
+    // Claude Code writes `.credentials.json` under `~/.claude/` on both
+    // Linux and Windows. Prefer `HOME` (set on *nix and Git-Bash / WSL),
+    // fall back to `USERPROFILE` for native Windows shells.
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .ok_or_else(|| CredentialError::Io("no HOME or USERPROFILE set".into()))?;
     let path = std::path::PathBuf::from(home)
         .join(".claude")
         .join(".credentials.json");
     match std::fs::read_to_string(&path) {
         Ok(s) => Ok(s),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(CredentialError::NotFound),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            Err(CredentialError::AccessDenied(e.to_string()))
+        }
         Err(e) => Err(CredentialError::Io(e.to_string())),
     }
-}
-
-#[cfg(target_os = "windows")]
-fn read_credentials_blob() -> Result<String, CredentialError> {
-    // Claude Code on Windows uses Credential Manager (wincred). Reading
-    // from there isn't wired up yet; surface this as "not found" so the
-    // UI shows the "log in with `claude` first" hint rather than an
-    // opaque IO error.
-    Err(CredentialError::NotFound)
 }
 
 #[cfg(test)]
