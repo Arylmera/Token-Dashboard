@@ -62,6 +62,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # macos-14 runner ships a rustup shim with no default toolchain;
+      # without this, `cargo` forwards to `rustup-init` and rejects args.
+      - name: Pin default toolchain
+        run: rustup default stable
       - name: System deps for tauri-build (linux)
         if: matrix.os == 'ubuntu-22.04'
         run: |
