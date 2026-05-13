@@ -378,6 +378,11 @@ mod tests {
     #[test]
     fn cap_override_marks_calibrated() {
         let f = fresh_db();
+        // These cases all exercise the legacy JSONL dispatch — the
+        // default flipped to "oauth" once the OAuth UI shipped, so
+        // pin the source explicitly per-test instead of relying on
+        // the global default.
+        preferences::set_limits_source(f.path(), "jsonl").unwrap();
         queries::set_plan(f.path(), "pro").unwrap();
         preferences::set_limit_cap_override(f.path(), "limits_5h_cap_override", Some(123_456))
             .unwrap();
@@ -393,6 +398,7 @@ mod tests {
     #[test]
     fn stale_five_hour_reset_falls_back_to_idle() {
         let f = fresh_db();
+        preferences::set_limits_source(f.path(), "jsonl").unwrap();
         // reset_at set in the past → window already elapsed.
         preferences::set_limit_reset_at(
             f.path(),
@@ -411,6 +417,7 @@ mod tests {
     #[test]
     fn stale_weekly_reset_rolls_forward() {
         let f = fresh_db();
+        preferences::set_limits_source(f.path(), "jsonl").unwrap();
         // reset_at set 3 weeks ago → should roll forward to a future time.
         let conn = Connection::open(f.path()).unwrap();
         let past_reset: String = conn

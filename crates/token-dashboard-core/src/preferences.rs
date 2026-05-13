@@ -60,12 +60,14 @@ pub const LIMIT_RESET_KEYS: &[&str] = &["limits_five_hour_reset_at", "limits_wee
 pub const LIMIT_CAP_KEYS: &[&str] = &["limits_5h_cap_override", "limits_weekly_cap_override"];
 
 /// Which source feeds the Overview "Plan limits remaining" card.
-/// `jsonl` (default): existing behavior — sum local transcript tokens
-/// against the configured cap. `oauth`: read server-reported
-/// utilization headers via `sync_limits_oauth` and surface them
-/// verbatim (no cap, no token sum, no JSONL access).
+/// `oauth` (default): read server-reported utilization headers via
+/// `sync_limits_oauth` and surface them verbatim. `jsonl`: legacy
+/// path — sum local transcript tokens against a configured cap. The
+/// UI no longer exposes the legacy path, but the dispatch in
+/// `compute_limits` stays so the JSONL data path keeps working as a
+/// fallback for users who haven't synced yet (returns idle/empty).
 pub const LIMITS_SOURCES: &[&str] = &["jsonl", "oauth"];
-pub const DEFAULT_LIMITS_SOURCE: &str = "jsonl";
+pub const DEFAULT_LIMITS_SOURCE: &str = "oauth";
 
 fn open<P: AsRef<Path>>(db: P) -> rusqlite::Result<Connection> {
     let c = Connection::open(db.as_ref())?;
