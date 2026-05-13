@@ -54,7 +54,7 @@ jobs:
           # `tagged` output instead of waiting for the tag-push event.
 
   build:
-    name: build (${{ matrix.os }})
+    name: build (${{ matrix.label }})
     needs: [tag]
     if: |
       always() && (
@@ -69,14 +69,28 @@ jobs:
         include:
           # Cargo workspaces put bundle outputs in the workspace-root
           # `target/`, NOT inside the crate that owns tauri.conf.json.
+          # macOS: build both arches explicitly with --target so the DMG
+          # filenames carry the correct arch suffix (a plain `cargo tauri
+          # build` on macos-14 was producing an `_x64.dmg`, locking out
+          # Apple Silicon installs via scripts/install.sh).
           - os: windows-2022
+            label: windows
             artifact_glob: |
               target/release/bundle/msi/*.msi
           - os: macos-14
+            label: macos-arm64
+            rust_target: aarch64-apple-darwin
             artifact_glob: |
-              target/release/bundle/dmg/*.dmg
-              target/release/bundle/macos/*.app.tar.gz
+              target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+              target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
+          - os: macos-14
+            label: macos-x64
+            rust_target: x86_64-apple-darwin
+            artifact_glob: |
+              target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+              target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
           - os: ubuntu-22.04
+            label: linux
             artifact_glob: |
               target/release/bundle/deb/*.deb
               target/release/bundle/appimage/*.AppImage
@@ -84,10 +98,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
+          key: ${{ matrix.label }}
           save-if: ${{ startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' }}
 
       - name: System deps (linux)
@@ -116,12 +133,18 @@ jobs:
 
       - name: Tauri build
         working-directory: crates/token-dashboard-tauri
-        run: cargo tauri build
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.rust_target }}" ]; then
+            cargo tauri build --target ${{ matrix.rust_target }}
+          else
+            cargo tauri build
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: token-dashboard-${{ matrix.os }}
+          name: token-dashboard-${{ matrix.label }}
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
 
@@ -221,7 +244,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: token-dashboard-macos-14
+          name: token-dashboard-macos-arm64
           path: dist
 
       - name: Update Homebrew tap

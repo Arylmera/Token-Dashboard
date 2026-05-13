@@ -22,21 +22,32 @@ fi
 
 arch="$(uname -m)"
 case "$arch" in
-  arm64)  asset_filter='aarch64.*\.dmg$' ;;
-  x86_64) asset_filter='x64.*\.dmg$|x86_64.*\.dmg$' ;;
+  arm64)  primary='aarch64.*\.dmg$';            fallback='x64.*\.dmg$|x86_64.*\.dmg$' ;;
+  x86_64) primary='x64.*\.dmg$|x86_64.*\.dmg$'; fallback='' ;;
   *) echo "error: unsupported arch $arch"; exit 1 ;;
 esac
 
 echo "==> resolving latest v4 release"
 api_url="https://api.github.com/repos/${REPO}/releases/latest"
-dmg_url="$(curl -fsSL "$api_url" \
+assets="$(curl -fsSL "$api_url" \
   | grep -Eo '"browser_download_url": *"[^"]+"' \
-  | sed -E 's/.*"([^"]+)"/\1/' \
-  | grep -E "$asset_filter" \
-  | head -1)"
+  | sed -E 's/.*"([^"]+)"/\1/')"
+
+dmg_url="$(printf '%s\n' "$assets" | grep -E "$primary" | head -1 || true)"
+
+if [[ -z "${dmg_url:-}" && -n "$fallback" ]]; then
+  dmg_url="$(printf '%s\n' "$assets" | grep -E "$fallback" | head -1 || true)"
+  if [[ -n "${dmg_url:-}" ]]; then
+    echo "==> no native arm64 build on latest release — falling back to x64 (runs via Rosetta)"
+    if ! /usr/bin/pgrep oahd >/dev/null 2>&1; then
+      echo "    Rosetta 2 not detected. If the app fails to launch, run:"
+      echo "    softwareupdate --install-rosetta --agree-to-license"
+    fi
+  fi
+fi
 
 if [[ -z "${dmg_url:-}" ]]; then
-  echo "error: no .dmg matching '$asset_filter' on the latest release"
+  echo "error: no .dmg asset on the latest release for arch '$arch'"
   exit 1
 fi
 
