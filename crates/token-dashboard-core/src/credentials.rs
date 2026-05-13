@@ -33,7 +33,9 @@ pub enum CredentialError {
     /// Token's `expiresAt` is in the past. Claude Code refreshes the
     /// access token lazily — the user just needs to run `claude` once
     /// to trigger a refresh, then the new token lands in the Keychain.
-    Expired { hours_ago: i64 },
+    Expired {
+        hours_ago: i64,
+    },
     /// Platform store rejected the read (keychain prompt denied, file
     /// permission error, etc).
     AccessDenied(String),

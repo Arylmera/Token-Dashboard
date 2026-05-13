@@ -500,6 +500,15 @@ async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, String> {
         "days": stats.days,
         "models": stats.models,
     }));
+    // When the OAuth limits source is active, piggy-back on the
+    // activity signal from the scan to refresh the rate-limit headers
+    // — but throttle so a chatty session doesn't burn a Haiku token
+    // per message. Runs detached; failures stay quiet (see helper).
+    let stats_for_hook = stats.clone();
+    let state_for_hook = s.clone();
+    tokio::spawn(async move {
+        maybe_activity_oauth_sync(state_for_hook, stats_for_hook).await;
+    });
     Ok(stats)
 }
 
@@ -992,27 +1001,53 @@ async fn limits_sync(State(s): State<AppState>) -> Result<Json<LimitsSyncRespons
 async fn limits_sync_oauth(
     State(s): State<AppState>,
 ) -> Result<Json<LimitsSyncResponse>, ApiError> {
-    // Keychain access can block on a user prompt; spawn_blocking keeps
-    // the runtime healthy regardless.
+    let outcome = run_oauth_sync(s.db_path.clone(), s.events.clone())
+        .await
+        .map_err(|e| match e {
+            OAuthSyncError::Credential(msg) => ApiError::bad_request(msg),
+            OAuthSyncError::Persist(e) => ApiError::internal(format!("persist: {e}")),
+            OAuthSyncError::Join(e) => ApiError::internal(format!("join: {e}")),
+        })?;
+    Ok(Json(outcome.response))
+}
+
+#[derive(Debug)]
+enum OAuthSyncError {
+    Credential(String),
+    Persist(String),
+    Join(String),
+}
+
+struct OAuthSyncOutcome {
+    response: LimitsSyncResponse,
+}
+
+/// Shared OAuth-sync pipeline used by both the `/api/limits/sync_oauth`
+/// route and the activity-triggered scanner hook. Reads the credential,
+/// hits Anthropic, persists the snapshot, and broadcasts a
+/// `limits_refreshed` SSE event on success so the frontend can refetch
+/// the Overview card without waiting for the next scan tick.
+async fn run_oauth_sync(
+    db_path: std::sync::Arc<std::path::PathBuf>,
+    events: tokio::sync::broadcast::Sender<serde_json::Value>,
+) -> Result<OAuthSyncOutcome, OAuthSyncError> {
     let token_result =
         tokio::task::spawn_blocking(token_dashboard_core::credentials::read_oauth_token)
             .await
-            .map_err(|e| ApiError::internal(format!("join: {e}")))?;
-    let token = match token_result {
-        Ok(t) => t,
-        Err(e) => return Err(ApiError::bad_request(e.user_message())),
-    };
+            .map_err(|e| OAuthSyncError::Join(e.to_string()))?;
+    let token = token_result.map_err(|e| OAuthSyncError::Credential(e.user_message()))?;
 
     let result = tokio::task::spawn_blocking(move || {
         token_dashboard_core::anthropic_sync::sync_limits_oauth(&token)
     })
     .await
-    .map_err(|e| ApiError::internal(format!("join: {e}")))?;
+    .map_err(|e| OAuthSyncError::Join(e.to_string()))?;
 
-    let path = s.db_path.clone();
+    let path = db_path.clone();
     let now_iso = current_iso_z();
     let status_clone = result.status.clone();
-    let resp = blocking(move || -> rusqlite::Result<LimitsSyncResponse> {
+    let persisted = status_clone == "ok";
+    let response = tokio::task::spawn_blocking(move || -> rusqlite::Result<LimitsSyncResponse> {
         let p = path.as_ref();
         let conn = rusqlite::Connection::open(p)?;
         conn.execute(
@@ -1023,7 +1058,7 @@ async fn limits_sync_oauth(
             "INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_last_sync_status', ?)",
             [&status_clone],
         )?;
-        if status_clone == "ok" {
+        if persisted {
             preferences::set_limits_server_snapshot(
                 p,
                 &preferences::LimitsServerSnapshot {
@@ -1053,8 +1088,65 @@ async fn limits_sync_oauth(
             limits_last_sync_status: meta.last_sync_status,
         })
     })
-    .await?;
-    Ok(resp)
+    .await
+    .map_err(|e| OAuthSyncError::Join(e.to_string()))?
+    .map_err(|e| OAuthSyncError::Persist(e.to_string()))?;
+
+    if persisted {
+        let _ = events.send(serde_json::json!({
+            "type": "limits_refreshed",
+            "source": "oauth",
+        }));
+    }
+
+    Ok(OAuthSyncOutcome { response })
+}
+
+/// Activity-triggered sync hook. Called by `run_scan_and_broadcast`
+/// after a successful scan. Aligned with the 10s scan tick so an
+/// active prompt-cycle yields one fresh sync per response — Claude
+/// Code rarely emits more than one message group in a 10s window,
+/// and chatty bursts cost a few extra Haiku tokens off the user's
+/// own quota (negligible).
+const ACTIVITY_SYNC_THROTTLE_SECONDS: i64 = 10;
+
+async fn maybe_activity_oauth_sync(state: AppState, stats: ScanStats) {
+    if stats.messages == 0 {
+        return;
+    }
+    let path = state.db_path.clone();
+    let gate = tokio::task::spawn_blocking(move || -> rusqlite::Result<bool> {
+        let p = path.as_ref();
+        if preferences::get_limits_source(p)? != "oauth" {
+            return Ok(false);
+        }
+        let snap = preferences::get_limits_server_snapshot(p)?;
+        match snap.synced_at.as_deref() {
+            None => Ok(true),
+            Some(synced) => {
+                // SQLite's datetime() avoids needing a Rust ISO parser.
+                let conn = rusqlite::Connection::open(p)?;
+                let stale: i64 = conn.query_row(
+                    "SELECT CASE WHEN datetime(?) <= datetime('now', ?) THEN 1 ELSE 0 END",
+                    rusqlite::params![synced, format!("-{ACTIVITY_SYNC_THROTTLE_SECONDS} seconds")],
+                    |r| r.get(0),
+                )?;
+                Ok(stale == 1)
+            }
+        }
+    })
+    .await;
+    let should_run = matches!(gate, Ok(Ok(true)));
+    if !should_run {
+        return;
+    }
+    // Fire-and-forget. Errors during background syncs (expired token,
+    // network blip) shouldn't surface to the user — they'll see the
+    // stale "synced X min ago" timestamp in the UI and can click Sync
+    // manually to get the explicit error.
+    if let Err(e) = run_oauth_sync(state.db_path, state.events).await {
+        tracing::debug!(?e, "activity-triggered oauth sync failed (background)");
+    }
 }
 
 fn current_iso_z() -> String {
