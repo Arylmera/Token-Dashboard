@@ -11,7 +11,15 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+// Serializes widget-window creation. `get_webview_window("widget")`
+// only flips to Some after `build()` finishes on the main thread, so
+// concurrent callers (reconciler tick + tray click + restore) used to
+// race past the existence guard and build two windows. The flag is
+// flipped on before build and back off after, regardless of result.
+static WIDGET_SPAWNING: AtomicBool = AtomicBool::new(false);
 
 use tauri::{
     menu::{Menu, MenuEvent, MenuItem},
@@ -437,6 +445,18 @@ fn spawn_widget(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         persist_widget_open(app, true);
         return Ok(());
     }
+    // If another caller is mid-build, don't start a second one — the
+    // window registry won't show the in-flight window yet, so the
+    // existence guard above can't catch this case.
+    if WIDGET_SPAWNING.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    let result = spawn_widget_inner(app, base_url);
+    WIDGET_SPAWNING.store(false, Ordering::SeqCst);
+    result
+}
+
+fn spawn_widget_inner(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
     // ServeDir is mounted at /web (the bare `/` route only matches the
     // root index). Hit the nest so the file resolves.
     let url = format!("{base_url}/web/widget.html");
@@ -661,10 +681,6 @@ async fn main() {
     // /api/preferences POST; the tray-update loop re-applies on change.
     let glass_enabled =
         token_dashboard_core::preferences::get_glass_enabled(&db_path).unwrap_or(false);
-    // Was the widget open at last shutdown? If so, re-spawn it once the
-    // main window is up. Persisted via `persist_widget_open`.
-    let widget_was_open =
-        token_dashboard_core::preferences::get_widget_open(&db_path).unwrap_or(false);
     let db_path_for_state = db_path.clone();
 
     let state = AppState::new(db_path, Pricing::embedded(), projects_dir);
@@ -733,12 +749,13 @@ async fn main() {
                 let _ = win.set_focus();
                 build_tray(app.handle(), &base_url)?;
                 spawn_tray_updater(app.handle().clone(), base_url.clone());
+                // Restore the widget if it was open at last shutdown.
+                // Driven entirely by the reconciler (which reads the
+                // `widget_open` pref and respawns within its first tick)
+                // so startup and runtime go through one path — racing
+                // the reconciler with a direct spawn here used to open
+                // two widget windows on launch.
                 spawn_widget_reconciler(app.handle().clone(), base_url.clone());
-                if widget_was_open {
-                    if let Err(e) = spawn_widget(app.handle(), &base_url) {
-                        eprintln!("restore widget: {e}");
-                    }
-                }
                 Ok(())
             }
         })

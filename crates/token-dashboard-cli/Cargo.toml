@@ -1,6 +1,6 @@
 [package]
 name = "token-dashboard-cli"
-version = "4.0.8"
+version = "4.0.9"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
