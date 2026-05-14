@@ -341,6 +341,14 @@ const LimitsCard = ({ limits, enabled }) => {
   const serverFresh = isServer && hasAnchor && (lastStatus === "ok" || lastStatus == null);
   const serverNeedsSync =
     isServer && (!hasAnchor || (lastStatus != null && lastStatus !== "ok"));
+  // Surface the manual Sync button on the Overview when the last
+  // successful snapshot is older than this — saves the user a trip to
+  // Settings during long idle stretches (activity-triggered syncs need
+  // fresh JSONL lines, so an idle dashboard goes stale).
+  const STALE_AFTER_MS = 60 * 60 * 1000;
+  const lastVerifiedMs = meta.last_verified ? Date.parse(meta.last_verified) : NaN;
+  const serverStaleByAge =
+    isServer && Number.isFinite(lastVerifiedMs) && Date.now() - lastVerifiedMs > STALE_AFTER_MS;
 
   const onSync = async () => {
     setSyncing(true);
@@ -389,8 +397,10 @@ const LimitsCard = ({ limits, enabled }) => {
   // - JSONL source: keep the existing banner (cap-calibration advice).
   // - Server source + fresh: hide banner and button entirely — clean card.
   // - Server source + not fresh: show banner with action-oriented hint + Sync button.
+  // - Server source + fresh but >1h old: show Sync button (no banner) so
+  //   the user can refresh without leaving Overview.
   const showBanner = !serverFresh;
-  const showSyncButton = isServer && !serverFresh;
+  const showSyncButton = isServer && (!serverFresh || serverStaleByAge);
 
   return (
     <section className="a-card a-limits">
