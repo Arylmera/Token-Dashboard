@@ -515,7 +515,10 @@ const ProjectsTable = ({ totals }) => {
         <tbody>
           {sorted.map((p) => (
             <tr key={p.slug}>
-              <td className="mono">{p.name}</td>
+              <td>
+                <div className="a-proj-nick">{p.name}</div>
+                {p.slug && p.slug !== p.name && <div className="a-proj-slug">{p.slug}</div>}
+              </td>
               <td className="num tone-good">{fmtCost(p.cost)}</td>
               <td className="num">{fmtTokens(p.tokens)}</td>
               <td className="num">
