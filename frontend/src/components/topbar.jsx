@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
+import { DateInput } from "./date-input.jsx";
 
 const TABS = ["overview", "prompts", "sessions", "token sink", "tips", "api", "settings"];
+const TAB_LABELS = { "token sink": "sink" };
 const ADVANCED_TABS = new Set(["api"]);
 const RANGES = ["1d", "7d", "30d", "90d", "all", "custom"];
 const PROVIDERS = [
@@ -128,8 +130,6 @@ export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProv
       <span className="a-prompt-path">~/code/dashboard</span>
       <span className="a-prompt-ps1">$</span>
       <span className="a-prompt-cmd">td</span>
-      <span className="a-prompt-flag">--range=</span><span className="a-prompt-val">{range}</span>
-      <span className="a-prompt-flag">--tab=</span><span className="a-prompt-val">{(tab || "").replace(/\s+/g, "-")}</span>
       <span className="a-prompt-cursor" aria-hidden="true">▍</span>
       <span
         className={`a-prompt-fresh${lastRefresh.stale ? " is-stale" : ""}`}
@@ -150,7 +150,7 @@ export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProv
           className={`a-navlink ${tab === t ? "is-active" : ""}`}
           onClick={() => setTab(t)}
         >
-          {t}
+          {TAB_LABELS[t] || t}
         </button>
       ))}
     </nav>
@@ -182,19 +182,9 @@ export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProv
       )}
       {range === "custom" && (
         <div className="a-range-custom" data-tauri-drag-region="false">
-          <input
-            type="date"
-            aria-label="Range start"
-            value={customSince}
-            onChange={(e) => setCustomSince(e.target.value)}
-          />
+          <DateInput value={customSince} onChange={setCustomSince} ariaLabel="Range start" />
           <span className="a-range-custom-sep">→</span>
-          <input
-            type="date"
-            aria-label="Range end"
-            value={customUntil}
-            onChange={(e) => setCustomUntil(e.target.value)}
-          />
+          <DateInput value={customUntil} onChange={setCustomUntil} ariaLabel="Range end" />
         </div>
       )}
       <WindowControls />

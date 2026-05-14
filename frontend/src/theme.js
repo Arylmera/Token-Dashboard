@@ -1,6 +1,8 @@
 export const THEMES = [
   { id: "bench",  label: "bench",  cls: "",              mode: "dark",
     swatch: { bg: "#0A0E14", panel: "#0F1419", accent: "#4A9EFF", fg: "#E6EDF3" } },
+  { id: "dim",    label: "dim",    cls: "theme-dim",     mode: "dark",
+    swatch: { bg: "#0F1318", panel: "#13181F", accent: "#4A9EFF", fg: "#C7CFD8" } },
   { id: "forge",  label: "forge",  cls: "theme-forge",   mode: "dark",
     swatch: { bg: "#14100C", panel: "#1A140E", accent: "#FF8A3D", fg: "#F5E8D8" } },
   { id: "forest", label: "forest", cls: "theme-forest",  mode: "dark",
