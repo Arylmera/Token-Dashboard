@@ -168,11 +168,11 @@ The frontmatter holds the **dark theme (default)**. The same token names exist i
 - **Console Blue** (#4A9EFF / `oklch(70% 0.15 250)`): Brand accent. The glowing brand dot, link color, primary button, sonnet model badge, active-tab indicator. Used on ≤10% of any given screen.
 
 ### Secondary
-- **Signal Violet** (#7C5CFF / `oklch(60% 0.22 280)`): Reserved for the Opus model badge and the second chart-series slot. Never used on chrome or actions — its purpose is to mark *Opus* in lists and charts so the eye finds it.
+- **Signal Violet** (#7C5CFF / `oklch(60% 0.22 280)`): Reserved for the Opus model badge and the second chart-series slot. Permitted on identity badges (model chips) and chart series only — never on layout chrome (nav, borders, dividers, topbar) or interactive affordances (links, buttons, active states). Held to ≤5% of any screen. Its purpose is to mark *Opus* in lists and charts so the eye finds it.
 
 ### Tertiary
 - **Receipt Green** (#3FB68B): Cost values in KPIs ("$4.21 today"), positive deltas ("up 12%"), Haiku model badge. Cost color is positive-coded because spending is a fact reported, not a warning.
-- **Caution Amber** (#E8A23B): Warnings in the tips engine, third chart-series slot. Never used on chrome.
+- **Caution Amber** (#E8A23B): Warnings in the tips engine, third chart-series slot. Never used on layout chrome or interactive affordances — semantic warning text and chart series only.
 - **Fault Red** (#E5484D): Errors and negative deltas only. Never decoration.
 
 ### Neutral
@@ -213,7 +213,7 @@ ECharts series palettes shift per theme too — see `web/charts/theme.js` for th
 
 ## 3. Typography
 
-**Display Font:** None. The system has no display tier — the largest text is 22px (KPI values). Hero typography is rejected by design.
+**Display Font:** None. The system has no display tier — the largest text is 26px (KPI values). Hero typography is rejected by design.
 **Body Font:** Inter (with `system-ui`, `-apple-system`, `Segoe UI` fallbacks). OpenType features `cv11` and `ss01` enabled for cleaner numerals and a-glyphs.
 **Mono Font:** JetBrains Mono (with `ui-monospace`, `SFMono-Regular`, `Consolas` fallbacks).
 
@@ -256,7 +256,7 @@ Depth in the resting layout is conveyed by border + background contrast, not by 
 
 **The Floating-Layer Exception.** Shadows are reserved for surfaces that *float above* the document — modals and dropdown menus. If a new component does not literally float, it does not get a shadow.
 
-**The One-Glow Rule.** Glow effects (large blur-radius rgba shadows on colored elements) are forbidden except for the brand dot. No glowing buttons, no glowing badges, no halo effects on KPIs.
+**The One-Glow Rule.** Glow effects (large blur-radius rgba shadows on colored elements) are forbidden. No glowing buttons, no glowing badges, no halo effects on KPIs. The brand dot's freshness pulse (opacity animation, gated on `html[data-fresh]` for 30s after a scan lands) is the single permitted motion in the system — it carries state, not decoration. No idle ambient motion anywhere.
 
 ## 5. Components
 
@@ -325,12 +325,38 @@ Depth in the resting layout is conveyed by border + background contrast, not by 
 
 ### Topbar
 - **Style:** Sticky top, `linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%)` background, 1px bottom border, `backdrop-filter: saturate(180%) blur(8px)`. The single permitted glassmorphism in the system — a thin chrome layer over scrolling content.
-- **Brand:** Inter 600, 14px, `-0.01em` tracking, with the 8×8 `console-blue` square (2px radius) and a 12px-blur glow.
+- **Brand:** Inter 600, 14px, `-0.01em` tracking, with the 8×8 `console-blue` square (2px radius). The dot pulses for 30s after a scan lands (gated on `html[data-fresh]`) — the only motion in the system tied to state. Flat at rest.
 - **Nav:** Capitalized 13px medium, 5px×10px padding per link, 6px radius, `gull-gray` at rest, `bone-text` on hover/active with `carbon-panel-2` background. Active link uses the same treatment as hover.
 
 ### Glossary (Settings tab)
 - **Pattern:** Native `<details>` / `<summary>`, custom triangle marker (`▸` rotates 90° on open).
 - **Layout:** `<dl>` with 160px `<dt>` column, terms uppercase label-tier, definitions in body tier with inline `<code>` chips on `carbon-panel-2`.
+
+### Empty / Loading / Error states
+
+The principle: **panel positions never shift between states.** The card shell — border, panel bg, padding, dimensions — stays identical whether the card is full, empty, loading, or errored. The data inside changes; the architecture does not. No skeleton bars, no spinners, no ghost-UI outlines, no illustrations.
+
+#### Empty
+- **Card shell unchanged.** Same border, same `--panel`, same height (or natural height of empty content — no collapse).
+- **Body:** one 11px Inter italic line in `--gull-2`, prefixed with the `›` accent glyph (see `.a-chart-empty`). Optional 10px uppercase label-tier state token below ("NO DATA", "NO MATCH", "FILTERED OUT"). The label tier is the instrument-panel signal of the system, so the state name belongs there.
+- **First-launch variant:** same shell, plus a 11px Inter regular sub-line in `--gull` naming the next action ("Run Claude Code to populate."). No illustration, no CTA button — the dashboard is a passive observer of `~/.claude/projects/`.
+- **Tables:** render `<thead>` as normal, then a single `<tbody>` row spanning all columns at 80px height, centered label-tier text. The header row carries the structure; never hide it.
+
+#### Loading
+- **No skeleton loaders. No spinners. No shimmer.** The dashboard renders cached data immediately with no visual diff. The brand dot is the loading signal — flat at rest, subtle pulse for 30s after a scan lands (`html[data-fresh]`). Only motion tied to state in the system.
+- **Cold load** (first paint, no cache): cards render with the empty-state shell. There is no loading-specific surface — empty and "loading from cold" look identical, which is correct because the user has no data to compare against.
+- **Inline async** (user-triggered, e.g. `POST /api/limits/sync`): the trigger button replaces its label with `…` (single Unicode ellipsis, mono, `--gull`). Button width preserved with `min-width`. No spinner glyph, no progress bar.
+
+#### Error
+Two tiers — card-local and global.
+
+- **Card-local.** Same shell. One 11px Inter line in `--bad` ("Couldn't load"), plus one 10px label-tier line in `--gull-2` naming the cause ("CONNECTION", "PARSE", "TIMEOUT", "STALE"). No retry button at this tier; the next automatic scan/poll is the retry path. If the card has a known-good cached frame, prefer rendering the cached frame and surfacing the error in the global banner instead.
+- **Global banner.** Strip above the topbar, 32px tall, `--panel-2` bg, 1px `--bad` top+bottom border, mono 11px `--bone` body, 10px label-tier `--bad` prefix ("CONNECTION ›"), dismiss "×" on the right in `--gull-2`. No enter animation. Surfaces only for SSE-to-polling fallback (plan §R1) or when every data source is unreachable. Single banner at a time — newer errors replace older ones.
+- **Validation** (settings forms): inline 11px Inter line in `--bad` below the field, 4px top margin. Field border switches to `--bad`. Both clear on next valid input. No icon.
+
+#### Transition rules
+- All state changes follow the existing 120ms `color` + `background` transition rule. Layout properties (`transform`, `width`, `height`, `margin`, `padding`) do not animate between states.
+- A card moving from loading-cold → populated → empty → errored never changes dimensions. If the populated content is taller than the empty content, the card grows when it populates and stays at the larger height; it does not shrink back when re-emptied within the session. (Avoids the layout-jitter feel of dashboards that "breathe" on every poll.)
 
 ## 6. Do's and Don'ts
 
@@ -353,7 +379,7 @@ Depth in the resting layout is conveyed by border + background contrast, not by 
 - **Don't** use emoji, confetti, gamified language ("you saved $X this week!"), or oversized red/green dollar figures. Cost is a fact. (PRODUCT.md anti-reference: *"Fintech gamification"*).
 - **Don't** add shadows to at-rest content surfaces. Cards, KPIs, tips, drawers are flat. Shadows are reserved for floating layers (modal, dropdown). (Flat-By-Default Rule, §4.)
 - **Don't** use `border-left` or `border-right` greater than 1px as a colored side-stripe accent on cards, list items, or tips. Always rewrite with full borders or a tinted background.
-- **Don't** add a custom typeface above 24px. The 22px KPI value is the apex of the type system. No hero text.
+- **Don't** add a custom typeface above 28px. The 26px KPI value is the apex of the type system. No hero text.
 - **Don't** use uppercase on anything other than the 10px label tier. Uppercased body or headings cross into shouting.
 - **Don't** apply `good`/`bad` color tints to rows or backgrounds based on cost magnitude. Cost is reported, not judged. The user decides what is high.
 - **Don't** introduce a fifth theme without owning it as a complete identity (named, with its own personality and palette ramp). Random color skins erode the system.

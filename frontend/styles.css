@@ -12,7 +12,7 @@ html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover { backg
 .dir-a-root > * { max-width: 100%; min-width: 0; }
 .dir-a-root .a-card, .dir-a-root .a-kpi, .dir-a-root .a-strip,
 .dir-a-root .a-strip-left, .dir-a-root .a-strip-mid, .dir-a-root .a-strip-right { min-width: 0; }
-body:has(.dir-a-root.theme-light)  { background: #F7F9FC; }
+body:has(.dir-a-root.theme-paper)  { background: #F7F9FC; }
 body:has(.dir-a-root.theme-linen)  { background: #F5EFE4; }
 body:has(.dir-a-root.theme-forge)  { background: #14100C; }
 body:has(.dir-a-root.theme-forest) { background: #0C1410; }
@@ -38,6 +38,21 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
      code block, etc. without listing them one-by-one. */
   --panel: color-mix(in srgb, var(--panel-solid) var(--glass-opacity), transparent);
   --panel-2: color-mix(in srgb, var(--panel-2-solid) var(--glass-opacity), transparent);
+}
+/* Light-theme glass floor. Light palettes use dark-gray text against a
+   near-white panel; if the panel goes fully transparent, that text lands
+   directly on the user's wallpaper (often dark) and disappears. Clamp the
+   effective mix at 35% in light themes so panels always carry enough white
+   to keep labels legible. The slider position itself is unchanged; the
+   visual just stops getting more transparent past the floor. */
+.dir-a-root.is-glass.theme-paper,
+.dir-a-root.is-glass.theme-linen,
+.dir-a-root.is-glass.theme-mint,
+.dir-a-root.is-glass.theme-lilac,
+.dir-a-root.is-glass.theme-bb-light,
+.dir-a-root.is-glass.theme-cyber-light {
+  --panel: color-mix(in srgb, var(--panel-solid) max(var(--glass-opacity), 35%), transparent);
+  --panel-2: color-mix(in srgb, var(--panel-2-solid) max(var(--glass-opacity), 35%), transparent);
 }
 .dir-a-root.is-glass .a-card,
 .dir-a-root.is-glass .a-kpi,
@@ -82,8 +97,8 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
   /* Panels go through a -solid indirection so glass mode can redefine
      the consumer-facing var (--panel) as a color-mix of the solid value
      and transparent. Theme blocks override the -solid vars only. */
-  --panel-solid: #0F1419;
-  --panel-2-solid: #131922;
+  --panel-solid: #11171F;
+  --panel-2-solid: #161D27;
   --panel: var(--panel-solid);
   --panel-2: var(--panel-2-solid);
   --iron-border: #1F2630;
@@ -115,7 +130,7 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
 }
 /* Light themes use hairline borders (1px on near-paper surfaces),
    subtle hue casts in panel layers, and slightly desaturated accents. */
-.dir-a-root.theme-light { --bg:#F7F9FC; --panel-solid:#FFFFFF; --panel-2-solid:#F1F4F9; --iron-border:#E5EAF1; --iron-border-2:#CDD5E0; --bone:#1A2330; --gull:#5A6573; --gull-2:#94A0AE; --accent:#2F7FDB; --accent-2:#5A6573; --good:#5A6573; --pos:#2F7FDB; --grid-dot: rgba(0,0,0,0.025); }
+.dir-a-root.theme-paper { --bg:#F7F9FC; --panel-solid:#FFFFFF; --panel-2-solid:#F1F4F9; --iron-border:#E5EAF1; --iron-border-2:#CDD5E0; --bone:#1A2330; --gull:#5A6573; --gull-2:#94A0AE; --accent:#2F7FDB; --accent-2:#5A6573; --good:#5A6573; --pos:#2F7FDB; --grid-dot: rgba(0,0,0,0.025); }
 .dir-a-root.theme-linen  { --bg:#F5EFE4; --panel-solid:#FCF7EC; --panel-2-solid:#EFE7D6; --iron-border:#DDD0B5; --iron-border-2:#C8B898; --bone:#3A2E1C; --gull:#7A6A4E; --gull-2:#A89878; --accent:#A85528; --accent-2:#7A6A4E; --good:#7A6A4E; --pos:#A85528; --grid-dot: rgba(58,46,28,0.025); }
 .dir-a-root.theme-mint   { --bg:#ECF6EF; --panel-solid:#F8FCF9; --panel-2-solid:#E2EFE7; --iron-border:#C5DBCD; --iron-border-2:#A4C5B0; --bone:#1B3A2A; --gull:#4F7A63; --gull-2:#85A695; --accent:#0F9669; --accent-2:#4F7A63; --good:#4F7A63; --pos:#0F9669; --grid-dot: rgba(27,58,42,0.025); }
 .dir-a-root.theme-lilac  { --bg:#F2EEF8; --panel-solid:#FAF7FF; --panel-2-solid:#EAE2F4; --iron-border:#D2C5E2; --iron-border-2:#B5A4CD; --bone:#2D1F47; --gull:#6E5C90; --gull-2:#9F90BC; --accent:#7449F0; --accent-2:#6E5C90; --good:#6E5C90; --pos:#7449F0; --grid-dot: rgba(45,31,71,0.025); }
@@ -124,8 +139,8 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
 
 /* Dark themes — softer accents (lower chroma), tighter hue cast in neutrals,
    strict hierarchy bg < panel < panel-2 < iron-border < iron-border-2. */
-.dir-a-root.theme-forge  { --bg:#14100C; --panel-solid:#1A140E; --panel-2-solid:#221A12; --iron-border:#2D2419; --iron-border-2:#3A2E1F; --bone:#F5E8D8; --gull:#B89578; --gull-2:#7A6049; --accent:#ED7E3F; --accent-2:#B89578; --good:#B89578; --pos:#ED7E3F; --grid-dot: rgba(245,232,216,0.025); }
-.dir-a-root.theme-forest { --bg:#0C1410; --panel-solid:#0F1A14; --panel-2-solid:#13221B; --iron-border:#1F2D24; --iron-border-2:#2A3D31; --bone:#E0F0E5; --gull:#8FB39C; --gull-2:#5C7A68; --accent:#5CBC7A; --accent-2:#8FB39C; --good:#8FB39C; --pos:#5CBC7A; --grid-dot: rgba(224,240,229,0.025); }
+.dir-a-root.theme-forge  { --bg:#14100C; --panel-solid:#1A140E; --panel-2-solid:#221A12; --iron-border:#2D2419; --iron-border-2:#3A2E1F; --bone:#F5E8D8; --gull:#B89578; --gull-2:#7A6049; --accent:#ED7E3F; --accent-2:#B89578; --good:#A8956B; --pos:#ED7E3F; --grid-dot: rgba(245,232,216,0.025); }
+.dir-a-root.theme-forest { --bg:#0C1410; --panel-solid:#0F1A14; --panel-2-solid:#13221B; --iron-border:#1F2D24; --iron-border-2:#2A3D31; --bone:#E0F0E5; --gull:#8FB39C; --gull-2:#5C7A68; --accent:#5CBC7A; --accent-2:#8FB39C; --good:#6FA88A; --pos:#5CBC7A; --grid-dot: rgba(224,240,229,0.025); }
 .dir-a-root.theme-dusk   { --bg:#0F0D1A; --panel-solid:#171326; --panel-2-solid:#1F1A33; --iron-border:#2A2342; --iron-border-2:#3A3056; --bone:#ECE6FF; --gull:#A296C9; --gull-2:#6E6391; --accent:#A77FF0; --accent-2:#A296C9; --good:#A296C9; --pos:#A77FF0; --grid-dot: rgba(236,230,255,0.025); }
 .dir-a-root.theme-ocean  { --bg:#07131A; --panel-solid:#0B1B26; --panel-2-solid:#0F2533; --iron-border:#163240; --iron-border-2:#214458; --bone:#DCEFF7; --gull:#7FA9BB; --gull-2:#54798A; --accent:#36C2C2; --accent-2:#7FA9BB; --good:#7FA9BB; --pos:#36C2C2; --grid-dot: rgba(220,239,247,0.025); }
 .dir-a-root.theme-matrix { --bg:#000805; --panel-solid:#031410; --panel-2-solid:#062019; --iron-border:#0B3024; --iron-border-2:#114A38; --bone:#B8FFD0; --gull:#3FBF7A; --gull-2:#1F7A4A; --accent:#1FE26F; --accent-2:#3FBF7A; --good:#3FBF7A; --pos:#1FE26F; --grid-dot: rgba(0,255,102,0.04); }
@@ -153,6 +168,16 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
   background: var(--accent); border: 2px solid transparent; background-clip: padding-box;
 }
 .dir-a-root::-webkit-scrollbar-corner, .dir-a-root *::-webkit-scrollbar-corner { background: transparent; }
+
+/* a11y — global focus-visible. 2px accent outline, 2px offset, no glow.
+   Sits as a baseline; per-component focus styles above already override
+   where they're more specific. */
+.dir-a-root :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.dir-a-root :focus:not(:focus-visible) { outline: none; }
 
 /* topbar */
 .a-topbar {
@@ -191,7 +216,11 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 }
 .a-brand { display: flex; align-items: center; gap: 10px; }
 .a-brand-dot { width: 7px; height: 7px; background: var(--accent); }
-.a-brand-dot::before { content: ""; display: block; width: 7px; height: 7px; background: var(--accent); animation: a-pulse 2s ease-in-out infinite; }
+/* Brand dot is flat by default. When a scan lands, api-client.js sets
+   html[data-fresh] for 30s and the pulse runs. Only motion in the system
+   tied to state — no decorative idle animation. */
+.a-brand-dot::before { content: ""; display: block; width: 7px; height: 7px; background: var(--accent); opacity: 1; }
+html[data-fresh] .a-brand-dot::before { animation: a-pulse 2s ease-in-out infinite; }
 @keyframes a-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 .a-brand-text { font: 600 12px "JetBrains Mono"; letter-spacing: 0.04em; text-transform: uppercase; }
 .a-brand-sub { font: 500 11px "JetBrains Mono"; color: var(--gull-2); margin-left: 4px; }
@@ -247,7 +276,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 }
 .a-range-tab {
   background: transparent; border: 0; cursor: pointer;
-  font: 500 11px "JetBrains Mono"; color: var(--gull);
+  font: 500 11px Inter, system-ui, sans-serif; color: var(--gull);
   padding: 4px 10px;
   text-transform: uppercase; letter-spacing: 0.04em;
 }
@@ -344,7 +373,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 .a-kpi-row .a-kpi { border: 0; border-right: 1px solid var(--iron-border); border-bottom: 1px solid var(--iron-border); min-width: 0; }
 .a-kpi-row .a-kpi:last-child { border-right: 0; }
 .a-kpi-row-tight { grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); margin-bottom: 0; }
-.dir-a-root .a-kpi .a-metric { font-size: clamp(22px, 22cqi, 48px); white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.dir-a-root .a-kpi .a-metric { font-size: clamp(26px, 26cqi, 48px); white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .a-card-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-bottom: 12px; }
 
 .a-chart { width: 100%; height: 180px; display: block; }
@@ -470,7 +499,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
   padding: 2px 0;
   color-scheme: dark;
 }
-.dir-a-root.theme-light .a-pricing-input input,
+.dir-a-root.theme-paper .a-pricing-input input,
 .dir-a-root.theme-linen .a-pricing-input input,
 .dir-a-root.theme-bb-light .a-pricing-input input,
 .dir-a-root.theme-cyber-light .a-pricing-input input { color-scheme: light; }
@@ -1100,11 +1129,11 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
   outline: 0;
   color-scheme: dark;
 }
-.dir-a-root.theme-light .a-budget-field input[type="datetime-local"],
+.dir-a-root.theme-paper .a-budget-field input[type="datetime-local"],
 .dir-a-root.theme-linen .a-budget-field input[type="datetime-local"],
 .dir-a-root.theme-bb-light .a-budget-field input[type="datetime-local"],
 .dir-a-root.theme-cyber-light .a-budget-field input[type="datetime-local"],
-.dir-a-root.theme-light .a-text-input,
+.dir-a-root.theme-paper .a-text-input,
 .dir-a-root.theme-linen .a-text-input,
 .dir-a-root.theme-bb-light .a-text-input,
 .dir-a-root.theme-cyber-light .a-text-input { color-scheme: light; }
@@ -1114,7 +1143,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
   filter: invert(0.7);
   cursor: pointer;
 }
-.dir-a-root.theme-light .a-budget-field input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.dir-a-root.theme-paper .a-budget-field input[type="datetime-local"]::-webkit-calendar-picker-indicator,
 .dir-a-root.theme-linen .a-budget-field input[type="datetime-local"]::-webkit-calendar-picker-indicator,
 .dir-a-root.theme-bb-light .a-budget-field input[type="datetime-local"]::-webkit-calendar-picker-indicator,
 .dir-a-root.theme-cyber-light .a-budget-field input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: none; }
@@ -1228,7 +1257,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
    ============================================================ */
 
 /* Light-theme refinement: lower grid alpha, ease number tracking */
-.dir-a-root.theme-light,
+.dir-a-root.theme-paper,
 .dir-a-root.theme-linen,
 .dir-a-root.theme-mint,
 .dir-a-root.theme-lilac,
@@ -1236,19 +1265,19 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 .dir-a-root.theme-cyber-light {
   --grid-dot: rgba(0,0,0,0.018);
 }
-.dir-a-root.theme-light .a-metric,
+.dir-a-root.theme-paper .a-metric,
 .dir-a-root.theme-linen .a-metric,
 .dir-a-root.theme-mint .a-metric,
 .dir-a-root.theme-lilac .a-metric,
 .dir-a-root.theme-bb-light .a-metric,
 .dir-a-root.theme-cyber-light .a-metric,
-.dir-a-root.theme-light .a-strip-num,
+.dir-a-root.theme-paper .a-strip-num,
 .dir-a-root.theme-linen .a-strip-num,
 .dir-a-root.theme-mint .a-strip-num,
 .dir-a-root.theme-lilac .a-strip-num,
 .dir-a-root.theme-bb-light .a-strip-num,
 .dir-a-root.theme-cyber-light .a-strip-num,
-.dir-a-root.theme-light .a-plan-price,
+.dir-a-root.theme-paper .a-plan-price,
 .dir-a-root.theme-linen .a-plan-price,
 .dir-a-root.theme-mint .a-plan-price,
 .dir-a-root.theme-lilac .a-plan-price,
@@ -1348,7 +1377,7 @@ body:not(.platform-win32):not(.platform-darwin):not(.platform-linux) .dir-a-root
 }
 .a-split-meta-sw { display: inline-block; width: 8px; height: 8px; flex: 0 0 auto; }
 .a-split-meta-v {
-  font: 400 22px "JetBrains Mono"; letter-spacing: -0.03em;
+  font: 400 26px "JetBrains Mono"; letter-spacing: -0.03em;
   color: var(--bone); font-variant-numeric: tabular-nums; line-height: 1;
 }
 .a-split-meta-s {

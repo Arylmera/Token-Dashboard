@@ -586,6 +586,22 @@ let _streamSource = null;
 let _firstFrameTimer = null;
 let _consecutiveFailures = 0;
 let _pollingFallbackTimer = null;
+let _freshTimer = null;
+
+// Brand-dot freshness signal. Toggles documentElement[data-fresh] for 30s
+// after a scan lands. CSS gates the brand pulse on this attribute — flat
+// when stale, subtle pulse when fresh. The only motion in the system that
+// communicates state, so it earns its keep.
+const FRESH_WINDOW_MS = 30_000;
+function _markFresh() {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.fresh = "1";
+  if (_freshTimer) clearTimeout(_freshTimer);
+  _freshTimer = setTimeout(() => {
+    delete document.documentElement.dataset.fresh;
+    _freshTimer = null;
+  }, FRESH_WINDOW_MS);
+}
 
 function _onPayload(payload) {
   if (!payload || typeof payload !== "object") return;
@@ -594,6 +610,7 @@ function _onPayload(payload) {
   switch (type) {
     case "scan_complete":
       // Fresh transcripts → everything in the dashboard view may have moved.
+      _markFresh();
       loadDelta({ scan: true }).catch((e) => console.warn("loadDelta scan", e));
       break;
     case "preferences":
