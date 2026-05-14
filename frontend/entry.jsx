@@ -25,6 +25,7 @@ try {
 
 const isWidget = () => {
   try {
+    if (window.location.hash === "#widget") return true;
     return /widget\.html?$/i.test(window.location.pathname);
   } catch (_) { return false; }
 };
@@ -45,6 +46,10 @@ const Shell = () => (
   } catch (_) {}
   const root = createRoot(document.getElementById("root"));
   if (isWidget()) {
+    // widget.html ships this class on <body>; when we mount via the
+    // index.html route (with #widget), apply it here so the
+    // widget-only CSS (hide scrollbars, lock overflow) takes effect.
+    document.body.classList.add("td-widget-body");
     root.render(<Widget />);
     return;
   }
