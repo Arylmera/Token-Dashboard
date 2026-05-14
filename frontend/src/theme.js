@@ -17,7 +17,7 @@ export const THEMES = [
     swatch: { bg: "#0A0E08", panel: "#12140F", accent: "#E9D71B", fg: "#F0E8B8" } },
   { id: "cyber-dark", label: "cyberpunk",    cls: "theme-cyber-dark", mode: "dark",
     swatch: { bg: "#0A0710", panel: "#1A1B26", accent: "#CB1DCD", fg: "#D1C5C0" } },
-  { id: "paper",      label: "paper",        cls: "theme-light",      mode: "light",
+  { id: "paper",      label: "paper",        cls: "theme-paper",      mode: "light",
     swatch: { bg: "#F7F9FC", panel: "#FFFFFF", accent: "#2B7FE0", fg: "#1A2330" } },
   { id: "linen",      label: "linen",        cls: "theme-linen",      mode: "light",
     swatch: { bg: "#F5EFE4", panel: "#FCF7EC", accent: "#B85C28", fg: "#3A2E1C" } },

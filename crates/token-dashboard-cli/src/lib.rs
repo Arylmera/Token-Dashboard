@@ -1073,51 +1073,76 @@ async fn run_oauth_sync(
     Ok(OAuthSyncOutcome { response })
 }
 
-/// Activity-triggered sync hook. Called by `run_scan_and_broadcast`
-/// after a successful scan. Aligned with the 10s scan tick so an
+/// Activity-triggered throttle: aligned with the 10s scan tick so an
 /// active prompt-cycle yields one fresh sync per response — Claude
 /// Code rarely emits more than one message group in a 10s window,
 /// and chatty bursts cost a few extra Haiku tokens off the user's
 /// own quota (negligible).
 const ACTIVITY_SYNC_THROTTLE_SECONDS: i64 = 10;
 
+/// Startup-refresh threshold: at app launch, if the last successful
+/// snapshot is older than this — or there's no snapshot — fire one
+/// sync so the Overview shows current values without waiting for the
+/// next activity tick.
+const STARTUP_SYNC_STALE_SECONDS: i64 = 300;
+
+/// Single source of truth for "should we run an OAuth limits sync right
+/// now?" — returns false when the user isn't on the OAuth source, true
+/// when there's no successful snapshot yet, otherwise compares the last
+/// snapshot's `synced_at` to `threshold_secs`. Uses SQLite's `datetime()`
+/// so callers don't need a Rust ISO parser, and reads the *snapshot's*
+/// timestamp (not `last_sync_at`) so failed attempts don't suppress the
+/// next retry.
+fn oauth_sync_due(db: &std::path::Path, threshold_secs: i64) -> rusqlite::Result<bool> {
+    if preferences::get_limits_source(db)? != "oauth" {
+        return Ok(false);
+    }
+    let snap = preferences::get_limits_server_snapshot(db)?;
+    let Some(synced) = snap.synced_at.as_deref() else {
+        return Ok(true);
+    };
+    let conn = rusqlite::Connection::open(db)?;
+    let stale: i64 = conn.query_row(
+        "SELECT CASE WHEN datetime(?) <= datetime('now', ?) THEN 1 ELSE 0 END",
+        rusqlite::params![synced, format!("-{threshold_secs} seconds")],
+        |r| r.get(0),
+    )?;
+    Ok(stale == 1)
+}
+
+/// Run `run_oauth_sync` only when `oauth_sync_due` says yes. Failures
+/// are swallowed (logged at debug) — the user will see the stale
+/// "synced X min ago" timestamp and can sync manually to get the
+/// explicit error. `label` shows up in the failure log line.
+async fn run_oauth_sync_if_due(state: AppState, threshold_secs: i64, label: &'static str) {
+    let path = state.db_path.clone();
+    let gate =
+        tokio::task::spawn_blocking(move || oauth_sync_due(path.as_ref(), threshold_secs)).await;
+    if !matches!(gate, Ok(Ok(true))) {
+        return;
+    }
+    if let Err(e) = run_oauth_sync(state.db_path, state.events).await {
+        tracing::debug!(?e, "{label} oauth sync failed (background)");
+    }
+}
+
+/// Activity-triggered sync hook. Called by `run_scan_and_broadcast`
+/// after a successful scan; only meaningful when the scan ingested new
+/// messages (otherwise we'd burn Haiku tokens on an idle dashboard).
 async fn maybe_activity_oauth_sync(state: AppState, stats: ScanStats) {
     if stats.messages == 0 {
         return;
     }
-    let path = state.db_path.clone();
-    let gate = tokio::task::spawn_blocking(move || -> rusqlite::Result<bool> {
-        let p = path.as_ref();
-        if preferences::get_limits_source(p)? != "oauth" {
-            return Ok(false);
-        }
-        let snap = preferences::get_limits_server_snapshot(p)?;
-        match snap.synced_at.as_deref() {
-            None => Ok(true),
-            Some(synced) => {
-                // SQLite's datetime() avoids needing a Rust ISO parser.
-                let conn = rusqlite::Connection::open(p)?;
-                let stale: i64 = conn.query_row(
-                    "SELECT CASE WHEN datetime(?) <= datetime('now', ?) THEN 1 ELSE 0 END",
-                    rusqlite::params![synced, format!("-{ACTIVITY_SYNC_THROTTLE_SECONDS} seconds")],
-                    |r| r.get(0),
-                )?;
-                Ok(stale == 1)
-            }
-        }
-    })
-    .await;
-    let should_run = matches!(gate, Ok(Ok(true)));
-    if !should_run {
-        return;
-    }
-    // Fire-and-forget. Errors during background syncs (expired token,
-    // network blip) shouldn't surface to the user — they'll see the
-    // stale "synced X min ago" timestamp in the UI and can click Sync
-    // manually to get the explicit error.
-    if let Err(e) = run_oauth_sync(state.db_path, state.events).await {
-        tracing::debug!(?e, "activity-triggered oauth sync failed (background)");
-    }
+    run_oauth_sync_if_due(state, ACTIVITY_SYNC_THROTTLE_SECONDS, "activity-triggered").await;
+}
+
+/// Spawn a one-shot OAuth sync at app startup. Skipped silently when
+/// the source isn't OAuth or the snapshot is fresh enough, so users on
+/// the manual path pay nothing.
+pub fn spawn_startup_oauth_sync(state: AppState) {
+    tokio::spawn(async move {
+        run_oauth_sync_if_due(state, STARTUP_SYNC_STALE_SECONDS, "startup").await;
+    });
 }
 
 fn current_iso_z() -> String {

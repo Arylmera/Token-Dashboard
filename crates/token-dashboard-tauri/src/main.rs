@@ -18,7 +18,9 @@ use tauri::{
     tray::{TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
 };
-use token_dashboard_cli::{app as build_router, spawn_scan_loop, AppState};
+use token_dashboard_cli::{
+    app as build_router, spawn_scan_loop, spawn_startup_oauth_sync, AppState,
+};
 use token_dashboard_core::{default_db_path, Pricing};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
@@ -667,6 +669,7 @@ async fn main() {
 
     let state = AppState::new(db_path, Pricing::embedded(), projects_dir);
     spawn_scan_loop(state.clone(), SCAN_INTERVAL);
+    spawn_startup_oauth_sync(state.clone());
     let router = build_router(state);
 
     let server = tokio::spawn(async move {

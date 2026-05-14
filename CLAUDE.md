@@ -55,7 +55,7 @@ The frontend bundle must exist at `frontend/dist/app.js` before `cargo run -p to
 - Root scope: `.dir-a-root` (everything is namespaced under it). Glass-mode toggle: `.dir-a-root.is-glass`.
 - Component classes: `.a-card`, `.a-kpi`, `.a-kpi-row`, `.a-strip`, `.a-strip-{left,mid,right}`, `.a-topbar`, `.a-table`, `.a-sticky-head`, `.a-glass-slider`, `.a-metric`, `.a-pre`.
 - Theme tokens (CSS vars): `--bg`, `--panel`, `--panel-2`, `--iron-border`, `--iron-border-2`, `--bone`, `--gull`, `--gull-2`, `--accent`, `--accent-2`, `--good`, `--pos`, `--warn`, `--bad`, `--grid-dot`.
-- Theme classes (14): `theme-light`, `theme-forge`, `theme-forest`, `theme-dusk`, `theme-ocean`, `theme-linen`, `theme-matrix`, `theme-rose`, `theme-mint`, `theme-lilac`, `theme-bb-{dark,light}`, `theme-cyber-{dark,light}`. Defined as `.dir-a-root.theme-X { --bg:…; --panel:…; … }` blocks.
+- Theme classes (14): `theme-paper`, `theme-forge`, `theme-forest`, `theme-dusk`, `theme-ocean`, `theme-linen`, `theme-matrix`, `theme-rose`, `theme-mint`, `theme-lilac`, `theme-bb-{dark,light}`, `theme-cyber-{dark,light}`. Defined as `.dir-a-root.theme-X { --bg:…; --panel:…; … }` blocks.
 
 **`frontend/src/routes/overview.jsx`** — single Overview tab, ~387 lines, cohesive.
 - Components (top→bottom): `KpiRow`, `ChartAxis`, `LimitWindow`, `BudgetBanner`, `PhaseSplitCard`, `LimitsCard`, `TopStrip`, `DailyCharts`, `ProjectsTable`, `ModelsCard`, `TopToolsCard`, `RecentSessions`, `Overview` (root).

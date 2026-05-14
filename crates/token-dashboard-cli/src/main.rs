@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use token_dashboard_cli::{app, spawn_scan_loop, AppState};
+use token_dashboard_cli::{app, spawn_scan_loop, spawn_startup_oauth_sync, AppState};
 use token_dashboard_core::{default_db_path, Pricing};
 
 const SCAN_INTERVAL: Duration = Duration::from_secs(10);
@@ -60,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("listening on http://{addr}");
 
     spawn_scan_loop(state.clone(), SCAN_INTERVAL);
+    spawn_startup_oauth_sync(state.clone());
 
     axum::serve(listener, app(state))
         .with_graceful_shutdown(shutdown_signal())

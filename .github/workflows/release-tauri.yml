@@ -258,10 +258,10 @@ jobs:
             echo "HOMEBREW_TAP_TOKEN secret not set — skipping tap update."
             exit 0
           fi
-          dmg=$(ls dist/*.dmg 2>/dev/null | head -1 || true)
+          dmg=$(find dist -type f -name '*.dmg' | head -1 || true)
           if [ -z "$dmg" ] || [ ! -f "$dmg" ]; then
             echo "No DMG found in downloaded artifact — skipping tap update." >&2
-            ls -la dist/ || true
+            find dist -maxdepth 3 -print || true
             exit 0
           fi
           sha=$(sha256sum "$dmg" | awk '{print $1}')
