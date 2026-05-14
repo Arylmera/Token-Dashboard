@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { D } from "../data-store.js";
 import { fmtCost, fmtTokens } from "../format.js";
-import { HBar } from "../components/atoms.jsx";
 import { SortHeader, useSortable } from "../components/sortable.jsx";
+
+const pctStyle = (v, max) => ({ "--pct": Math.min(100, Math.round(((v || 0) / (max || 1)) * 100)) });
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtLastActive = (iso) => {
@@ -30,17 +31,18 @@ const ProjectsTable = ({ rows, max }) => {
           <SortHeader sortKey="sessions" className="num" {...headProps}>sessions</SortHeader>
           <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
           <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
-          <th style={{ paddingLeft: 16 }}>distribution</th>
         </tr></thead>
         <tbody>
           {sorted.map((p) => (
-            <tr key={p.slug} className="clickable">
-              <td className="mono" style={{ color: "var(--bone)" }}>{p.name}</td>
+            <tr key={p.slug} className="clickable has-bar" style={pctStyle(p.cost, max)}>
+              <td>
+                <div className="a-proj-nick">{p.name}</div>
+                {p.slug && p.slug !== p.name && <div className="a-proj-slug">{p.slug}</div>}
+              </td>
               <td className="muted">{fmtLastActive(p.lastActive)}</td>
               <td className="num">{p.sessions}</td>
               <td className="num">{fmtTokens(p.tokens)}</td>
               <td className="num tone-good">{fmtCost(p.cost)}</td>
-              <td style={{ width: 240, paddingLeft: 16 }}><HBar value={p.cost} max={max} /></td>
             </tr>
           ))}
         </tbody>
@@ -66,23 +68,20 @@ const SkillsTable = ({ rows }) => {
           <col style={{ width: 110 }} />
           <col style={{ width: 130 }} />
           <col style={{ width: 110 }} />
-          <col style={{ width: 240 }} />
         </colgroup>
         <thead><tr>
           <SortHeader sortKey="name" {...headProps}>skill</SortHeader>
           <SortHeader sortKey="invocations" className="num" {...headProps}>invocations</SortHeader>
           <SortHeader sortKey="tokens" className="num" {...headProps}>est. tokens</SortHeader>
           <SortHeader sortKey="cost" className="num" {...headProps}>est. cost</SortHeader>
-          <th style={{ paddingLeft: 16 }}>distribution</th>
         </tr></thead>
         <tbody>
           {sorted.map((s) => (
-            <tr key={s.name}>
+            <tr key={s.name} className="has-bar" style={pctStyle(s.tokens || 0, barMax)}>
               <td className="mono" style={{ color: "var(--bone)" }}>{s.name}</td>
               <td className="num">{s.invocations}</td>
               <td className="num muted">{s.tokens != null ? `~${fmtTokens(s.tokens)}` : "—"}</td>
               <td className="num tone-good">{s.cost != null ? `~${fmtCost(s.cost)}` : "—"}</td>
-              <td style={{ paddingLeft: 16 }}><HBar value={s.tokens || 0} max={barMax} /></td>
             </tr>
           ))}
         </tbody>
@@ -111,18 +110,16 @@ const SessionsTable = ({ rows, max }) => {
           <SortHeader sortKey="turns" className="num" {...headProps}>turns</SortHeader>
           <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
           <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
-          <th style={{ paddingLeft: 16 }}>distribution</th>
         </tr></thead>
         <tbody>
           {sorted.map((s) => (
-            <tr key={s.fullId || s.id}>
+            <tr key={s.fullId || s.id} className="has-bar" style={pctStyle(s.cost, max)}>
               <td className="mono" style={{ color: "var(--bone)" }}>{s.id}</td>
               <td className="mono">{s.project}</td>
               <td className="muted">{s.started}</td>
               <td className="num">{s.turns}</td>
               <td className="num">{fmtTokens(s.tokens)}</td>
               <td className="num tone-good">{fmtCost(s.cost)}</td>
-              <td style={{ width: 240, paddingLeft: 16 }}><HBar value={s.cost} max={max} /></td>
             </tr>
           ))}
         </tbody>
