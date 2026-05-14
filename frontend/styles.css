@@ -243,8 +243,19 @@ html[data-fresh] .a-brand-dot::before { animation: a-pulse 2s ease-in-out infini
   animation: a-blink 1.05s steps(1) infinite;
 }
 @keyframes a-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+.a-prompt-fresh {
+  font: 500 11px "JetBrains Mono";
+  color: var(--gull-2);
+  margin-left: 6px;
+  opacity: 0.75;
+  white-space: nowrap;
+  transition: color 240ms ease, opacity 240ms ease;
+}
+html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accent); }
+.a-prompt-fresh.is-stale { color: var(--warn); opacity: 1; cursor: help; }
 @media (max-width: 900px) {
   .a-prompt-path, .a-prompt-flag { display: none; }
+  .a-prompt-fresh { display: none; }
 }
 .a-nav { display: flex; gap: 0; min-width: 0; flex-wrap: wrap; row-gap: 14px; }
 .a-navlink {
