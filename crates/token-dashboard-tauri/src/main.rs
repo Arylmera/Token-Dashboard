@@ -435,8 +435,8 @@ fn persist_widget_open(app: &AppHandle, open: bool) {
 }
 
 /// Compact always-on-top widget window. Reuses the same web bundle as
-/// the main shell — `entry.jsx` branches on `widget.html` and mounts the
-/// Widget component instead of the full dashboard.
+/// the main shell — `entry.jsx` sees the `#widget` URL fragment and
+/// mounts the Widget component instead of the full dashboard.
 fn spawn_widget(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
     if let Some(existing) = app.get_webview_window("widget") {
         let _ = existing.show();
@@ -457,9 +457,11 @@ fn spawn_widget(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
 }
 
 fn spawn_widget_inner(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
-    // ServeDir is mounted at /web (the bare `/` route only matches the
-    // root index). Hit the nest so the file resolves.
-    let url = format!("{base_url}/web/widget.html");
+    // Reuse the main `/` route (served by ServeDir's index) and pick the
+    // widget mount via a hash fragment that `entry.jsx` reads. Avoids the
+    // `/web/widget.html` path, which on some setups intermittently 404s
+    // and surfaces a Chromium error page as a second window.
+    let url = format!("{base_url}/#widget");
     let parsed: tauri::Url = url.parse().expect("widget url parse");
     let glass_on = app
         .try_state::<GlassState>()
@@ -709,6 +711,17 @@ async fn main() {
     let load_url = format!("{base_url}/");
 
     tauri::Builder::default()
+        // Single-instance must be the FIRST plugin. If another instance is
+        // already running, this handler fires in the original process and
+        // the new process exits — preventing the "open the app twice, get
+        // two widgets and a stray error window" failure mode.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
         .manage(BaseUrl(base_url.clone()))
         .manage(DbPath(db_path_for_state))
         .manage(GlassState(std::sync::Mutex::new(glass_enabled)))

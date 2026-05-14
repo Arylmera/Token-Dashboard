@@ -1,6 +1,6 @@
 [package]
 name = "token-dashboard-tauri"
-version = "4.0.10"
+version = "4.0.11"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -22,6 +22,7 @@ tauri-build = { version = "2", features = [] }
 token-dashboard-cli = { path = "../token-dashboard-cli" }
 token-dashboard-core = { path = "../token-dashboard-core" }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
 window-vibrancy = "0.7"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
 axum = "0.7"
