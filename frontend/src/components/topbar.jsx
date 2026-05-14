@@ -17,6 +17,43 @@ const dateToIso = (yyyymmdd, endOfDay) => {
   return isNaN(d) ? null : d.toISOString();
 };
 
+// The backend scans every 10s and the SSE polling fallback runs at 15s, so a
+// healthy dashboard sees `td:data` at least every ~15s. Anything older than
+// STALE_AFTER_MS means the refresh pipeline is broken (SSE wedged, backend
+// dead, OS sleep). Treat that as a liveness warning, not a fine-grained clock.
+const STALE_AFTER_MS = 30_000;
+
+const fmtFreshness = (ms) => {
+  if (ms == null) return { label: "—", stale: false };
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < STALE_AFTER_MS / 1000) {
+    return { label: s < 5 ? "just now" : `${s}s ago`, stale: false };
+  }
+  const m = Math.floor(s / 60);
+  if (m < 1) return { label: "stale", stale: true };
+  if (m < 60) return { label: `stale ${m}m`, stale: true };
+  return { label: "stale 1h+", stale: true };
+};
+
+const useLastRefresh = () => {
+  const [stamp, setStamp] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const onData = () => {
+      const t = Date.now();
+      setStamp(t);
+      setNow(t);
+    };
+    window.addEventListener("td:data", onData);
+    const id = setInterval(() => setNow(Date.now()), 5000);
+    return () => {
+      window.removeEventListener("td:data", onData);
+      clearInterval(id);
+    };
+  }, []);
+  return fmtFreshness(now - stamp);
+};
+
 const useVersion = () => {
   const [version, setVersion] = useState("");
   useEffect(() => {
@@ -70,6 +107,7 @@ const WindowControls = () => {
 
 export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProvider, advancedMode = false }) => {
   const version = useVersion();
+  const lastRefresh = useLastRefresh();
   const visibleTabs = TABS.filter((t) => advancedMode || !ADVANCED_TABS.has(t));
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
@@ -93,6 +131,16 @@ export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProv
       <span className="a-prompt-flag">--range=</span><span className="a-prompt-val">{range}</span>
       <span className="a-prompt-flag">--tab=</span><span className="a-prompt-val">{(tab || "").replace(/\s+/g, "-")}</span>
       <span className="a-prompt-cursor" aria-hidden="true">▍</span>
+      <span
+        className={`a-prompt-fresh${lastRefresh.stale ? " is-stale" : ""}`}
+        title={
+          lastRefresh.stale
+            ? "Refresh pipeline is stalled (SSE + polling both silent). Try reloading."
+            : "Time since the dashboard last received fresh data"
+        }
+      >
+        {lastRefresh.label}
+      </span>
     </div>
     <nav className="a-nav" data-tauri-drag-region="false">
       {visibleTabs.map((t) => (
