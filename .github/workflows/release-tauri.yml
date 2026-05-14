@@ -134,11 +134,30 @@ jobs:
       - name: Tauri build
         working-directory: crates/token-dashboard-tauri
         shell: bash
+        # bundle_dmg.sh on macos-14 (Apple Silicon) flakes intermittently
+        # when hdiutil's attach/detach races with Spotlight indexing. Build
+        # the .app first (cheap to redo), then retry the DMG bundle up to
+        # 3 times. Linux/Windows take the single-shot path.
         run: |
+          set -e
+          target_flag=""
           if [ -n "${{ matrix.rust_target }}" ]; then
-            cargo tauri build --target ${{ matrix.rust_target }}
+            target_flag="--target ${{ matrix.rust_target }}"
+          fi
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cargo tauri build $target_flag --bundles app
+            attempt=1
+            until cargo tauri build $target_flag --bundles dmg; do
+              if [ $attempt -ge 3 ]; then
+                echo "bundle_dmg.sh failed after $attempt attempts" >&2
+                exit 1
+              fi
+              echo "bundle_dmg.sh failed (attempt $attempt) — retrying after 15s"
+              attempt=$((attempt + 1))
+              sleep 15
+            done
           else
-            cargo tauri build
+            cargo tauri build $target_flag
           fi
 
       - name: Upload artifacts
