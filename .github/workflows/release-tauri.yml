@@ -175,6 +175,7 @@ jobs:
       always() && needs.build.result == 'success' && (
         startsWith(github.ref, 'refs/tags/v4.')
         || needs.tag.outputs.tagged == 'true'
+        || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
       )
     permissions:
       contents: write
@@ -186,7 +187,7 @@ jobs:
       - name: Create / update release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.tag.outputs.tag || github.ref_name }}
+          tag_name: ${{ needs.tag.outputs.tag || inputs.tag || github.ref_name }}
           files: dist/**/*
           fail_on_unmatched_files: false
           generate_release_notes: true
@@ -198,6 +199,7 @@ jobs:
       always() && needs.release.result == 'success' && (
         startsWith(github.ref, 'refs/tags/v4.')
         || needs.tag.outputs.tagged == 'true'
+        || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
       )
     runs-on: windows-latest
     # Non-blocking: winget-releaser only updates EXISTING manifests. The
@@ -212,7 +214,7 @@ jobs:
         id: v
         shell: bash
         run: |
-          tag="${{ needs.tag.outputs.tag || github.ref_name }}"
+          tag="${{ needs.tag.outputs.tag || inputs.tag || github.ref_name }}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
@@ -248,6 +250,7 @@ jobs:
       always() && needs.release.result == 'success' && (
         startsWith(github.ref, 'refs/tags/v4.')
         || needs.tag.outputs.tagged == 'true'
+        || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
       )
     runs-on: ubuntu-22.04
     continue-on-error: true
@@ -257,7 +260,7 @@ jobs:
       - name: Resolve tag/version
         id: v
         run: |
-          tag="${{ needs.tag.outputs.tag || github.ref_name }}"
+          tag="${{ needs.tag.outputs.tag || inputs.tag || github.ref_name }}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
