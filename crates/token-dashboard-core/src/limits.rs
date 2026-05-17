@@ -157,8 +157,15 @@ fn build_window(
 fn compute_limits_from_server<P: AsRef<Path>>(db: P) -> rusqlite::Result<LimitsSnapshot> {
     let plan = queries::get_plan(db.as_ref())?;
     let snap = preferences::get_limits_server_snapshot(db.as_ref())?;
-    let reset_5h = preferences::get_limit_reset_at(db.as_ref(), "limits_five_hour_reset_at")?;
-    let reset_wk = preferences::get_limit_reset_at(db.as_ref(), "limits_weekly_reset_at")?;
+    let conn = rusqlite::Connection::open(db.as_ref())?;
+    let reset_5h = drop_if_past(
+        &conn,
+        preferences::get_limit_reset_at(db.as_ref(), "limits_five_hour_reset_at")?,
+    )?;
+    let reset_wk = drop_if_past(
+        &conn,
+        preferences::get_limit_reset_at(db.as_ref(), "limits_weekly_reset_at")?,
+    )?;
     Ok(LimitsSnapshot {
         plan,
         meta: LimitsMetaOut {
@@ -172,14 +179,31 @@ fn compute_limits_from_server<P: AsRef<Path>>(db: P) -> rusqlite::Result<LimitsS
     })
 }
 
+/// Treat any reset stamp that is already in the past as absent. The OAuth
+/// sync skips writing the header when Anthropic omits it; that left
+/// previous future-pointing stamps lingering in the DB and the UI kept
+/// counting down to a window that had already elapsed.
+fn drop_if_past(
+    conn: &rusqlite::Connection,
+    resets_at: Option<String>,
+) -> rusqlite::Result<Option<String>> {
+    let Some(r) = resets_at else { return Ok(None) };
+    let in_future: i64 = conn.query_row(
+        "SELECT CASE WHEN datetime(?) > datetime('now') THEN 1 ELSE 0 END",
+        params![r],
+        |row| row.get(0),
+    )?;
+    Ok(if in_future == 1 { Some(r) } else { None })
+}
+
 fn server_window(util: Option<f64>, resets_at: Option<String>) -> LimitWindow {
     let pct_used = util.unwrap_or(0.0).clamp(0.0, 1.0);
     let pct_remaining = if util.is_some() { 1.0 - pct_used } else { 0.0 };
     // `anchor = Some(...)` is the "active session" signal for the
-    // frontend; we don't have the open time but we do know the window
-    // is live whenever we have any server data, so use the reset
-    // timestamp as a proxy. The frontend only checks presence, not value.
-    let anchor = if util.is_some() {
+    // frontend. Only assert that signal when the server reports actual
+    // utilization AND we still have a future reset to count down to —
+    // a zero-util sync with no reset header means the window is idle.
+    let anchor = if util.is_some() && (pct_used > 0.0 || resets_at.is_some()) {
         resets_at.clone().or_else(|| Some("server".into()))
     } else {
         None

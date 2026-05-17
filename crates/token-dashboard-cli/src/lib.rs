@@ -1040,12 +1040,19 @@ async fn run_oauth_sync(
                     synced_at: Some(now_iso.clone()),
                 },
             )?;
-            if let Some(v) = result.five_hour_reset_at.as_deref() {
-                preferences::set_limit_reset_at(p, "limits_five_hour_reset_at", Some(v))?;
-            }
-            if let Some(v) = result.weekly_reset_at.as_deref() {
-                preferences::set_limit_reset_at(p, "limits_weekly_reset_at", Some(v))?;
-            }
+            // Mirror None: a missing reset header must clear any prior
+            // (now-stale) timestamp, otherwise the dashboard keeps
+            // counting down to a window that has already elapsed.
+            preferences::set_limit_reset_at(
+                p,
+                "limits_five_hour_reset_at",
+                result.five_hour_reset_at.as_deref(),
+            )?;
+            preferences::set_limit_reset_at(
+                p,
+                "limits_weekly_reset_at",
+                result.weekly_reset_at.as_deref(),
+            )?;
         }
         let meta = preferences::get_limits_sync_meta(p)?;
         Ok(LimitsSyncResponse {
