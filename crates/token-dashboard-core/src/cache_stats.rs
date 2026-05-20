@@ -74,14 +74,13 @@ pub fn cache_trend<P: AsRef<Path>>(db: P, days: u32) -> rusqlite::Result<CacheTr
     }
 
     let avg = |window: usize| -> f64 {
-        let (cr, denom) =
-            days_rows
-                .iter()
-                .rev()
-                .take(window)
-                .fold((0i64, 0i64), |(cr, dn), d| {
-                    (cr + d.cache_read, dn + d.cache_read + d.input)
-                });
+        let (cr, denom) = days_rows
+            .iter()
+            .rev()
+            .take(window)
+            .fold((0i64, 0i64), |(cr, dn), d| {
+                (cr + d.cache_read, dn + d.cache_read + d.input)
+            });
         if denom > 0 {
             cr as f64 / denom as f64
         } else {
@@ -109,13 +108,7 @@ mod tests {
         f
     }
 
-    fn insert_msg(
-        conn: &Connection,
-        uuid: &str,
-        timestamp: &str,
-        input: i64,
-        cache_read: i64,
-    ) {
+    fn insert_msg(conn: &Connection, uuid: &str, timestamp: &str, input: i64, cache_read: i64) {
         conn.execute(
             "INSERT INTO messages \
              (uuid, session_id, project_slug, type, timestamp, model, \
@@ -160,7 +153,11 @@ mod tests {
             .iter()
             .find(|d| d.date == yesterday_date)
             .expect("yesterday row");
-        assert!((d1.hit_rate - 0.9).abs() < 1e-9, "yesterday hit_rate {}", d1.hit_rate);
+        assert!(
+            (d1.hit_rate - 0.9).abs() < 1e-9,
+            "yesterday hit_rate {}",
+            d1.hit_rate
+        );
         let d2 = t
             .days
             .iter()
