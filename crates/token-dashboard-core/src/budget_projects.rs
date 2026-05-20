@@ -109,7 +109,7 @@ pub fn allocations<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<ProjectAllocat
 mod tests {
     use super::*;
     use crate::db::init_db;
-    use rusqlite::Connection;
+    use rusqlite::{params, Connection};
     use tempfile::NamedTempFile;
 
     fn fresh_db() -> NamedTempFile {

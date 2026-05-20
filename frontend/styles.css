@@ -1347,6 +1347,34 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 .dir-a-root .a-threshold-row .a-chip button:hover { border-color: var(--iron-border-2); color: var(--bone); }
 .dir-a-root .a-hint { color: var(--gull); font-size: 12px; }
 
+/* Per-project allocation bar + link-button */
+.dir-a-root .a-stacked-bar {
+  width: 140px;
+  height: 8px;
+  background: var(--panel-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.dir-a-root .a-stacked-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms ease-out;
+}
+.dir-a-root .a-stacked-bar-fill.tone-warn { background: var(--warn); }
+.dir-a-root .a-stacked-bar-fill.tone-bad { background: var(--bad); }
+.dir-a-root .a-stacked-bar-fill.tone-good { background: var(--good); }
+.dir-a-root .a-link-button {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.dir-a-root .a-link-button:hover { color: var(--accent-2); }
+
 /* Calibration cells (Settings → Limits) */
 .dir-a-root .a-cal-grid {
   display: grid;
