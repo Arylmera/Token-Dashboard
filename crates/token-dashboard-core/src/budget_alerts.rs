@@ -20,21 +20,12 @@ use crate::queries::open_ro;
 
 const CONFIG_KEY: &str = "budget_alerts_config";
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct AlertsState {
     /// `YYYY-MM` of the month whose thresholds we already fired for.
     /// New month resets `fired` automatically.
     pub month: String,
     pub fired: Vec<u32>,
-}
-
-impl Default for AlertsState {
-    fn default() -> Self {
-        Self {
-            month: String::new(),
-            fired: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
