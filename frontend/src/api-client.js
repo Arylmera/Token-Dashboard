@@ -128,6 +128,7 @@ const REG = [
   { key: "skills",        trigger: "any",   url: ({ rangeSince, rangeUntil }) => withProvider(`/api/skills${rangeQuery(rangeSince, rangeUntil)}`) },
   { key: "byModel",       trigger: "models", url: ({ rangeSince, rangeUntil }) => withProvider(`/api/by-model${rangeQuery(rangeSince, rangeUntil)}`) },
   { key: "cacheStats",    trigger: "days",  url: () => "/api/cache-stats?days=30", fallback: () => ({ days: [], avg_7d: 0, avg_30d: 0 }) },
+  { key: "burnRate",      trigger: "days",  url: () => "/api/burn-rate?window_days=7", fallback: () => null },
   { key: "prompts",       trigger: "sessions", url: ({ rangeSince, rangeUntil, promptQuery }) => {
       const parts = [];
       if (rangeSince) parts.push(`since=${encodeURIComponent(rangeSince)}`);
@@ -219,6 +220,7 @@ function _rebuildMockData(range) {
     mom:           buildDeltaPair(c.overview30 || {}, c.prevMonthOv || {}),
     peakHour:      buildPeakHour(c.hourlyRaw || []),
     cacheStats:    c.cacheStats || { days: [], avg_7d: 0, avg_30d: 0 },
+    burnRate:      c.burnRate || null,
   };
   // Notify subscribers that MOCK_DATA was mutated. React components read
   // through a Proxy so they need an external nudge to re-render after

@@ -110,6 +110,39 @@ const KpiRow = ({ totals }) => {
   );
 };
 
+const BurnRateCard = () => {
+  const br = D.burnRate;
+  if (!br) return null;
+  const series = (br.daily_series || []).map((d) => d.cost_usd || 0);
+  const daysLeft = br.days_remaining;
+  const tone = daysLeft == null ? ""
+    : daysLeft < 3 ? "tone-bad"
+    : daysLeft < 7 ? "tone-warn"
+    : "tone-good";
+  const fmtDaysLeft = daysLeft == null ? "—"
+    : daysLeft < 1 ? "<1 day"
+    : daysLeft >= 99 ? "99+ days"
+    : `${daysLeft.toFixed(1)} days`;
+  const monthly = br.monthly_budget_usd;
+  const sub = monthly == null
+    ? "set a monthly budget in Settings to enable projection"
+    : `${fmtCost(br.mtd_cost_usd || 0)} of ${fmtCost(monthly)} this month`;
+  return (
+    <div className="a-card">
+      <div className="a-card-head">
+        <h2>Burn rate</h2>
+        <span className="a-card-meta">7-day average · {sub}</span>
+      </div>
+      <div className="a-kpi-row">
+        <KPI label="avg / day" value={fmtCost(br.avg_daily_cost_usd || 0)} />
+        <KPI label="days left" value={<span className={tone}>{fmtDaysLeft}</span>} />
+        <KPI label="hits zero" value={br.projected_exhaustion_date || "—"} />
+      </div>
+      <StripSpark data={series.length ? series : [0]} accent="var(--accent)" />
+    </div>
+  );
+};
+
 const ChartAxis = ({ data, ticks = 7, insetLeft = 0, insetRight = 0 }) => {
   if (!data || data.length === 0) return null;
   const n = data.length;
@@ -673,6 +706,7 @@ export const Overview = () => {
       <TopStrip totals={totals} burn={burn} />
       <BudgetBanner budget={D.budget} />
       <LimitsCard limits={D.limits} enabled={!!(D.prefs && D.prefs.limits_enabled)} />
+      <BurnRateCard />
       <KpiRow totals={totals} />
       <DailyCharts totals={totals} />
       <section className="a-card-row">
