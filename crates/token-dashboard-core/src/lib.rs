@@ -10,6 +10,7 @@
 #![warn(rustdoc::broken_intra_doc_links)]
 
 pub mod anthropic_sync;
+pub mod burn_rate;
 pub mod cache_stats;
 pub mod credentials;
 pub mod db;
