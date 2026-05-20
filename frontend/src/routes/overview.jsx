@@ -535,6 +535,26 @@ const ProjectsTable = ({ totals }) => {
   );
 };
 
+const CacheTrendCard = () => {
+  const cs = D.cacheStats || { days: [], avg_7d: 0, avg_30d: 0 };
+  const series = (cs.days || []).map((d) => d.hit_rate);
+  const last = series.length ? series[series.length - 1] : 0;
+  return (
+    <div className="a-card">
+      <div className="a-card-head">
+        <h2>Cache hit rate</h2>
+        <span className="a-card-meta">30-day trend</span>
+      </div>
+      <div className="a-kpi-row">
+        <KPI label="7-day avg" value={fmtPct(cs.avg_7d)} />
+        <KPI label="30-day avg" value={fmtPct(cs.avg_30d)} />
+        <KPI label="latest day" value={fmtPct(last)} />
+      </div>
+      <StripSpark data={series.length ? series : [0]} accent="var(--accent)" />
+    </div>
+  );
+};
+
 const ModelsCard = () => (
   <div className="a-card">
     <div className="a-card-head"><h2>By model</h2></div>
@@ -662,6 +682,9 @@ export const Overview = () => {
       <section className="a-card-row">
         <PhaseSplitCard phase={D.phase} />
         <TopToolsCard />
+      </section>
+      <section className="a-card-row">
+        <CacheTrendCard />
       </section>
       <RecentSessions />
     </div>
