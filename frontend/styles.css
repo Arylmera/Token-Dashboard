@@ -1264,6 +1264,28 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
   font: 600 16px "JetBrains Mono";
 }
 
+.dir-a-root .a-banner {
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  border-radius: 0 4px 4px 0;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.dir-a-root .a-banner.tone-warn {
+  border-left-color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 10%, transparent);
+}
+.dir-a-root .a-banner.tone-bad {
+  border-left-color: var(--bad);
+  background: color-mix(in oklab, var(--bad) 12%, transparent);
+}
+.dir-a-root .a-banner.tone-good {
+  border-left-color: var(--good);
+  background: color-mix(in oklab, var(--good) 10%, transparent);
+}
+.dir-a-root .a-banner-detail { color: var(--gull); }
+
 /* Calibration cells (Settings → Limits) */
 .dir-a-root .a-cal-grid {
   display: grid;

@@ -873,6 +873,53 @@ struct BudgetResponse {
     monthly: Option<f64>,
 }
 
+async fn budget_alerts_handler(
+    State(s): State<AppState>,
+) -> Result<Json<token_dashboard_core::budget_alerts::AlertResult>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::budget_alerts::check(path.as_ref())).await
+}
+
+async fn budget_alerts_config_get(
+    State(s): State<AppState>,
+) -> Result<Json<token_dashboard_core::budget_alerts::AlertsConfig>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::budget_alerts::get_config(path.as_ref())).await
+}
+
+#[derive(Deserialize, Default)]
+struct BudgetAlertsConfigBody {
+    #[serde(default)]
+    thresholds: Option<Vec<u32>>,
+    #[serde(default)]
+    muted: Option<Vec<u32>>,
+}
+
+async fn budget_alerts_config_post(
+    State(s): State<AppState>,
+    Json(body): Json<BudgetAlertsConfigBody>,
+) -> Result<Json<token_dashboard_core::budget_alerts::AlertsConfig>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(
+        move || -> rusqlite::Result<token_dashboard_core::budget_alerts::AlertsConfig> {
+            let mut cfg = token_dashboard_core::budget_alerts::get_config(path.as_ref())?;
+            if let Some(t) = body.thresholds {
+                cfg.thresholds = t;
+                cfg.thresholds.sort();
+                cfg.thresholds.dedup();
+            }
+            if let Some(m) = body.muted {
+                cfg.muted = m;
+                cfg.muted.sort();
+                cfg.muted.dedup();
+            }
+            token_dashboard_core::budget_alerts::set_config(path.as_ref(), &cfg)?;
+            Ok(cfg)
+        },
+    )
+    .await
+}
+
 async fn budget_get(State(s): State<AppState>) -> Result<Json<BudgetResponse>, ApiError> {
     let path = s.db_path.clone();
     let b = blocking(move || preferences::get_budgets(path.as_ref()))
@@ -2435,6 +2482,11 @@ pub fn app(state: AppState) -> Router {
             get(preferences_get).post(preferences_post),
         )
         .route("/api/budget", get(budget_get).post(budget_post))
+        .route("/api/budget-alerts", get(budget_alerts_handler))
+        .route(
+            "/api/budget-alerts/config",
+            get(budget_alerts_config_get).post(budget_alerts_config_post),
+        )
         .route("/api/limits", get(limits_get))
         .route("/api/limits/sync_oauth", post(limits_sync_oauth))
         .route("/api/limits/oauth_status", get(limits_oauth_status))

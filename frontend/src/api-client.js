@@ -146,6 +146,7 @@ const REG = [
   { key: "planResp",      trigger: "static", url: () => "/api/plan",   fallback: () => ({ plan: "max" }) },
   { key: "limitsResp",    trigger: "static", url: () => "/api/limits", fallback: () => null },
   { key: "budgetResp",    trigger: "static", url: () => "/api/budget", fallback: () => null },
+  { key: "budgetAlerts",  trigger: "any",    url: () => "/api/budget-alerts", fallback: () => null },
   { key: "phaseResp",     trigger: "any",   url: ({ rangeSince, rangeUntil }) => withProvider(`/api/phase-split${rangeQuery(rangeSince, rangeUntil)}`), fallback: () => null },
   { key: "tagsResp",      trigger: "static", url: () => "/api/tags", fallback: () => [] },
   { key: "prefsResp",     trigger: "static", url: () => "/api/preferences", fallback: () => null },
@@ -221,6 +222,7 @@ function _rebuildMockData(range) {
     peakHour:      buildPeakHour(c.hourlyRaw || []),
     cacheStats:    c.cacheStats || { days: [], avg_7d: 0, avg_30d: 0 },
     burnRate:      c.burnRate || null,
+    budgetAlerts:  c.budgetAlerts || null,
   };
   // Notify subscribers that MOCK_DATA was mutated. React components read
   // through a Proxy so they need an external nudge to re-render after
