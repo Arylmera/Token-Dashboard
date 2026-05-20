@@ -127,6 +127,7 @@ const REG = [
   { key: "topSessionsRaw", trigger: "sessions", url: () => withProvider(`/api/sessions?order=cost&limit=50`), fallback: () => [] },
   { key: "skills",        trigger: "any",   url: ({ rangeSince, rangeUntil }) => withProvider(`/api/skills${rangeQuery(rangeSince, rangeUntil)}`) },
   { key: "byModel",       trigger: "models", url: ({ rangeSince, rangeUntil }) => withProvider(`/api/by-model${rangeQuery(rangeSince, rangeUntil)}`) },
+  { key: "cacheStats",    trigger: "days",  url: () => "/api/cache-stats?days=30", fallback: () => ({ days: [], avg_7d: 0, avg_30d: 0 }) },
   { key: "prompts",       trigger: "sessions", url: ({ rangeSince, rangeUntil, promptQuery }) => {
       const parts = [];
       if (rangeSince) parts.push(`since=${encodeURIComponent(rangeSince)}`);
@@ -217,6 +218,7 @@ function _rebuildMockData(range) {
     wow:           buildDeltaPair(c.overview7 || {}, c.prevWeekOv || {}),
     mom:           buildDeltaPair(c.overview30 || {}, c.prevMonthOv || {}),
     peakHour:      buildPeakHour(c.hourlyRaw || []),
+    cacheStats:    c.cacheStats || { days: [], avg_7d: 0, avg_30d: 0 },
   };
   // Notify subscribers that MOCK_DATA was mutated. React components read
   // through a Proxy so they need an external nudge to re-render after
