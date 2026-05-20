@@ -335,6 +335,63 @@ pub fn set_budget<P: AsRef<Path>>(
     }
 }
 
+/// Per-project monthly budget caps. Stored as individual `plan` rows under
+/// `budget_project_<slug>_usd` so we can add/remove projects without a
+/// schema change.
+fn project_cap_key(slug: &str) -> String {
+    format!("budget_project_{slug}_usd")
+}
+
+/// Read the configured monthly cap for `slug`, or `None` if unset / zero.
+pub fn get_project_budget<P: AsRef<Path>>(db: P, slug: &str) -> rusqlite::Result<Option<f64>> {
+    let key = project_cap_key(slug);
+    Ok(read_str(db, &key)?
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|f| *f > 0.0))
+}
+
+/// Persist a per-project cap. Pass `None` or `<= 0` to clear it.
+pub fn set_project_budget<P: AsRef<Path>>(
+    db: P,
+    slug: &str,
+    amount: Option<f64>,
+) -> rusqlite::Result<Option<f64>> {
+    let key = project_cap_key(slug);
+    match amount.filter(|v| *v > 0.0) {
+        Some(v) => {
+            write_str(db, &key, &v.to_string())?;
+            Ok(Some(v))
+        }
+        None => {
+            delete_key(db, &key)?;
+            Ok(None)
+        }
+    }
+}
+
+/// Enumerate all `(slug, cap_usd)` pairs currently configured.
+pub fn list_project_budgets<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<(String, f64)>> {
+    let c = open(db)?;
+    let mut stmt =
+        c.prepare("SELECT k, v FROM plan WHERE k LIKE 'budget_project_%_usd' ORDER BY k")?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (k, v) = row?;
+        if let Some(slug) = k
+            .strip_prefix("budget_project_")
+            .and_then(|s| s.strip_suffix("_usd"))
+        {
+            if let Ok(amount) = v.parse::<f64>() {
+                if amount > 0.0 {
+                    out.push((slug.to_string(), amount));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Read a stored ISO `…Z` timestamp for one of the limit-reset keys.
 pub fn get_limit_reset_at<P: AsRef<Path>>(db: P, key: &str) -> rusqlite::Result<Option<String>> {
     if !LIMIT_RESET_KEYS.contains(&key) {
