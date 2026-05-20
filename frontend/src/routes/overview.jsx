@@ -110,6 +110,25 @@ const KpiRow = ({ totals }) => {
   );
 };
 
+const BudgetAlertBanner = () => {
+  const a = D.budgetAlerts;
+  if (!a || !a.newly_crossed || a.newly_crossed.length === 0) return null;
+  const max = Math.max(...a.newly_crossed);
+  const tone = max >= 100 ? "tone-bad" : max >= 80 ? "tone-warn" : "tone-good";
+  const label = max >= 100 ? "Monthly budget reached"
+    : max >= 80 ? `${max}% of monthly budget consumed`
+    : `${max}% of monthly budget consumed`;
+  const detail = a.monthly_budget_usd != null
+    ? `${fmtCost(a.mtd_cost_usd || 0)} of ${fmtCost(a.monthly_budget_usd)} (${(a.percent || 0).toFixed(0)}%)`
+    : "";
+  return (
+    <div className={`a-banner ${tone}`}>
+      <strong>{label}</strong>
+      {detail && <span className="a-banner-detail"> · {detail}</span>}
+    </div>
+  );
+};
+
 const BurnRateCard = () => {
   const br = D.burnRate;
   if (!br) return null;
@@ -704,6 +723,7 @@ export const Overview = () => {
   return (
     <div className="a-route">
       <TopStrip totals={totals} burn={burn} />
+      <BudgetAlertBanner />
       <BudgetBanner budget={D.budget} />
       <LimitsCard limits={D.limits} enabled={!!(D.prefs && D.prefs.limits_enabled)} />
       <BurnRateCard />
