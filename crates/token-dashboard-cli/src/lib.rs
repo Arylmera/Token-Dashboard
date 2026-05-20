@@ -920,6 +920,39 @@ async fn budget_alerts_config_post(
     .await
 }
 
+async fn budget_projects_get(
+    State(s): State<AppState>,
+) -> Result<Json<Vec<token_dashboard_core::budget_projects::ProjectAllocation>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::budget_projects::allocations(path.as_ref())).await
+}
+
+#[derive(Deserialize)]
+struct ProjectBudgetBody {
+    slug: String,
+    #[serde(default)]
+    amount: Option<f64>,
+}
+
+async fn budget_projects_post(
+    State(s): State<AppState>,
+    Json(body): Json<ProjectBudgetBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let path = s.db_path.clone();
+    let amount = body.amount;
+    let slug_for_save = body.slug.clone();
+    blocking_unit(move || {
+        token_dashboard_core::preferences::set_project_budget(path.as_ref(), &slug_for_save, amount)
+            .map(|_| ())
+    })
+    .await?;
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "slug": body.slug,
+        "amount": body.amount,
+    })))
+}
+
 async fn budget_get(State(s): State<AppState>) -> Result<Json<BudgetResponse>, ApiError> {
     let path = s.db_path.clone();
     let b = blocking(move || preferences::get_budgets(path.as_ref()))
@@ -2482,6 +2515,10 @@ pub fn app(state: AppState) -> Router {
             get(preferences_get).post(preferences_post),
         )
         .route("/api/budget", get(budget_get).post(budget_post))
+        .route(
+            "/api/budget/projects",
+            get(budget_projects_get).post(budget_projects_post),
+        )
         .route("/api/budget-alerts", get(budget_alerts_handler))
         .route(
             "/api/budget-alerts/config",

@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::Path;
 
-use rusqlite::params;
 use serde::Serialize;
 
 use crate::preferences;
