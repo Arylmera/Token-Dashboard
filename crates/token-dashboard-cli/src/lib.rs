@@ -528,6 +528,21 @@ async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, String> {
         "days": stats.days,
         "models": stats.models,
     }));
+    // Best-effort budget-threshold check. Failure must not abort the scan path.
+    // `check` persists the fired state internally so subsequent calls won't re-fire
+    // already-crossed thresholds within the same month.
+    if let Ok(result) = token_dashboard_core::budget_alerts::check(s.db_path.as_ref()) {
+        if !result.newly_crossed.is_empty() {
+            let _ = s.events.send(serde_json::json!({
+                "type": "budget_alert",
+                "mtd_cost_usd": result.mtd_cost_usd,
+                "monthly_budget_usd": result.monthly_budget_usd,
+                "percent": result.percent,
+                "newly_crossed": result.newly_crossed,
+                "month": result.month,
+            }));
+        }
+    }
     // When the OAuth limits source is active, piggy-back on the
     // activity signal from the scan to refresh the rate-limit headers
     // — but throttle so a chatty session doesn't burn a Haiku token
