@@ -85,3 +85,21 @@ Projects routes show `project_name` equal to the JSONL directory slug
 that derived friendlier names in 3.x is a Phase 2 follow-up. The slug
 is still informative — it's the directory under
 `~/.claude/projects/`.
+
+## Budget threshold notifications are platform-conditional
+
+When you cross a configured budget threshold (50/80/100% by default,
+edit the list via `POST /api/budget-alerts/config`), the Tauri shell
+fires an OS notification. Behavior varies:
+
+- **Windows**: shown as a standard toast.
+- **macOS**: first run prompts for notification permission. If you
+  decline, notifications stay silent until you re-enable in
+  System Settings → Notifications → Token Dashboard.
+- **Linux**: requires a running notification daemon (most desktop
+  environments ship one). Notifications no-op silently if absent.
+
+The in-app banner on the Overview page is the fallback — it always
+appears regardless of OS notification state. The Tauri shell also
+needs to be running for OS notifications; headless CLI runs only
+broadcast the SSE event without surfacing a toast.
