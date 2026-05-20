@@ -236,6 +236,20 @@ async fn cache_stats_handler(
     blocking(move || token_dashboard_core::cache_stats::cache_trend(path.as_ref(), days)).await
 }
 
+#[derive(Deserialize, Default)]
+struct BurnRateQuery {
+    window_days: Option<u32>,
+}
+
+async fn burn_rate_handler(
+    State(s): State<AppState>,
+    Query(q): Query<BurnRateQuery>,
+) -> Result<Json<token_dashboard_core::burn_rate::BurnRate>, ApiError> {
+    let window = q.window_days.unwrap_or(7).clamp(1, 90);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::burn_rate::burn_rate(path.as_ref(), window)).await
+}
+
 #[derive(Serialize)]
 struct ModelRowWithCost {
     #[serde(flatten)]
@@ -2400,6 +2414,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/tools", get(tools))
         .route("/api/daily", get(daily))
         .route("/api/cache-stats", get(cache_stats_handler))
+        .route("/api/burn-rate", get(burn_rate_handler))
         .route("/api/by-model", get(by_model))
         .route("/api/tags", get(tags))
         .route("/api/hourly", get(hourly))
