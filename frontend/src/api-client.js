@@ -611,7 +611,11 @@ function _onPayload(payload) {
     case "scan_complete":
       // Fresh transcripts → everything in the dashboard view may have moved.
       _markFresh();
-      loadDelta({ scan: true }).catch((e) => console.warn("loadDelta scan", e));
+      // Pass the full payload (sessions/projects/days/models hints) so
+      // pickEntries can route the refetch to the right registry slots —
+      // notably the "days"-triggered overviewToday/overviewYday/daily/
+      // hourlyRaw set, which would otherwise never refresh after init.
+      loadDelta(payload).catch((e) => console.warn("loadDelta scan", e));
       break;
     case "preferences":
     case "plan":
