@@ -1286,6 +1286,67 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 }
 .dir-a-root .a-banner-detail { color: var(--gull); }
 
+/* Budget tab layout */
+.dir-a-root .a-budget-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+.dir-a-root .a-budget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.dir-a-root .a-budget-field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dir-a-root .a-budget-field-stack input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--iron-border);
+  color: var(--bone);
+  border-radius: 3px;
+  font: inherit;
+}
+.dir-a-root .a-threshold-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.dir-a-root .a-threshold-row .a-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--iron-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  background: var(--panel-2);
+}
+.dir-a-root .a-threshold-row .a-chip.is-on {
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border-color: var(--accent-2);
+}
+.dir-a-root .a-threshold-row .a-chip.is-muted { opacity: 0.55; }
+.dir-a-root .a-threshold-row .a-chip input { margin: 0; }
+.dir-a-root .a-threshold-row .a-chip button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--gull);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.dir-a-root .a-threshold-row .a-chip button:hover { border-color: var(--iron-border-2); color: var(--bone); }
+.dir-a-root .a-hint { color: var(--gull); font-size: 12px; }
+
 /* Calibration cells (Settings → Limits) */
 .dir-a-root .a-cal-grid {
   display: grid;
