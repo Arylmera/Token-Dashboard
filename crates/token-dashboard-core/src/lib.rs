@@ -11,6 +11,7 @@
 
 pub mod anthropic_sync;
 pub mod budget_alerts;
+pub mod budget_history;
 pub mod budget_projects;
 pub mod burn_rate;
 pub mod cache_stats;

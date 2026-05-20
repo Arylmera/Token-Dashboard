@@ -1375,6 +1375,40 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 }
 .dir-a-root .a-link-button:hover { color: var(--accent-2); }
 
+/* Window switcher (used by BurnRatePanel + BudgetHistoryTable) */
+.dir-a-root .a-window-switcher { display: inline-flex; gap: 4px; }
+.dir-a-root .a-window-switcher button {
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--iron-border);
+  color: var(--gull);
+  cursor: pointer;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 12px;
+}
+.dir-a-root .a-window-switcher button:hover { color: var(--bone); }
+.dir-a-root .a-window-switcher button.active {
+  color: var(--bone);
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+/* Burn-rate chart */
+.dir-a-root .a-burn-chart { display: block; margin-top: 12px; max-height: 200px; }
+.dir-a-root .a-burn-area { fill: color-mix(in oklab, var(--accent) 22%, transparent); }
+.dir-a-root .a-burn-line { stroke: var(--accent); stroke-width: 1.5; }
+.dir-a-root .a-burn-guideline {
+  stroke: var(--warn);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+.dir-a-root .a-burn-guideline-label { fill: var(--warn); font-size: 10px; }
+.dir-a-root .a-chart-gridline { stroke: var(--iron-border); stroke-width: 0.5; opacity: 0.5; }
+.dir-a-root .a-chart-axislabel { fill: var(--gull); font-size: 10px; }
+.dir-a-root .a-chart-empty { fill: var(--gull); font-size: 12px; }
+
 /* Calibration cells (Settings → Limits) */
 .dir-a-root .a-cal-grid {
   display: grid;

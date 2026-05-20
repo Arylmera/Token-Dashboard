@@ -968,6 +968,20 @@ async fn budget_projects_post(
     })))
 }
 
+#[derive(Deserialize, Default)]
+struct BudgetHistoryQuery {
+    months: Option<u32>,
+}
+
+async fn budget_history_get(
+    State(s): State<AppState>,
+    Query(q): Query<BudgetHistoryQuery>,
+) -> Result<Json<Vec<token_dashboard_core::budget_history::MonthRow>>, ApiError> {
+    let months = q.months.unwrap_or(6).clamp(1, 36);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::budget_history::history(path.as_ref(), months)).await
+}
+
 async fn budget_get(State(s): State<AppState>) -> Result<Json<BudgetResponse>, ApiError> {
     let path = s.db_path.clone();
     let b = blocking(move || preferences::get_budgets(path.as_ref()))
@@ -2534,6 +2548,7 @@ pub fn app(state: AppState) -> Router {
             "/api/budget/projects",
             get(budget_projects_get).post(budget_projects_post),
         )
+        .route("/api/budget/history", get(budget_history_get))
         .route("/api/budget-alerts", get(budget_alerts_handler))
         .route(
             "/api/budget-alerts/config",
