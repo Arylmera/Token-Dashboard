@@ -149,8 +149,10 @@ const BurnRateCard = () => {
     : daysLeft < 3 ? "tone-bad"
     : daysLeft < 7 ? "tone-warn"
     : "tone-good";
+  // Under 48h, hours are more meaningful than fractional days — switch
+  // units so "0.4 days" reads as "10 h".
   const fmtDaysLeft = daysLeft == null ? "—"
-    : daysLeft < 1 ? "<1 day"
+    : daysLeft < 2 ? `${Math.max(0, Math.round(daysLeft * 24))} h`
     : daysLeft >= 99 ? "99+ days"
     : `${daysLeft.toFixed(1)} days`;
 

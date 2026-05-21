@@ -117,7 +117,11 @@ export function BurnRatePanel() {
           label="days left"
           value={
             <span className={tone}>
-              {daysLeft == null ? "—" : daysLeft < 1 ? "<1" : daysLeft.toFixed(1)}
+              {daysLeft == null
+                ? "—"
+                : daysLeft < 2
+                  ? `${Math.max(0, Math.round(daysLeft * 24))} h`
+                  : daysLeft.toFixed(1)}
             </span>
           }
         />
