@@ -26,6 +26,7 @@ pub mod scanner;
 pub mod skills_catalog;
 pub mod sources;
 pub mod tips;
+pub mod tool_costs;
 
 pub use db::{default_db_path, init_db, open};
 pub use limits::{compute_limits, LimitWindow, LimitsSnapshot};
