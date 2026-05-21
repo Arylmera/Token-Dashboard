@@ -186,6 +186,7 @@ const CacheTable = ({ rows }) => {
     cacheCreate: (r) => r.cacheCreate || 0,
   });
   const headProps = { state: sortState, requestSort };
+  const { slice, ...nav } = usePaginated(sorted);
   const maxRead = Math.max(1, ...rows.map((r) => r.cacheRead || 0));
   return (
     <div className="a-table-scroll">
