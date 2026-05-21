@@ -19,13 +19,16 @@ pub mod cache_stats;
 pub mod credentials;
 pub mod db;
 pub mod limits;
+pub mod loop_detector;
 pub mod preferences;
 pub mod pricing;
 pub mod providers;
 pub mod queries;
+pub mod remote_sources;
 pub mod scanner;
 pub mod skills_catalog;
 pub mod sources;
+pub mod sync_snapshot;
 pub mod tips;
 pub mod tool_costs;
 
