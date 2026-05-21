@@ -1286,6 +1286,26 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 }
 .dir-a-root .a-banner-detail { color: var(--gull); }
 
+/* Compact burn-rate card on Overview (graph migrated to TopStrip overlay) */
+.dir-a-root .a-burn-rate-compact { padding-bottom: 8px; }
+.dir-a-root .a-burn-rate-compact .a-kpi-row { padding: 4px 0; }
+
+/* TopStrip overlay legend */
+.dir-a-root .a-strip-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--gull);
+}
+.dir-a-root .a-strip-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.dir-a-root .a-strip-legend-sw { width: 10px; height: 2px; display: inline-block; background: var(--accent); }
+.dir-a-root .a-strip-legend-sw-dashed {
+  background: transparent;
+  border-top: 1px dashed var(--warn);
+  height: 0;
+}
+
 /* Budget tab layout */
 .dir-a-root .a-budget-tab {
   display: flex;

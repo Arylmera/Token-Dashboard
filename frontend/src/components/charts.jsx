@@ -101,11 +101,21 @@ export const AreaChart = ({
   );
 };
 
-export const StripSpark = ({ data, accent = "var(--accent)", height = 38 }) => {
+export const StripSpark = ({
+  data,
+  accent = "var(--accent)",
+  height = 38,
+  overlayData = null,
+  overlayAccent = "var(--warn)",
+}) => {
   if (!data || data.length === 0) return <div className="a-strip-spark" />;
-  const max = Math.max(...data) || 1;
-  const range = max || 1;
   const w = 100;
+  // When an overlay series is present, share the y-axis so both curves stay
+  // visually comparable — pick max across both.
+  const overlay = Array.isArray(overlayData) && overlayData.length > 0 ? overlayData : null;
+  const max =
+    Math.max(...data, ...(overlay || []), 0.0001) || 1;
+  const range = max || 1;
   const denom = Math.max(1, data.length - 1);
   const pts = data.map((v, i) => ({ x: (i / denom) * w, y: height - (v / range) * (height - 8) - 4 }));
   const line = smoothPath(pts);
@@ -113,6 +123,17 @@ export const StripSpark = ({ data, accent = "var(--accent)", height = 38 }) => {
   const cursorY = height - (data[data.length - 1] / range) * (height - 8) - 4;
   const dotTopPct = (cursorY / height) * 100;
   const gid = randId("a-strip-grad");
+
+  let overlayLine = null;
+  if (overlay) {
+    const odenom = Math.max(1, overlay.length - 1);
+    const opts = overlay.map((v, i) => ({
+      x: (i / odenom) * w,
+      y: height - (v / range) * (height - 8) - 4,
+    }));
+    overlayLine = smoothPath(opts);
+  }
+
   return (
     <div className="a-strip-spark">
       <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="a-strip-spark-svg">
@@ -122,6 +143,17 @@ export const StripSpark = ({ data, accent = "var(--accent)", height = 38 }) => {
             <stop offset="100%" stopColor={accent} stopOpacity="0" />
           </linearGradient>
         </defs>
+        {overlayLine && (
+          <path
+            d={overlayLine}
+            fill="none"
+            stroke={overlayAccent}
+            strokeWidth="0.7"
+            strokeDasharray="2 2"
+            opacity="0.85"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
         <path d={area} fill={`url(#${gid})`} />
         <path d={line} fill="none" stroke={accent} strokeWidth="0.8" vectorEffect="non-scaling-stroke" />
         <line x1={w} y1="0" x2={w} y2={height} stroke={accent} strokeWidth="0.4" opacity="0.6" vectorEffect="non-scaling-stroke" />

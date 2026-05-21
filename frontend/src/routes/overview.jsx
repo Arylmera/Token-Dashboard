@@ -132,7 +132,6 @@ const BudgetAlertBanner = () => {
 const BurnRateCard = () => {
   const br = D.burnRate;
   if (!br) return null;
-  const series = (br.daily_series || []).map((d) => d.cost_usd || 0);
   const daysLeft = br.days_remaining;
   const tone = daysLeft == null ? ""
     : daysLeft < 3 ? "tone-bad"
@@ -147,17 +146,16 @@ const BurnRateCard = () => {
     ? "set a monthly budget in Settings to enable projection"
     : `${fmtCost(br.mtd_cost_usd || 0)} of ${fmtCost(monthly)} this month`;
   return (
-    <div className="a-card">
+    <div className="a-card a-burn-rate-compact">
       <div className="a-card-head">
         <h2>Burn rate</h2>
-        <span className="a-card-meta">7-day average · {sub}</span>
+        <span className="a-card-meta">7-day average · {sub} · trend overlaid on Today</span>
       </div>
       <div className="a-kpi-row">
         <KPI label="avg / day" value={fmtCost(br.avg_daily_cost_usd || 0)} />
         <KPI label="days left" value={<span className={tone}>{fmtDaysLeft}</span>} />
         <KPI label="hits zero" value={br.projected_exhaustion_date || "—"} />
       </div>
-      <StripSpark data={series.length ? series : [0]} accent="var(--accent)" />
     </div>
   );
 };
@@ -485,35 +483,52 @@ const LimitsCard = ({ limits, enabled }) => {
   );
 };
 
-const TopStrip = ({ totals, burn }) => (
-  <section className="a-strip">
-    <div className="a-strip-left">
-      <div className="a-label">today · live</div>
-      <div className="a-strip-num">{fmtCost(totals.today)}</div>
-      <div className="a-strip-sub">
-        {fmtTokens(totals.todayTokens)} tok · vs {fmtCost(totals.yesterday)} yesterday · {totals.rangeSessions || 0} sessions·{totals.rangeKey || "30d"}
-      </div>
-    </div>
-    <div className="a-strip-mid">
-      <StripSpark data={D.hourly} accent="var(--accent)" height={38} />
-      <div className="a-strip-axis">
-        <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>now</span>
-      </div>
-    </div>
-    <div className="a-strip-right">
-      <div className="a-label">burn rate</div>
-      <div className="a-strip-num">${burn.rate.toFixed(2)}<span className="a-strip-unit">/hr</span></div>
-      <div className="a-gauge">
-        <div className="a-gauge-track">
-          <div className="a-gauge-fill" style={{ width: `${Math.min(burn.multiple / 6, 1) * 100}%` }} />
-          <div className="a-gauge-marker" style={{ left: `${(1 / 6) * 100}%` }} title="weekly avg" />
+const TopStrip = ({ totals, burn }) => {
+  const burnSeries = (D.burnRate && Array.isArray(D.burnRate.daily_series))
+    ? D.burnRate.daily_series.map((d) => d.cost_usd || 0)
+    : null;
+  return (
+    <section className="a-strip">
+      <div className="a-strip-left">
+        <div className="a-label">today · live</div>
+        <div className="a-strip-num">{fmtCost(totals.today)}</div>
+        <div className="a-strip-sub">
+          {fmtTokens(totals.todayTokens)} tok · vs {fmtCost(totals.yesterday)} yesterday · {totals.rangeSessions || 0} sessions·{totals.rangeKey || "30d"}
         </div>
-        <div className="a-gauge-axis"><span>0×</span><span>1× avg</span><span>6×</span></div>
       </div>
-      <div className="a-strip-sub tone-good">▲ {burn.multiple.toFixed(1)}× weekly avg</div>
-    </div>
-  </section>
-);
+      <div className="a-strip-mid">
+        <StripSpark
+          data={D.hourly}
+          overlayData={burnSeries}
+          overlayAccent="var(--warn)"
+          accent="var(--accent)"
+          height={38}
+        />
+        <div className="a-strip-axis">
+          <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>now</span>
+        </div>
+        {burnSeries && (
+          <div className="a-strip-legend">
+            <span className="a-strip-legend-item"><span className="a-strip-legend-sw" style={{ background: "var(--accent)" }} /> today · hourly</span>
+            <span className="a-strip-legend-item"><span className="a-strip-legend-sw a-strip-legend-sw-dashed" style={{ borderColor: "var(--warn)" }} /> burn · 7d daily</span>
+          </div>
+        )}
+      </div>
+      <div className="a-strip-right">
+        <div className="a-label">burn rate</div>
+        <div className="a-strip-num">${burn.rate.toFixed(2)}<span className="a-strip-unit">/hr</span></div>
+        <div className="a-gauge">
+          <div className="a-gauge-track">
+            <div className="a-gauge-fill" style={{ width: `${Math.min(burn.multiple / 6, 1) * 100}%` }} />
+            <div className="a-gauge-marker" style={{ left: `${(1 / 6) * 100}%` }} title="weekly avg" />
+          </div>
+          <div className="a-gauge-axis"><span>0×</span><span>1× avg</span><span>6×</span></div>
+        </div>
+        <div className="a-strip-sub tone-good">▲ {burn.multiple.toFixed(1)}× weekly avg</div>
+      </div>
+    </section>
+  );
+};
 
 const DailyCharts = ({ totals }) => {
   const rangeDays = rangeDaysFromKey(totals.rangeKey);
