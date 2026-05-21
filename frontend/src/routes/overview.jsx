@@ -635,21 +635,40 @@ const ProjectsTable = ({ totals }) => {
 };
 
 const CacheTrendCard = () => {
-  const cs = D.cacheStats || { days: [], avg_7d: 0, avg_30d: 0 };
-  const series = (cs.days || []).map((d) => d.hit_rate);
-  const last = series.length ? series[series.length - 1] : 0;
+  const cs = D.cacheStats || { days: [], avg_7d: 0, avg_30d: 0, churn_7d: 0, churn_30d: 0 };
+  const hitSeries = (cs.days || []).map((d) => d.hit_rate);
+  const churnSeries = (cs.days || []).map((d) => d.churn_rate);
+  const lastHit = hitSeries.length ? hitSeries[hitSeries.length - 1] : 0;
+  const lastChurn = churnSeries.length ? churnSeries[churnSeries.length - 1] : 0;
   return (
     <div className="a-card">
       <div className="a-card-head">
-        <h2>Cache hit rate</h2>
-        <span className="a-card-meta">30-day trend</span>
+        <h2>Cache mix</h2>
+        <span className="a-card-meta">
+          30-day · hit = reuse rate · churn = new-entry seeding rate
+        </span>
       </div>
       <div className="a-kpi-row">
-        <KPI label="7-day avg" value={fmtPct(cs.avg_7d)} />
-        <KPI label="30-day avg" value={fmtPct(cs.avg_30d)} />
-        <KPI label="latest day" value={fmtPct(last)} />
+        <KPI label="hit 7d" value={fmtPct(cs.avg_7d)} />
+        <KPI label="hit 30d" value={fmtPct(cs.avg_30d)} />
+        <KPI label="churn 7d" value={fmtPct(cs.churn_7d || 0)} />
+        <KPI label="churn 30d" value={fmtPct(cs.churn_30d || 0)} />
+        <KPI label="today" value={`${fmtPct(lastHit)} / ${fmtPct(lastChurn)}`} />
       </div>
-      <StripSpark data={series.length ? series : [0]} accent="var(--accent)" />
+      <StripSpark
+        data={hitSeries.length ? hitSeries : [0]}
+        overlayData={churnSeries.length ? churnSeries : null}
+        accent="var(--accent)"
+        overlayAccent="var(--warn)"
+      />
+      <div className="a-strip-legend">
+        <span className="a-strip-legend-item">
+          <span className="a-strip-legend-sw" style={{ background: "var(--accent)" }} /> hit rate
+        </span>
+        <span className="a-strip-legend-item">
+          <span className="a-strip-legend-sw a-strip-legend-sw-dashed" style={{ borderColor: "var(--warn)" }} /> churn rate
+        </span>
+      </div>
     </div>
   );
 };

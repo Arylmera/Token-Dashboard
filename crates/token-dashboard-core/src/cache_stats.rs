@@ -1,9 +1,14 @@
 //! Cache hit-rate trend over a recent window of days.
 //!
-//! Hit rate is `cache_read / (input + cache_read)` per day (token-weighted),
-//! computed from assistant messages only. `cache_create_*` tokens are
-//! deliberately excluded from the denominator — those are misses being
-//! seeded, not lookups.
+//! Per-day "hit rate" is `cache_read / (input + cache_read + cache_create_5m
+//! + cache_create_1h)` — every input-side token category goes in the
+//! denominator, so the rate drops when sessions churn new cache entries
+//! (mostly session starts) and climbs when most prompts are pulling from
+//! an existing cache. The earlier formula excluded cache_create_* and the
+//! metric saturated near 100% for every day, making the chart useless.
+//!
+//! Also surfaced: `churn_rate` (cache_create share of total) so the UI
+//! can show when new sessions are pushing fresh entries vs replaying.
 
 use std::path::Path;
 
@@ -19,7 +24,11 @@ pub struct DailyCache {
     pub cache_read: i64,
     pub cache_create_5m: i64,
     pub cache_create_1h: i64,
+    /// `cache_read / (input + cache_read + cache_create_5m + cache_create_1h)`.
     pub hit_rate: f64,
+    /// `(cache_create_5m + cache_create_1h) / total`. Spikes on session
+    /// starts when fresh cache entries are seeded.
+    pub churn_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -27,6 +36,8 @@ pub struct CacheTrend {
     pub days: Vec<DailyCache>,
     pub avg_7d: f64,
     pub avg_30d: f64,
+    pub churn_7d: f64,
+    pub churn_30d: f64,
 }
 
 /// Aggregate per-day cache-token totals over the last `days` days and
@@ -57,9 +68,14 @@ pub fn cache_trend<P: AsRef<Path>>(db: P, days: u32) -> rusqlite::Result<CacheTr
     let mut days_rows: Vec<DailyCache> = Vec::new();
     for row in rows {
         let (date, input, cache_read, c5, c1) = row?;
-        let denom = input + cache_read;
+        let denom = input + cache_read + c5 + c1;
         let hit_rate = if denom > 0 {
             cache_read as f64 / denom as f64
+        } else {
+            0.0
+        };
+        let churn_rate = if denom > 0 {
+            (c5 + c1) as f64 / denom as f64
         } else {
             0.0
         };
@@ -70,16 +86,20 @@ pub fn cache_trend<P: AsRef<Path>>(db: P, days: u32) -> rusqlite::Result<CacheTr
             cache_create_5m: c5,
             cache_create_1h: c1,
             hit_rate,
+            churn_rate,
         });
     }
 
-    let avg = |window: usize| -> f64 {
+    let avg_hit = |window: usize| -> f64 {
         let (cr, denom) = days_rows
             .iter()
             .rev()
             .take(window)
             .fold((0i64, 0i64), |(cr, dn), d| {
-                (cr + d.cache_read, dn + d.cache_read + d.input)
+                (
+                    cr + d.cache_read,
+                    dn + d.cache_read + d.input + d.cache_create_5m + d.cache_create_1h,
+                )
             });
         if denom > 0 {
             cr as f64 / denom as f64
@@ -87,10 +107,30 @@ pub fn cache_trend<P: AsRef<Path>>(db: P, days: u32) -> rusqlite::Result<CacheTr
             0.0
         }
     };
+    let avg_churn = |window: usize| -> f64 {
+        let (create, denom) =
+            days_rows
+                .iter()
+                .rev()
+                .take(window)
+                .fold((0i64, 0i64), |(cc, dn), d| {
+                    (
+                        cc + d.cache_create_5m + d.cache_create_1h,
+                        dn + d.cache_read + d.input + d.cache_create_5m + d.cache_create_1h,
+                    )
+                });
+        if denom > 0 {
+            create as f64 / denom as f64
+        } else {
+            0.0
+        }
+    };
 
     Ok(CacheTrend {
-        avg_7d: avg(7),
-        avg_30d: avg(30),
+        avg_7d: avg_hit(7),
+        avg_30d: avg_hit(30),
+        churn_7d: avg_churn(7),
+        churn_30d: avg_churn(30),
         days: days_rows,
     })
 }
