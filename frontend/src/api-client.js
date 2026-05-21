@@ -130,6 +130,7 @@ const REG = [
   { key: "toolCosts",     trigger: "any",   url: () => "/api/tool-costs?days=30", fallback: () => ({ tools: [], mcp_servers: [], total_cost_usd: 0, days: 30 }) },
   { key: "cacheStats",    trigger: "days",  url: () => "/api/cache-stats?days=30", fallback: () => ({ days: [], avg_7d: 0, avg_30d: 0 }) },
   { key: "burnRate",      trigger: "days",  url: () => "/api/burn-rate?window_days=7", fallback: () => null },
+  { key: "anomalies",     trigger: "sessions", url: () => "/api/anomalies?days=30&k=3", fallback: () => [] },
   { key: "prompts",       trigger: "sessions", url: ({ rangeSince, rangeUntil, promptQuery }) => {
       const parts = [];
       if (rangeSince) parts.push(`since=${encodeURIComponent(rangeSince)}`);
@@ -225,6 +226,7 @@ function _rebuildMockData(range) {
     burnRate:      c.burnRate || null,
     budgetAlerts:  c.budgetAlerts || null,
     toolCosts:     c.toolCosts || { tools: [], mcp_servers: [], total_cost_usd: 0, days: 30 },
+    anomalies:     Array.isArray(c.anomalies) ? c.anomalies : [],
   };
   // Notify subscribers that MOCK_DATA was mutated. React components read
   // through a Proxy so they need an external nudge to re-render after
