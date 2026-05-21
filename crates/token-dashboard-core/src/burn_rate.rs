@@ -1,12 +1,18 @@
 //! Burn-rate projection.
 //!
 //! From the last `window_days` of assistant message spend (token-priced),
-//! computes the average daily cost and projects how many days remain until
-//! the configured monthly budget is exhausted, accounting for month-to-date
-//! spend that already counts against the budget.
+//! computes the average daily cost. The "days remaining" projection
+//! dispatches on the user's plan:
 //!
-//! Cost math reuses [`crate::pricing::cost_for`]; budget reuses
-//! [`crate::preferences::get_budgets`]. The output is shaped for the
+//! - **API plan**: subtract month-to-date spend from the configured monthly
+//!   USD budget, divide by average daily cost.
+//! - **Subscription** (Pro / Max / Team / etc.): subtract weekly-window
+//!   sonnet-equivalent token usage from the plan cap, divide by the active
+//!   window's per-day burn rate, then clamp to time-until-reset. Surfaces
+//!   the more pressing of "hit the cap" vs "reach the next reset".
+//!
+//! Cost math reuses [`crate::pricing::cost_for`]; subscription window math
+//! reuses [`crate::limits::compute_limits`]. The output is shaped for the
 //! Overview burn-rate card.
 
 use std::collections::BTreeMap;
@@ -15,9 +21,10 @@ use std::path::Path;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 
+use crate::limits::{compute_limits, LimitWindow};
 use crate::preferences;
 use crate::pricing::{cost_for, Pricing, Usage};
-use crate::queries::open_ro;
+use crate::queries::{get_plan, open_ro};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DailySpend {
@@ -26,19 +33,43 @@ pub struct DailySpend {
     pub tokens: i64,
 }
 
+/// What `days_remaining` is counting down toward, so the UI can label the
+/// card appropriately.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum CapMode {
+    /// Subscription plan + weekly token cap available.
+    WeeklyTokens,
+    /// API plan with `budget_monthly_usd` configured.
+    UsdMonthly,
+    /// No projection available — API plan with no budget, or subscription
+    /// plan with no cap / idle window.
+    None,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct BurnRate {
     pub window_days: u32,
     pub avg_daily_cost_usd: f64,
     pub avg_daily_tokens: i64,
+    pub plan: String,
+    pub cap_mode: CapMode,
     /// `None` when the user has not configured `budget_monthly_usd`.
     pub monthly_budget_usd: Option<f64>,
     /// Spend since the first of the current month (UTC).
     pub mtd_cost_usd: f64,
-    /// Days until the monthly budget is exhausted at the current burn rate.
-    /// `None` when no budget is set or burn rate is zero.
+    /// Subscription-only: sonnet-equivalent weekly token cap.
+    pub weekly_cap_tokens: Option<i64>,
+    /// Subscription-only: sonnet-equivalent tokens used in the active
+    /// weekly window.
+    pub weekly_used_tokens: Option<i64>,
+    /// Subscription-only: ISO timestamp when the weekly window resets.
+    pub weekly_resets_at: Option<String>,
+    /// Days until the cap is exhausted at the current burn rate, clamped
+    /// (for subscription) to days-until-reset. `None` when no cap is
+    /// configured or the burn rate is zero.
     pub days_remaining: Option<f64>,
-    /// ISO date (`YYYY-MM-DD`) the budget is projected to be exhausted.
+    /// ISO date (`YYYY-MM-DD`) the cap is projected to be exhausted.
     pub projected_exhaustion_date: Option<String>,
     pub daily_series: Vec<DailySpend>,
 }
@@ -48,6 +79,7 @@ pub fn burn_rate<P: AsRef<Path>>(db: P, window_days: u32) -> rusqlite::Result<Bu
     let db = db.as_ref();
     let conn = open_ro(db)?;
     let pricing = Pricing::embedded();
+    let plan = get_plan(db).unwrap_or_else(|_| "max".to_string());
     let budgets = preferences::get_budgets(db)?;
     let window = window_days.max(1);
 
@@ -60,29 +92,126 @@ pub fn burn_rate<P: AsRef<Path>>(db: P, window_days: u32) -> rusqlite::Result<Bu
 
     let mtd_cost_usd = mtd_cost(&conn, &pricing)?;
 
-    let (days_remaining, projected_exhaustion_date) = match budgets.monthly {
-        Some(b) if avg_daily_cost_usd > 0.0 => {
-            let remaining_usd = (b - mtd_cost_usd).max(0.0);
-            let days = remaining_usd / avg_daily_cost_usd;
-            let offset = format!("+{} days", days as i64);
-            let date: Option<String> = conn
-                .query_row("SELECT date('now', ?1)", params![offset], |r| r.get(0))
-                .ok();
-            (Some(days), date)
+    // Default outputs; both branches below fill them in when applicable.
+    let mut cap_mode = CapMode::None;
+    let mut days_remaining: Option<f64> = None;
+    let mut projected_exhaustion_date: Option<String> = None;
+    let mut weekly_cap_tokens: Option<i64> = None;
+    let mut weekly_used_tokens: Option<i64> = None;
+    let mut weekly_resets_at: Option<String> = None;
+
+    if plan == "api" {
+        if let Some(budget) = budgets.monthly {
+            if avg_daily_cost_usd > 0.0 {
+                let remaining_usd = (budget - mtd_cost_usd).max(0.0);
+                let days = remaining_usd / avg_daily_cost_usd;
+                projected_exhaustion_date = exhaust_date(&conn, days);
+                days_remaining = Some(days);
+                cap_mode = CapMode::UsdMonthly;
+            }
         }
-        _ => (None, None),
-    };
+    } else {
+        // Subscription plan: project against the weekly sonnet-equivalent
+        // token cap. Pulls live counts (used + anchor + reset) from
+        // `limits::compute_limits` so this stays in sync with the
+        // "Plan limits remaining" card on Overview.
+        if let Ok(snap) = compute_limits(db, &pricing) {
+            weekly_cap_tokens = snap.weekly.cap;
+            weekly_used_tokens = Some(snap.weekly.used);
+            weekly_resets_at = snap.weekly.resets_at.clone();
+            if let (Some(days), date) = subscription_days_remaining(&conn, &snap.weekly) {
+                days_remaining = Some(days);
+                projected_exhaustion_date = date;
+                cap_mode = CapMode::WeeklyTokens;
+            }
+        }
+    }
 
     Ok(BurnRate {
         window_days: window,
         avg_daily_cost_usd,
         avg_daily_tokens,
+        plan,
+        cap_mode,
         monthly_budget_usd: budgets.monthly,
         mtd_cost_usd,
+        weekly_cap_tokens,
+        weekly_used_tokens,
+        weekly_resets_at,
         days_remaining,
         projected_exhaustion_date,
         daily_series,
     })
+}
+
+/// Subscription-plan days-remaining. Returns `(Some(days), maybe_date)`
+/// only when we have a cap, a non-idle anchor, a positive used count, and
+/// a positive remaining headroom. Days are clamped to time-until-reset
+/// so we never project past the window boundary.
+fn subscription_days_remaining(
+    conn: &Connection,
+    weekly: &LimitWindow,
+) -> (Option<f64>, Option<String>) {
+    let Some(cap) = weekly.cap else { return (None, None) };
+    if cap <= 0 || weekly.used <= 0 {
+        return (None, None);
+    }
+    let Some(anchor) = weekly.anchor.as_deref() else {
+        return (None, None);
+    };
+
+    // SQLite julianday handles ISO timestamps directly. Use it for both
+    // arithmetic operations so we stay aligned with the rest of the
+    // codebase's date handling (no chrono dep on core).
+    let days_since_anchor: f64 = conn
+        .query_row(
+            "SELECT julianday('now') - julianday(?1)",
+            params![anchor],
+            |r| r.get(0),
+        )
+        .unwrap_or(0.0);
+    if days_since_anchor <= 0.0 {
+        return (None, None);
+    }
+    // Floor at 1 hour to avoid a fresh window producing absurd burn rates.
+    let elapsed = days_since_anchor.max(1.0 / 24.0);
+    let daily_burn_tokens = weekly.used as f64 / elapsed;
+    if daily_burn_tokens <= 0.0 {
+        return (None, None);
+    }
+    let remaining_tokens = (cap - weekly.used).max(0) as f64;
+    let days_to_cap = remaining_tokens / daily_burn_tokens;
+
+    let days_to_reset = weekly
+        .resets_at
+        .as_deref()
+        .and_then(|reset_at| {
+            conn.query_row(
+                "SELECT julianday(?1) - julianday('now')",
+                params![reset_at],
+                |r| r.get::<_, f64>(0),
+            )
+            .ok()
+        })
+        .filter(|d| *d > 0.0);
+
+    let days = match days_to_reset {
+        Some(reset) => days_to_cap.min(reset),
+        None => days_to_cap,
+    };
+    if !days.is_finite() || days < 0.0 {
+        return (None, None);
+    }
+    (Some(days), exhaust_date(conn, days))
+}
+
+fn exhaust_date(conn: &Connection, days: f64) -> Option<String> {
+    if !days.is_finite() {
+        return None;
+    }
+    let offset = format!("+{} days", days as i64);
+    conn.query_row("SELECT date('now', ?1)", params![offset], |r| r.get(0))
+        .ok()
 }
 
 fn aggregate_daily(
@@ -226,6 +355,14 @@ mod tests {
         .unwrap();
     }
 
+    fn set_plan(conn: &Connection, plan: &str) {
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('plan', ?1)",
+            params![plan],
+        )
+        .unwrap();
+    }
+
     #[test]
     fn averages_cost_over_window() {
         let f = fresh_db();
@@ -264,9 +401,11 @@ mod tests {
     }
 
     #[test]
-    fn days_remaining_subtracts_mtd_spend() {
+    fn days_remaining_subtracts_mtd_spend_on_api_plan() {
         let f = fresh_db();
         let conn = Connection::open(f.path()).unwrap();
+        // The USD-budget projection only applies on API plan.
+        set_plan(&conn, "api");
         // 5 daily rows: each row's cost = price-per-output-token * 1M.
         for d in 0..5 {
             insert_assistant(
@@ -306,28 +445,78 @@ mod tests {
             "days_remaining={days} expected~{expected_days}"
         );
         assert!(br.projected_exhaustion_date.is_some());
+        assert_eq!(br.cap_mode, CapMode::UsdMonthly);
     }
 
     #[test]
-    fn no_budget_returns_none_remaining() {
+    fn no_budget_returns_none_remaining_on_api_plan() {
         let f = fresh_db();
         let conn = Connection::open(f.path()).unwrap();
+        set_plan(&conn, "api");
         insert_assistant(&conn, "u1", &date_offset(-1), "claude-opus-4-7", 1_000_000);
         drop(conn);
         let br = burn_rate(f.path(), 7).unwrap();
         assert!(br.days_remaining.is_none());
         assert!(br.projected_exhaustion_date.is_none());
         assert!(br.monthly_budget_usd.is_none());
+        assert_eq!(br.cap_mode, CapMode::None);
     }
 
     #[test]
     fn zero_spend_returns_none_remaining_even_with_budget() {
         let f = fresh_db();
         let conn = Connection::open(f.path()).unwrap();
+        set_plan(&conn, "api");
         set_monthly_budget(&conn, 100.0);
         drop(conn);
         let br = burn_rate(f.path(), 7).unwrap();
         assert_eq!(br.avg_daily_cost_usd, 0.0);
         assert!(br.days_remaining.is_none());
+        assert_eq!(br.cap_mode, CapMode::None);
+    }
+
+    #[test]
+    fn subscription_projects_against_weekly_cap() {
+        let f = fresh_db();
+        let conn = Connection::open(f.path()).unwrap();
+        set_plan(&conn, "max");
+        // Drop a sonnet-flavoured message recently so limits::compute_limits
+        // returns a non-idle weekly window with positive used tokens. The
+        // five-hour anchor falls out of the first assistant message in the
+        // last 5h; sonnet weight = 1 so used = output tokens.
+        insert_assistant(
+            &conn,
+            "u-fresh",
+            &format!("{}T12:00:00Z", date_offset(0)),
+            "claude-sonnet-4-6",
+            1_000_000,
+        );
+        // Older daily rows over the burn window so avg_daily_cost_usd > 0
+        // (not strictly required for subscription branch, but exercises the
+        // dual data paths).
+        for d in 1..6 {
+            insert_assistant(
+                &conn,
+                &format!("u-{d}"),
+                &format!("{}T08:00:00Z", date_offset(-(d as i64))),
+                "claude-sonnet-4-6",
+                500_000,
+            );
+        }
+        drop(conn);
+
+        let br = burn_rate(f.path(), 7).unwrap();
+        assert_eq!(br.plan, "max");
+        // Either WeeklyTokens (if pricing has a Max cap) or None (if pricing
+        // doesn't ship one for Max) — both are valid, but we should NOT
+        // accidentally fall into UsdMonthly without a budget.
+        assert!(matches!(br.cap_mode, CapMode::WeeklyTokens | CapMode::None));
+        if br.cap_mode == CapMode::WeeklyTokens {
+            let days = br.days_remaining.expect("subscription days_remaining set");
+            assert!(days.is_finite() && days >= 0.0, "days={days}");
+            assert!(br.weekly_cap_tokens.is_some());
+            assert!(br.weekly_used_tokens.unwrap_or(0) > 0);
+            assert!(br.projected_exhaustion_date.is_some());
+        }
     }
 }

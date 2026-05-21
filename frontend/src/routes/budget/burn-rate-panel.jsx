@@ -64,6 +64,20 @@ export function BurnRatePanel() {
   const tone =
     daysLeft == null ? "" : daysLeft < 3 ? "tone-bad" : daysLeft < 7 ? "tone-warn" : "tone-good";
   const exhaust = data.projected_exhaustion_date || "—";
+  const isWeekly = data.cap_mode === "weekly_tokens";
+  const secondaryLabel = isWeekly ? "cap reached" : "hits zero";
+  // The on-pace guideline only makes sense for USD-budget projections —
+  // hide it on subscription where the cap is in tokens, not dollars.
+  const showOnPace = !isWeekly && onPace != null;
+  const hint = isWeekly
+    ? `Subscription plan · projecting against weekly token cap (${
+        data.weekly_used_tokens != null ? `${(data.weekly_used_tokens / 1e6).toFixed(1)}M used` : "—"
+      }${
+        data.weekly_cap_tokens != null ? ` of ${(data.weekly_cap_tokens / 1e6).toFixed(1)}M cap` : ""
+      }).`
+    : onPace == null && data.cap_mode !== "usd_monthly"
+      ? "Set a monthly budget to see the on-pace guideline."
+      : null;
 
   return (
     <section className="a-card">
@@ -92,20 +106,18 @@ export function BurnRatePanel() {
             </span>
           }
         />
-        <KPI label="hits zero" value={exhaust} />
-        {onPace != null && <KPI label="on-pace" value={`${fmtCost(onPace)}/day`} />}
+        <KPI label={secondaryLabel} value={exhaust} />
+        {showOnPace && <KPI label="on-pace" value={`${fmtCost(onPace)}/day`} />}
       </div>
       <AreaChart
         data={series}
         height={200}
         accent="var(--accent)"
         annotate
-        guidelineY={onPace}
-        guidelineLabel={onPace != null ? `on-pace ${fmtCost(onPace)}/day` : null}
+        guidelineY={showOnPace ? onPace : null}
+        guidelineLabel={showOnPace ? `on-pace ${fmtCost(onPace)}/day` : null}
       />
-      {onPace == null && (
-        <div className="a-hint">Set a monthly budget to see the on-pace guideline.</div>
-      )}
+      {hint && <div className="a-hint">{hint}</div>}
     </section>
   );
 }

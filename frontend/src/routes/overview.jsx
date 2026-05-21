@@ -129,6 +129,15 @@ const BudgetAlertBanner = () => {
   );
 };
 
+const fmtTokensShort = (n) => {
+  if (n == null || !isFinite(n)) return "—";
+  const a = Math.abs(n);
+  if (a >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (a >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return `${n}`;
+};
+
 const BurnRateCard = () => {
   const br = D.burnRate;
   if (!br) return null;
@@ -141,10 +150,28 @@ const BurnRateCard = () => {
     : daysLeft < 1 ? "<1 day"
     : daysLeft >= 99 ? "99+ days"
     : `${daysLeft.toFixed(1)} days`;
-  const monthly = br.monthly_budget_usd;
-  const sub = monthly == null
-    ? "set a monthly budget in Settings to enable projection"
-    : `${fmtCost(br.mtd_cost_usd || 0)} of ${fmtCost(monthly)} this month`;
+
+  // Subtitle + secondary KPI dispatch on cap_mode so subscription users get
+  // weekly-cap projection while API users keep the USD-budget readout.
+  let sub;
+  let secondaryLabel = "hits zero";
+  let secondaryValue = br.projected_exhaustion_date || "—";
+  if (br.cap_mode === "weekly_tokens") {
+    const used = br.weekly_used_tokens;
+    const cap = br.weekly_cap_tokens;
+    sub = cap != null
+      ? `${fmtTokensShort(used)} / ${fmtTokensShort(cap)} sonnet-eq tokens this week`
+      : "weekly window — no cap configured";
+    secondaryLabel = "cap reached";
+    secondaryValue = br.projected_exhaustion_date || "—";
+  } else if (br.cap_mode === "usd_monthly") {
+    sub = `${fmtCost(br.mtd_cost_usd || 0)} of ${fmtCost(br.monthly_budget_usd)} this month`;
+  } else {
+    sub = br.plan === "api"
+      ? "set a monthly budget in Settings to enable projection"
+      : "weekly cap not configured for this plan";
+  }
+
   return (
     <div className="a-card a-burn-rate-compact">
       <div className="a-card-head">
@@ -154,7 +181,7 @@ const BurnRateCard = () => {
       <div className="a-kpi-row">
         <KPI label="avg / day" value={fmtCost(br.avg_daily_cost_usd || 0)} />
         <KPI label="days left" value={<span className={tone}>{fmtDaysLeft}</span>} />
-        <KPI label="hits zero" value={br.projected_exhaustion_date || "—"} />
+        <KPI label={secondaryLabel} value={secondaryValue} />
       </div>
     </div>
   );
