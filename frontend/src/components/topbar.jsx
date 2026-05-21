@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { DateInput } from "./date-input.jsx";
 
-const TABS = ["overview", "budget", "cache", "prompts", "sessions", "token sink", "tips", "api", "settings"];
+const TABS = ["overview", "budget", "cache", "prompts", "sessions", "tags", "token sink", "tips", "api", "settings"];
 const TAB_LABELS = { "token sink": "sink" };
 const ADVANCED_TABS = new Set(["api"]);
 const RANGES = ["1d", "7d", "30d", "90d", "all", "custom"];

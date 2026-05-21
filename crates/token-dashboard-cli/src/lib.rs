@@ -28,9 +28,9 @@ use token_dashboard_core::{
         add_session_tag, all_tags, daily_token_breakdown, dismiss_tip, expensive_prompts,
         first_prompts, get_plan, hourly_breakdown, model_breakdown, normalise_tag, overview_totals,
         phase_split, project_summary, recent_sessions, remove_session_tag, session_model_usage,
-        session_tags, session_turns, set_plan, skill_breakdown, tool_token_breakdown, DailyRow,
-        ExpensivePromptRow, ModelRow, OverviewTotals, ProjectRow, SessionRow, SessionTurn,
-        SkillRow, TagRow, ToolRow,
+        session_tags, session_turns, set_plan, skill_breakdown, tag_aggregates, tag_session_counts,
+        tool_token_breakdown, DailyRow, ExpensivePromptRow, ModelRow, OverviewTotals, ProjectRow,
+        SessionRow, SessionTurn, SkillRow, TagRow, ToolRow,
     },
     scan_dir, Pricing, ScanStats, Source, Usage,
 };
@@ -331,6 +331,108 @@ async fn by_model(
 async fn tags(State(s): State<AppState>) -> Result<Json<Vec<TagRow>>, ApiError> {
     let path = s.db_path.clone();
     blocking(move || all_tags(path.as_ref())).await
+}
+
+#[derive(Serialize)]
+struct TagSummaryRow {
+    tag: String,
+    sessions: i64,
+    total_tokens: i64,
+    cost_usd: f64,
+    first_seen: Option<String>,
+    last_seen: Option<String>,
+}
+
+async fn tags_summary(State(s): State<AppState>) -> Result<Json<Vec<TagSummaryRow>>, ApiError> {
+    let path_a = s.db_path.clone();
+    let path_b = s.db_path.clone();
+    let aggregates = blocking(move || tag_aggregates(path_a.as_ref())).await?.0;
+    let counts = blocking(move || tag_session_counts(path_b.as_ref()))
+        .await?
+        .0;
+    let pricing = s.pricing.clone();
+
+    let mut by_tag: std::collections::BTreeMap<String, TagSummaryRow> = Default::default();
+    for row in aggregates {
+        let entry = by_tag
+            .entry(row.tag.clone())
+            .or_insert_with(|| TagSummaryRow {
+                tag: row.tag.clone(),
+                sessions: 0,
+                total_tokens: 0,
+                cost_usd: 0.0,
+                first_seen: None,
+                last_seen: None,
+            });
+        let cost = row
+            .model
+            .as_deref()
+            .map(|m| {
+                cost_for(
+                    m,
+                    &Usage {
+                        input_tokens: row.input_tokens,
+                        output_tokens: row.output_tokens,
+                        cache_read_tokens: row.cache_read_tokens,
+                        cache_create_5m_tokens: row.cache_create_5m_tokens,
+                        cache_create_1h_tokens: row.cache_create_1h_tokens,
+                    },
+                    &pricing,
+                )
+                .usd
+                .unwrap_or(0.0)
+            })
+            .unwrap_or(0.0);
+        entry.cost_usd += cost;
+        entry.total_tokens += row.input_tokens
+            + row.output_tokens
+            + row.cache_read_tokens
+            + row.cache_create_5m_tokens
+            + row.cache_create_1h_tokens;
+        entry.first_seen = match (entry.first_seen.take(), row.first_seen) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        entry.last_seen = match (entry.last_seen.take(), row.last_seen) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        };
+    }
+
+    for c in counts {
+        if let Some(entry) = by_tag.get_mut(&c.tag) {
+            entry.sessions = c.sessions;
+        } else {
+            // Tag exists with sessions but no assistant messages — still
+            // surface it so users can prune empty tags from the UI.
+            by_tag.insert(
+                c.tag.clone(),
+                TagSummaryRow {
+                    tag: c.tag,
+                    sessions: c.sessions,
+                    total_tokens: 0,
+                    cost_usd: 0.0,
+                    first_seen: None,
+                    last_seen: None,
+                },
+            );
+        }
+    }
+
+    let mut out: Vec<TagSummaryRow> = by_tag
+        .into_values()
+        .map(|mut r| {
+            r.cost_usd = round4(r.cost_usd);
+            r
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.cost_usd
+            .partial_cmp(&a.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.tag.cmp(&b.tag))
+    });
+    Ok(Json(out))
 }
 
 #[derive(Deserialize, Default)]
@@ -2573,6 +2675,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/burn-rate", get(burn_rate_handler))
         .route("/api/by-model", get(by_model))
         .route("/api/tags", get(tags))
+        .route("/api/tags-summary", get(tags_summary))
         .route("/api/hourly", get(hourly))
         .route("/api/phase-split", get(phase_split_endpoint))
         .route("/api/prompts", get(prompts))

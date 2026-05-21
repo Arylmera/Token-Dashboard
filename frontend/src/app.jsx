@@ -5,6 +5,7 @@ import { Budget } from "./routes/budget.jsx";
 import { Cache } from "./routes/cache.jsx";
 import { Prompts } from "./routes/prompts.jsx";
 import { Sessions } from "./routes/sessions.jsx";
+import { Tags } from "./routes/tags.jsx";
 import { Settings } from "./routes/settings.jsx";
 import { Tips } from "./routes/tips.jsx";
 import { Work } from "./routes/work.jsx";
@@ -26,6 +27,7 @@ const ROUTES = {
   cache: Cache,
   prompts: Prompts,
   sessions: Sessions,
+  tags: Tags,
   "token sink": Work,
   tips: Tips,
   api: ApiRoute,

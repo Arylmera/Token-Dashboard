@@ -427,7 +427,20 @@ export const Sessions = () => {
     return sessions[0] ? sessions[0].id : null;
   });
   const [query, setQuery] = useState("");
-  const [tagFilter, setTagFilter] = useState(null);
+  const [tagFilter, setTagFilter] = useState(() => {
+    // The Tags page stashes a tag here before navigating to /sessions
+    // (hash routing eats query strings). Read-once-then-clear so a manual
+    // tab-switch later doesn't keep re-applying the same filter.
+    try {
+      const k = "td:sessions:tagIntent";
+      const v = window.sessionStorage.getItem(k);
+      if (v) {
+        window.sessionStorage.removeItem(k);
+        return v;
+      }
+    } catch { /* ignore */ }
+    return null;
+  });
   const selected = sessions.find((s) => s.id === selectedId) || sessions[0];
   const filtered = useFilteredSessions(sessions, query, tagFilter);
   const turns = useSessionTurns(selected);
