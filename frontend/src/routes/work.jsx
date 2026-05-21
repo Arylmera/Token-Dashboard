@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { D } from "../data-store.js";
 import { fmtCost, fmtTokens } from "../format.js";
-import { SortHeader, useSortable } from "../components/sortable.jsx";
+import { PageNav, SortHeader, usePaginated, useSortable } from "../components/sortable.jsx";
 
 const pctStyle = (v, max) => ({ "--pct": Math.min(100, Math.round(((v || 0) / (max || 1)) * 100)) });
 
@@ -22,6 +22,7 @@ const ProjectsTable = ({ rows, max }) => {
     cost: (r) => r.cost || 0,
   });
   const headProps = { state: sortState, requestSort };
+  const { slice, ...nav } = usePaginated(sorted);
   return (
     <div className="a-table-scroll">
       <table className="a-table a-sink-table">
@@ -33,7 +34,7 @@ const ProjectsTable = ({ rows, max }) => {
           <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
         </tr></thead>
         <tbody>
-          {sorted.map((p) => (
+          {slice.map((p) => (
             <tr key={p.slug} className="clickable has-bar" style={pctStyle(p.cost, max)}>
               <td>
                 <div className="a-proj-nick">{p.name}</div>
@@ -47,6 +48,7 @@ const ProjectsTable = ({ rows, max }) => {
           ))}
         </tbody>
       </table>
+      <PageNav {...nav} />
     </div>
   );
 };
@@ -60,6 +62,7 @@ const SkillsTable = ({ rows }) => {
     cost: (r) => r.cost || 0,
   });
   const headProps = { state: sortState, requestSort };
+  const { slice, ...nav } = usePaginated(sorted);
   return (
     <div className="a-table-scroll">
       <table className="a-table a-sink-table">
@@ -76,7 +79,7 @@ const SkillsTable = ({ rows }) => {
           <SortHeader sortKey="cost" className="num" {...headProps}>est. cost</SortHeader>
         </tr></thead>
         <tbody>
-          {sorted.map((s) => (
+          {slice.map((s) => (
             <tr key={s.name} className="has-bar" style={pctStyle(s.tokens || 0, barMax)}>
               <td className="mono" style={{ color: "var(--bone)" }}>{s.name}</td>
               <td className="num">{s.invocations}</td>
@@ -86,6 +89,7 @@ const SkillsTable = ({ rows }) => {
           ))}
         </tbody>
       </table>
+      <PageNav {...nav} />
     </div>
   );
 };
@@ -100,6 +104,7 @@ const SessionsTable = ({ rows, max }) => {
     cost: (r) => r.cost || 0,
   });
   const headProps = { state: sortState, requestSort };
+  const { slice, ...nav } = usePaginated(sorted);
   return (
     <div className="a-table-scroll">
       <table className="a-table a-sink-table">
@@ -112,7 +117,7 @@ const SessionsTable = ({ rows, max }) => {
           <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
         </tr></thead>
         <tbody>
-          {sorted.map((s) => (
+          {slice.map((s) => (
             <tr key={s.fullId || s.id} className="has-bar" style={pctStyle(s.cost, max)}>
               <td className="mono" style={{ color: "var(--bone)" }}>{s.id}</td>
               <td className="mono">{s.project}</td>
@@ -124,6 +129,7 @@ const SessionsTable = ({ rows, max }) => {
           ))}
         </tbody>
       </table>
+      <PageNav {...nav} />
     </div>
   );
 };
@@ -193,7 +199,7 @@ const CacheTable = ({ rows }) => {
           <SortHeader sortKey="cacheCreate" className="num" {...headProps}>cache writes</SortHeader>
         </tr></thead>
         <tbody>
-          {sorted.map((r) => {
+          {slice.map((r) => {
             const hitTone = r.hit >= 0.9 ? "tone-good" : r.hit >= 0.7 ? "tone-warn" : "tone-bad";
             return (
               <tr key={r.slug} className="has-bar" style={pctStyle(r.cacheRead, maxRead)}>
@@ -208,6 +214,7 @@ const CacheTable = ({ rows }) => {
           })}
         </tbody>
       </table>
+      <PageNav {...nav} />
     </div>
   );
 };
@@ -222,6 +229,7 @@ const McpTable = ({ rows, max }) => {
     cost: (r) => r.cost || 0,
   });
   const headProps = { state: sortState, requestSort };
+  const { slice, ...nav } = usePaginated(sorted);
   return (
     <div className="a-table-scroll">
       <table className="a-table a-sink-table">
@@ -234,7 +242,7 @@ const McpTable = ({ rows, max }) => {
           <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
         </tr></thead>
         <tbody>
-          {sorted.map((s) => (
+          {slice.map((s) => (
             <tr key={s.slug} className="has-bar" style={pctStyle(s.cost, max)}>
               <td>
                 <div className="a-proj-nick">{s.name}</div>
@@ -248,6 +256,7 @@ const McpTable = ({ rows, max }) => {
           ))}
         </tbody>
       </table>
+      <PageNav {...nav} />
     </div>
   );
 };

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { D } from "../data-store.js";
 import { KPI } from "../components/atoms.jsx";
 import { AreaChart } from "../components/charts.jsx";
-import { SortHeader, useSortable } from "../components/sortable.jsx";
+import { PageNav, SortHeader, usePaginated, useSortable } from "../components/sortable.jsx";
 import { fmtPct, fmtTokens } from "../format.js";
 
 const pctStyle = (v, max) => ({ "--pct": Math.min(100, Math.round(((v || 0) / (max || 1)) * 100)) });
@@ -130,6 +130,7 @@ const DailyBreakdownTable = () => {
     cacheCreate: (r) => r.cacheCreate,
   });
   const headProps = { state: sortState, requestSort };
+  const { slice, ...nav } = usePaginated(sorted);
   const maxRead = Math.max(1, ...rows.map((r) => r.cacheRead));
   const [expanded, setExpanded] = useState(null);
   const toggle = (date) => setExpanded(expanded === date ? null : date);
@@ -150,7 +151,7 @@ const DailyBreakdownTable = () => {
             <SortHeader sortKey="cacheCreate" className="num" {...headProps}>cache writes</SortHeader>
           </tr></thead>
           <tbody>
-            {sorted.map((r) => {
+            {slice.map((r) => {
               const hitTone = r.hit >= 0.9 ? "tone-good" : r.hit >= 0.7 ? "tone-warn" : "tone-bad";
               const isOpen = expanded === r.date;
               return (
@@ -179,6 +180,7 @@ const DailyBreakdownTable = () => {
             })}
           </tbody>
         </table>
+        <PageNav {...nav} />
       </div>
     </section>
   );

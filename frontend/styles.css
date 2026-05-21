@@ -1470,6 +1470,35 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 /* MCP servers card (table form) */
 .dir-a-root .a-mcp-card .a-table { font-size: 12px; }
 .dir-a-root .a-mcp-card .a-table td { padding: 4px 8px; }
+
+/* Table pagination footer */
+.dir-a-root .a-page-nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--gull);
+  border-top: 1px solid var(--iron-border);
+}
+.dir-a-root .a-page-status { font-variant-numeric: tabular-nums; }
+.dir-a-root .a-page-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--iron-border);
+  color: var(--bone);
+  cursor: pointer;
+  border-radius: 3px;
+  font: inherit;
+}
+.dir-a-root .a-page-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.dir-a-root .a-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
 .dir-a-root .a-error-dot {
   display: inline-block;
   width: 6px;
