@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { PageNav, usePaginated } from "../../components/sortable.jsx";
 import { fmtCost } from "../../format.js";
 
 function toneFor(pct) {
@@ -73,6 +74,7 @@ export function ProjectAllocation() {
   }
 
   const maxCost = Math.max(0.0001, ...rows.map((r) => r.mtd_cost_usd || 0));
+  const { slice, ...nav } = usePaginated(rows);
 
   return (
     <section className="a-card">
@@ -91,7 +93,7 @@ export function ProjectAllocation() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
+          {slice.map((r) => {
             const pct = r.percent;
             const tone = toneFor(pct);
             const widthPct = ((r.mtd_cost_usd || 0) / maxCost) * 100;
@@ -149,6 +151,7 @@ export function ProjectAllocation() {
           })}
         </tbody>
       </table>
+      <PageNav {...nav} />
     </section>
   );
 }
