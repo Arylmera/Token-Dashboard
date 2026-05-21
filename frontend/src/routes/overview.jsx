@@ -641,12 +641,10 @@ const CacheTrendCard = () => {
   const lastHit = hitSeries.length ? hitSeries[hitSeries.length - 1] : 0;
   const lastChurn = churnSeries.length ? churnSeries[churnSeries.length - 1] : 0;
   return (
-    <div className="a-card">
+    <div className="a-card a-cache-mix-compact">
       <div className="a-card-head">
         <h2>Cache mix</h2>
-        <span className="a-card-meta">
-          30-day · hit = reuse rate · churn = new-entry seeding rate
-        </span>
+        <span className="a-card-meta">30d · hit = reuse · churn = new entries</span>
       </div>
       <div className="a-kpi-row">
         <KPI label="hit 7d" value={fmtPct(cs.avg_7d)} />
@@ -660,13 +658,14 @@ const CacheTrendCard = () => {
         overlayData={churnSeries.length ? churnSeries : null}
         accent="var(--accent)"
         overlayAccent="var(--warn)"
+        height={22}
       />
       <div className="a-strip-legend">
         <span className="a-strip-legend-item">
-          <span className="a-strip-legend-sw" style={{ background: "var(--accent)" }} /> hit rate
+          <span className="a-strip-legend-sw" style={{ background: "var(--accent)" }} /> hit
         </span>
         <span className="a-strip-legend-item">
-          <span className="a-strip-legend-sw a-strip-legend-sw-dashed" style={{ borderColor: "var(--warn)" }} /> churn rate
+          <span className="a-strip-legend-sw a-strip-legend-sw-dashed" style={{ borderColor: "var(--warn)" }} /> churn
         </span>
       </div>
     </div>
@@ -751,21 +750,30 @@ const TopToolsCard = () => {
 const McpServersCard = () => {
   const servers = (D.toolCosts && D.toolCosts.mcp_servers) || [];
   if (servers.length === 0) return null;
-  const total = D.toolCosts.total_cost_usd || 0;
+  const total = (D.toolCosts && D.toolCosts.total_cost_usd) || 0;
   return (
-    <div className="a-card">
+    <div className="a-card a-mcp-card">
       <div className="a-card-head">
         <h2>MCP servers</h2>
-        <span className="a-card-meta">attributed cost by server · 30d · {fmtCost(total)} total tool cost</span>
+        <span className="a-card-meta">{fmtCost(total)} total tool cost · 30d</span>
       </div>
-      <div className="a-mcp-strip">
-        {servers.map((s) => (
-          <div key={s.server} className="a-mcp-chip">
-            <span className="a-mcp-name">{s.server}</span>
-            <span className="a-mcp-cost">{fmtCost(s.attributed_cost_usd)}</span>
-            <span className="a-mcp-calls">{fmtNum(s.calls)} calls</span>
-          </div>
-        ))}
+      <div className="a-table-scroll">
+        <table className="a-table">
+          <thead><tr>
+            <th>server</th>
+            <th className="num">calls</th>
+            <th className="num">cost</th>
+          </tr></thead>
+          <tbody>
+            {servers.map((s) => (
+              <tr key={s.server}>
+                <td className="mono">{s.server}</td>
+                <td className="num">{fmtNum(s.calls)}</td>
+                <td className="num tone-good">{fmtCost(s.attributed_cost_usd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -846,10 +854,8 @@ export const Overview = () => {
         <TopToolsCard />
       </section>
       <section className="a-card-row">
-        <McpServersCard />
-      </section>
-      <section className="a-card-row">
         <CacheTrendCard />
+        <McpServersCard />
       </section>
       <RecentSessions />
     </div>
