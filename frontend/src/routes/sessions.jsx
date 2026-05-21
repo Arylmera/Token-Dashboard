@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { D } from "../data-store.js";
 import { fmtCost, fmtTokens } from "../format.js";
 import { HBar, KPI, Label, ModelBadge } from "../components/atoms.jsx";
@@ -277,7 +277,7 @@ const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSele
         <span>{filtered.length}/{sessions.length}</span>
       </span>
     </div>
-    <div className="a-scroll-5">
+    <div className="a-scroll-10">
       <table className="a-table a-sticky-head">
         <thead>
           <tr>
@@ -287,7 +287,7 @@ const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSele
             <SortHeader sortKey="turns" className="num" {...headProps}>turns</SortHeader>
             <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
             <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
-            <th>tags</th>
+            <th className="a-tag-cell">tags</th>
             <SortHeader sortKey="firstPrompt" style={{ paddingLeft: 16 }} {...headProps}>first prompt</SortHeader>
           </tr>
         </thead>
@@ -300,7 +300,7 @@ const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSele
               <td className="num">{s.turns}</td>
               <td className="num">{fmtTokens(s.tokens)}</td>
               <td className="num tone-good">{fmtCost(s.cost)}</td>
-              <td>
+              <td className="a-tag-cell">
                 <TagChips tags={s.tags} onRemove={(tag) => onMutateTags(s, { remove: [tag] })} />
                 <LoopChip runs={loopsById && loopsById.get(s.fullId || s.id)} />
               </td>
@@ -316,27 +316,75 @@ const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSele
   );
 };
 
-const TagEditor = ({ tags, onAdd, onRemove }) => {
+const TagEditor = ({ tags, allTags, onAdd, onRemove }) => {
   const [draft, setDraft] = useState("");
-  const submit = () => {
-    const t = draft.trim();
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef(null);
+  const submit = (raw) => {
+    const t = (raw ?? draft).trim();
     if (!t) return;
     onAdd(t);
     setDraft("");
+    setOpen(false);
   };
+  // Tags not already on the session, ranked by overall usage so the
+  // most common ones surface first.
+  const current = new Set((tags || []).map((x) => x.toLowerCase()));
+  const filter = draft.trim().toLowerCase();
+  const suggestions = (allTags || [])
+    .map((row) => (typeof row === "string" ? { tag: row, sessions: 0 } : row))
+    .filter((row) => row && row.tag && !current.has(row.tag.toLowerCase()))
+    .filter((row) => !filter || row.tag.toLowerCase().includes(filter));
+  // Close on outside click so the popup behaves like a normal combobox.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
   return (
     <div className="a-tag-editor">
       <span className="a-label">tags</span>
       <TagChips tags={tags} onRemove={onRemove} />
-      <input
-        className="a-search"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-        placeholder="add tag…"
-        style={{ minWidth: 140 }}
-      />
-      <button className="a-pill-btn" onClick={submit}>add</button>
+      <div className="a-tag-combo" ref={boxRef}>
+        <input
+          className="a-search"
+          value={draft}
+          onChange={(e) => { setDraft(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+            else if (e.key === "Escape") setOpen(false);
+          }}
+          placeholder="add tag or pick existing…"
+          style={{ minWidth: 200 }}
+          aria-expanded={open}
+          aria-haspopup="listbox"
+        />
+        {open && suggestions.length > 0 && (
+          <ul className="a-tag-combo-menu" role="listbox">
+            {suggestions.slice(0, 12).map((s) => (
+              <li key={s.tag}>
+                <button
+                  type="button"
+                  className="a-tag-combo-item"
+                  onClick={() => submit(s.tag)}
+                >
+                  <span className="a-tag-combo-name">{s.tag}</span>
+                  {s.sessions ? (
+                    <span className="a-tag-combo-meta">
+                      {s.sessions} session{s.sessions === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <button className="a-pill-btn" onClick={() => submit()}>add</button>
     </div>
   );
 };
@@ -349,7 +397,7 @@ const TURN_LIMITS = [
   { id: "all", label: "all" },
 ];
 
-const SessionDetail = ({ selected, turns, onMutateTags }) => {
+const SessionDetail = ({ selected, turns, allTags, onMutateTags }) => {
   const maxTurnTokens = Math.max(1, ...turns.map((x) => x.tokens));
   const avgPerTurn = fmtTokens(Math.floor((selected.tokens || 0) / Math.max(1, selected.turns)));
   const [limit, setLimit] = useState(10);
@@ -376,6 +424,7 @@ const SessionDetail = ({ selected, turns, onMutateTags }) => {
       </div>
       <TagEditor
         tags={selected.tags}
+        allTags={allTags}
         onAdd={(t) => onMutateTags(selected, { add: [t] })}
         onRemove={(t) => onMutateTags(selected, { remove: [t] })}
       />
@@ -528,7 +577,7 @@ export const Sessions = () => {
         onMutateTags={onMutateTags}
         loopsById={loopsById}
       />
-      <SessionDetail selected={selected} turns={turns} onMutateTags={onMutateTags} />
+      <SessionDetail selected={selected} turns={turns} allTags={allTags} onMutateTags={onMutateTags} />
     </div>
   );
 };

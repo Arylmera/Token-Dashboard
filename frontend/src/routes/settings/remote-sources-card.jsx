@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { SetupHelpContent } from "../../setup-help.jsx";
 
 const fmtAgo = (ts) => {
   if (!ts) return "never";
@@ -18,11 +19,95 @@ const SECRET_PLACEHOLDER = "set on host via TOKEN_DASHBOARD_SYNC_TOKEN";
  * /api/sync/snapshot (gated by Bearer auth from the env var); this card
  * is the viewer-side: add hosts, trigger manual pulls, see last status.
  */
+const SetupInstructionsModal = ({ onClose }) => {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="a-modal-backdrop" onClick={onClose}>
+      <div
+        className="a-modal"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <SetupHelpContent onClose={onClose} />
+      </div>
+    </div>
+  );
+};
+
+const tauriCore = () => {
+  try {
+    const t = typeof window !== "undefined" ? window.__TAURI__ : null;
+    return t && t.core && typeof t.core.invoke === "function" ? t.core : null;
+  } catch (_) { return null; }
+};
+
+const openSetupHelp = async (setFallback) => {
+  const t = typeof window !== "undefined" ? window.__TAURI__ : null;
+  const WebviewWindowCtor =
+    t && t.webviewWindow && t.webviewWindow.WebviewWindow
+      ? t.webviewWindow.WebviewWindow
+      : null;
+  // Prefer the JS WebviewWindow constructor — it goes through
+  // core:webview:default and avoids the per-command ACL that gates
+  // custom invoke handlers in Tauri 2.
+  if (WebviewWindowCtor) {
+    try {
+      const existing = WebviewWindowCtor.getByLabel
+        ? await WebviewWindowCtor.getByLabel("setup-help")
+        : null;
+      if (existing) {
+        await existing.show();
+        await existing.setFocus();
+        return;
+      }
+      const url = `${window.location.origin}/#setup-help`;
+      const win = new WebviewWindowCtor("setup-help", {
+        url,
+        title: "Remote machine setup",
+        width: 760,
+        height: 720,
+        minWidth: 420,
+        minHeight: 320,
+        center: true,
+        resizable: true,
+        decorations: false,
+        focus: true,
+      });
+      win.once("tauri://error", (e) => {
+        // eslint-disable-next-line no-console
+        console.error("setup-help window error:", e);
+        setFallback(true);
+      });
+      return;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("WebviewWindow ctor failed, trying invoke()", err);
+    }
+  }
+  // Fallback: custom Rust command (only succeeds if ACL allows it).
+  const core = t && t.core && typeof t.core.invoke === "function" ? t.core : null;
+  if (!core) {
+    setFallback(true);
+    return;
+  }
+  core.invoke("open_setup_help").catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error("open_setup_help failed:", err);
+    setFallback(true);
+  });
+};
+
 export const RemoteSourcesCard = () => {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
   const [draft, setDraft] = useState({ label: "", base_url: "", bearer: "" });
   const [busyId, setBusyId] = useState(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const load = () => {
     fetch("/api/remote-sources")
@@ -98,7 +183,16 @@ export const RemoteSourcesCard = () => {
         <span className="a-card-meta">
           read-only sync · this machine pulls from each host below
         </span>
+        <button
+          type="button"
+          className="a-pill-btn"
+          style={{ marginLeft: "auto" }}
+          onClick={() => openSetupHelp(setShowHelp)}
+        >
+          Setup instructions
+        </button>
       </div>
+      {showHelp && <SetupInstructionsModal onClose={() => setShowHelp(false)} />}
       <div className="a-hint" style={{ padding: "0 16px 8px" }}>
         Host side: another Token Dashboard install must export{" "}
         <code>TOKEN_DASHBOARD_SYNC_TOKEN</code> before launching; that's the

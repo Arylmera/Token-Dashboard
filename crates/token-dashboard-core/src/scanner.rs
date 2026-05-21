@@ -596,7 +596,7 @@ fn project_slug(file_path: &Path, projects_root: &Path) -> Option<String> {
     Some(first.as_os_str().to_string_lossy().into_owned())
 }
 
-fn now_secs_f64() -> f64 {
+pub(crate) fn now_secs_f64() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
@@ -702,6 +702,15 @@ pub fn scan_dir<P: AsRef<Path>, Q: AsRef<Path>>(
             }
         }
     }
+    // Backfill auto-tags for any session in `messages` that hasn't been
+    // logged yet. SQL-side filter means the first scan stamps every
+    // historic git project; subsequent scans skip the already-tagged
+    // sessions in a single query. Best-effort — a failure here shouldn't
+    // poison the scan stats.
+    if let Err(e) = crate::auto_tags::backfill_all(&conn) {
+        eprintln!("auto-tag: {e}");
+    }
+
     Ok(totals.finalize())
 }
 
