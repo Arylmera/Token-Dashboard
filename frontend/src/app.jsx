@@ -190,7 +190,9 @@ export const DirectionA = ({ initialTab, lockTab = false }) => {
     <>
       <Topbar tab={effectiveTab} setTab={setTab} range={range} setRange={setRange} provider={provider} setProvider={multiProviderEnabled ? setProvider : null} advancedMode={advancedMode} />
       <main className="a-main-area">
-        <Route themeIdx={themeIdx} onPickTheme={setThemeIdx} advancedMode={advancedMode} />
+        <div key={effectiveTab} className="a-page-enter">
+          <Route themeIdx={themeIdx} onPickTheme={setThemeIdx} advancedMode={advancedMode} />
+        </div>
       </main>
     </>
   );
