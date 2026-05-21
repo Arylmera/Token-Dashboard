@@ -30,6 +30,7 @@ pub mod sources;
 pub mod sync_snapshot;
 pub mod tips;
 pub mod tool_costs;
+pub mod verbosity;
 
 pub use db::{default_db_path, init_db, open};
 pub use limits::{compute_limits, LimitWindow, LimitsSnapshot};
