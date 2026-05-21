@@ -1354,7 +1354,40 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
   border-color: var(--accent-2);
 }
 .dir-a-root .a-threshold-row .a-chip.is-muted { opacity: 0.55; }
-.dir-a-root .a-threshold-row .a-chip input { margin: 0; }
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--iron-border-2);
+  border-radius: 2px;
+  background: var(--panel);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms, border-color 120ms;
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:checked::after {
+  content: "";
+  width: 4px;
+  height: 7px;
+  border-right: 1.5px solid var(--bg, #0a0a0a);
+  border-bottom: 1.5px solid var(--bg, #0a0a0a);
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:focus-visible {
+  outline: 1px solid var(--accent-2, var(--accent));
+  outline-offset: 1px;
+}
 .dir-a-root .a-threshold-row .a-chip button {
   background: transparent;
   border: 1px solid transparent;
