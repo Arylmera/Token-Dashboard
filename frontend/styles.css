@@ -1651,6 +1651,46 @@ body.td-setup-help-body #root { height: 100%; }
 .dir-a-root .a-stacked-bar-fill.tone-warn { background: var(--warn); }
 .dir-a-root .a-stacked-bar-fill.tone-bad { background: var(--bad); }
 .dir-a-root .a-stacked-bar-fill.tone-good { background: var(--good); }
+
+/* Per-project allocation table */
+.dir-a-root .a-allocation-table th.a-col-cap,
+.dir-a-root .a-allocation-table td.a-col-cap {
+  width: 140px;
+  min-width: 140px;
+  white-space: nowrap;
+  padding-right: 16px;
+  padding-left: 8px;
+}
+.dir-a-root .a-allocation-table td.a-col-cap .a-link-button {
+  display: inline-block;
+  width: 100px;
+  min-width: 100px;
+  padding: 4px 8px;
+  text-align: left;
+  border: 1px dashed var(--iron-border-2);
+  border-radius: 3px;
+  text-decoration: none;
+}
+.dir-a-root .a-allocation-table td.a-col-cap .a-link-button:hover {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+.dir-a-root .a-allocation-table .a-project-members {
+  margin-left: 6px;
+  color: var(--gull-2);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.dir-a-root .a-cap-input {
+  width: 88px;
+  padding: 2px 6px;
+  font: 400 12.5px "JetBrains Mono";
+  text-align: right;
+  height: 22px;
+  box-sizing: border-box;
+  flex: none;
+}
+
 .dir-a-root .a-link-button {
   background: transparent;
   border: none;
