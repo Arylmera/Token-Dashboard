@@ -622,7 +622,20 @@ async fn set_plan_handler(
 ) -> Result<Json<OkResponse>, ApiError> {
     let path = s.db_path.clone();
     let plan = body.plan.unwrap_or_else(|| "api".into());
-    blocking_unit(move || set_plan(path.as_ref(), &plan)).await?;
+    blocking_unit(move || -> rusqlite::Result<()> {
+        set_plan(path.as_ref(), &plan)?;
+        // Switching to a subscription plan: clear USD budgets so the
+        // History card stops attributing stale "% of $X budget" to months
+        // where the cap doesn't apply. The user can re-enter values after
+        // switching back to API mode.
+        if plan != "api" {
+            for key in token_dashboard_core::preferences::BUDGET_KEYS {
+                let _ = token_dashboard_core::preferences::set_budget(path.as_ref(), key, None);
+            }
+        }
+        Ok(())
+    })
+    .await?;
     Ok(Json(OkResponse { ok: true }))
 }
 
