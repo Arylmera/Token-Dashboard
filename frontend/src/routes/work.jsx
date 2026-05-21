@@ -16,7 +16,7 @@ const fmtLastActive = (iso) => {
 
 const ProjectsTable = ({ rows, max }) => {
   const { sorted, sortState, requestSort } = useSortable(rows, "tokens", "desc", {
-    name: (r) => r.name,
+    name: (r) => displayProject(r.name),
     lastActive: (r) => r.lastActive,
     sessions: (r) => r.sessions || 0,
     tokens: (r) => r.tokens || 0,
@@ -37,8 +37,8 @@ const ProjectsTable = ({ rows, max }) => {
         <tbody>
           {slice.map((p) => (
             <tr key={p.slug} className="clickable has-bar" style={pctStyle(p.cost, max)}>
-              <td>
-                <div className="a-proj-nick">{p.name}</div>
+              <td title={p.slug || p.name}>
+                <div className="a-proj-nick">{displayProject(p.name)}</div>
                 {p.slug && p.slug !== p.name && <div className="a-proj-slug">{p.slug}</div>}
               </td>
               <td className="muted">{fmtLastActive(p.lastActive)}</td>
