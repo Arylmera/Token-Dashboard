@@ -172,27 +172,28 @@ pub fn burn_rate<P: AsRef<Path>>(db: P, window_days: u32) -> rusqlite::Result<Bu
     })
 }
 
-/// Subscription-plan days-remaining. Returns `(Some(days), maybe_date)`
-/// only when we have a cap, a non-idle anchor, a positive used count, and
-/// a positive remaining headroom. Days are clamped to time-until-reset
-/// so we never project past the window boundary.
+/// Subscription-plan days-remaining. Tries two paths in order:
+///
+/// 1. **Token math** (JSONL source): we have a cap and a used count, so
+///    `days_to_cap = remaining_tokens / (used / hours_since_anchor)`.
+/// 2. **Percent math** (OAuth source): no cap, but Anthropic's
+///    rate-limit headers give us `pct_used` for the active window. At the
+///    current rate, project when `pct_used` hits 100%. This is the path
+///    that catches "you'll throttle before the weekly reset" for users
+///    whose plan has no hardcoded cap in `pricing.json`.
+///
+/// Both paths clamp to days-until-reset so we never project past the
+/// window boundary, and return `None` when we don't have enough signal.
 fn subscription_days_remaining(
     conn: &Connection,
     weekly: &LimitWindow,
 ) -> (Option<f64>, Option<String>) {
-    let Some(cap) = weekly.cap else {
-        return (None, None);
-    };
-    if cap <= 0 || weekly.used <= 0 {
-        return (None, None);
-    }
     let Some(anchor) = weekly.anchor.as_deref() else {
         return (None, None);
     };
-
-    // SQLite julianday handles ISO timestamps directly. Use it for both
-    // arithmetic operations so we stay aligned with the rest of the
-    // codebase's date handling (no chrono dep on core).
+    // SQLite julianday handles ISO timestamps directly. Use it everywhere
+    // so we stay aligned with the rest of the codebase's date handling
+    // (no chrono dep on core).
     let days_since_anchor: f64 = conn
         .query_row(
             "SELECT julianday('now') - julianday(?1)",
@@ -205,12 +206,35 @@ fn subscription_days_remaining(
     }
     // Floor at 1 hour to avoid a fresh window producing absurd burn rates.
     let elapsed = days_since_anchor.max(1.0 / 24.0);
-    let daily_burn_tokens = weekly.used as f64 / elapsed;
-    if daily_burn_tokens <= 0.0 {
+
+    let days_to_cap: Option<f64> = match weekly.cap {
+        // Path 1: token math (JSONL source)
+        Some(cap) if cap > 0 && weekly.used > 0 => {
+            let daily_burn_tokens = weekly.used as f64 / elapsed;
+            if daily_burn_tokens > 0.0 {
+                let remaining_tokens = (cap - weekly.used).max(0) as f64;
+                Some(remaining_tokens / daily_burn_tokens)
+            } else {
+                None
+            }
+        }
+        // Path 2: percent math (OAuth source). pct_used arrives in 0.0..1.0
+        // and ticks up faster the harder you push.
+        _ if weekly.pct_used > 0.0 && weekly.pct_used < 1.0 => {
+            let daily_pct_burn = weekly.pct_used / elapsed;
+            if daily_pct_burn > 0.0 {
+                let remaining_pct = (1.0 - weekly.pct_used).max(0.0);
+                Some(remaining_pct / daily_pct_burn)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    let Some(days_to_cap) = days_to_cap else {
         return (None, None);
-    }
-    let remaining_tokens = (cap - weekly.used).max(0) as f64;
-    let days_to_cap = remaining_tokens / daily_burn_tokens;
+    };
 
     let days_to_reset = weekly
         .resets_at

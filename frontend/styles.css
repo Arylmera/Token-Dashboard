@@ -1286,9 +1286,16 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 }
 .dir-a-root .a-banner-detail { color: var(--gull); }
 
-/* Compact burn-rate card on Overview (graph migrated to TopStrip overlay) */
+/* Compact burn-rate card on Overview (graph migrated to TopStrip overlay).
+   Strip the outer .a-kpi-row border so it doesn't stack with the .a-card
+   border and the per-cell .a-kpi borders — three nested 1px lines look
+   like a double frame at this size. */
 .dir-a-root .a-burn-rate-compact { padding-bottom: 8px; }
-.dir-a-root .a-burn-rate-compact .a-kpi-row { padding: 4px 0; }
+.dir-a-root .a-burn-rate-compact .a-kpi-row {
+  padding: 0;
+  margin: 4px 0 0;
+  border: none;
+}
 
 /* TopStrip overlay legend */
 .dir-a-root .a-strip-legend {
