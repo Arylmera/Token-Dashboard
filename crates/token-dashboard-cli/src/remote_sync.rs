@@ -199,7 +199,9 @@ mod tests {
         .expect("pull ok");
         assert_eq!(stats2.messages_inserted, 0, "re-pull dedups");
 
-        // Wrong bearer fails and stamps last_error.
+        // Wrong bearer fails and stamps last_error. Reuse the same
+        // base_url (UNIQUE) by removing the good row first.
+        remote_sources::delete(&view_db, row.id).unwrap();
         let bad = remote_sources::add(&view_db, "wrong", &host_url, Some("nope")).unwrap();
         let err = tokio::task::spawn_blocking({
             let view_db = view_db.clone();
