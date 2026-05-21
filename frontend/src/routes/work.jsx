@@ -128,10 +128,80 @@ const SessionsTable = ({ rows, max }) => {
   );
 };
 
+// Build per-MCP-server rows by enriching /api/tool-costs.mcp_servers with
+// distinct-tool counts and aggregate result_tokens from .tools[].
+const buildMcpRows = () => {
+  const servers = (D.toolCosts && D.toolCosts.mcp_servers) || [];
+  const tools = (D.toolCosts && D.toolCosts.tools) || [];
+  const byServer = new Map();
+  for (const t of tools) {
+    if (!t.mcp_server) continue;
+    const e = byServer.get(t.mcp_server) || { tools: 0, tokens: 0, errors: 0 };
+    e.tools += 1;
+    e.tokens += t.result_tokens || 0;
+    e.errors += t.errors || 0;
+    byServer.set(t.mcp_server, e);
+  }
+  return servers.map((s) => {
+    const extras = byServer.get(s.server) || { tools: 0, tokens: 0, errors: 0 };
+    return {
+      name: s.server,
+      slug: s.server,
+      tools: extras.tools,
+      calls: s.calls || 0,
+      errors: extras.errors,
+      tokens: extras.tokens,
+      cost: s.attributed_cost_usd || 0,
+    };
+  });
+};
+
+const McpTable = ({ rows, max }) => {
+  const { sorted, sortState, requestSort } = useSortable(rows, "cost", "desc", {
+    name: (r) => r.name,
+    tools: (r) => r.tools || 0,
+    calls: (r) => r.calls || 0,
+    errors: (r) => r.errors || 0,
+    tokens: (r) => r.tokens || 0,
+    cost: (r) => r.cost || 0,
+  });
+  const headProps = { state: sortState, requestSort };
+  return (
+    <div className="a-table-scroll">
+      <table className="a-table a-sink-table">
+        <thead><tr>
+          <SortHeader sortKey="name" {...headProps}>mcp server</SortHeader>
+          <SortHeader sortKey="tools" className="num" {...headProps}>tools</SortHeader>
+          <SortHeader sortKey="calls" className="num" {...headProps}>calls</SortHeader>
+          <SortHeader sortKey="errors" className="num" {...headProps}>errors</SortHeader>
+          <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
+          <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
+        </tr></thead>
+        <tbody>
+          {sorted.map((s) => (
+            <tr key={s.slug} className="has-bar" style={pctStyle(s.cost, max)}>
+              <td>
+                <div className="a-proj-nick">{s.name}</div>
+              </td>
+              <td className="num">{s.tools}</td>
+              <td className="num">{s.calls}</td>
+              <td className={`num ${s.errors > 0 ? "tone-bad" : "muted"}`}>{s.errors}</td>
+              <td className="num">{fmtTokens(s.tokens)}</td>
+              <td className="num tone-good">{fmtCost(s.cost)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 export const Work = () => {
   const [view, setView] = useState("projects");
+  const mcpRows = view === "mcp" ? buildMcpRows() : [];
   const source = view === "projects" ? (D.projects || [])
     : view === "skills" ? (D.skills || [])
+    : view === "mcp" ? mcpRows
     : (D.topSessions || []);
   const rows = source;
   const max = Math.max(1, ...rows.map((r) => r.cost || 0));
@@ -139,6 +209,7 @@ export const Work = () => {
   const totalLabel = view === "skills" && total > 0 ? `~${fmtCost(total)}` : fmtCost(total);
   const totalSuffix = view === "projects" ? "all-time"
     : view === "skills" ? "est. attributed"
+    : view === "mcp" ? "attributed · 30d"
     : "top by cost";
   return (
     <div className="a-route">
@@ -149,6 +220,7 @@ export const Work = () => {
             <div className="a-range" style={{ marginLeft: 4 }}>
               <button className={`a-range-tab ${view === "projects" ? "is-active" : ""}`} onClick={() => setView("projects")}>projects</button>
               <button className={`a-range-tab ${view === "skills" ? "is-active" : ""}`} onClick={() => setView("skills")}>skills</button>
+              <button className={`a-range-tab ${view === "mcp" ? "is-active" : ""}`} onClick={() => setView("mcp")}>mcp</button>
               <button className={`a-range-tab ${view === "sessions" ? "is-active" : ""}`} onClick={() => setView("sessions")}>sessions</button>
             </div>
           </div>
@@ -159,10 +231,17 @@ export const Work = () => {
             Estimate. Skill bodies load via system-reminder and aren't directly observable; tokens = invocations × definition size, cost prices the first load per session at Sonnet cache-write and subsequent loads at cache-read. Project-local and subagent-dispatched skills show <span className="mono">—</span> when the definition isn't on disk.
           </div>
         )}
+        {view === "mcp" && (
+          <div className="a-card-note muted" style={{ padding: "0 16px 8px", fontSize: 12 }}>
+            MCP cost is attributed per call: parent assistant turn's output cost split evenly across siblings, plus result tokens priced at the same model's input rate. Tools = distinct tool names seen from this server in the last 30 days.
+          </div>
+        )}
         {view === "projects"
           ? <ProjectsTable rows={rows} max={max} />
           : view === "skills"
           ? <SkillsTable rows={rows} />
+          : view === "mcp"
+          ? <McpTable rows={rows} max={max} />
           : <SessionsTable rows={rows} max={max} />}
       </section>
     </div>
