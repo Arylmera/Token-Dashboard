@@ -178,9 +178,8 @@ mod tests {
 
         // Viewer
         let (_view_tmp, view_db) = fresh_db();
-        let row =
-            remote_sources::add(&view_db, "host-under-test", &host_url, Some("test-token"))
-                .unwrap();
+        let row = remote_sources::add(&view_db, "host-under-test", &host_url, Some("test-token"))
+            .unwrap();
         let stats = tokio::task::spawn_blocking({
             let view_db = view_db.clone();
             move || pull_remote_once(&view_db, row.id)
@@ -209,8 +208,10 @@ mod tests {
         .await
         .unwrap()
         .unwrap_err();
-        assert!(err.contains("401") || err.to_lowercase().contains("unauthor"),
-            "expected 401, got: {err}");
+        assert!(
+            err.contains("401") || err.to_lowercase().contains("unauthor"),
+            "expected 401, got: {err}"
+        );
         let stamped = remote_sources::get(&view_db, bad.id).unwrap().unwrap();
         assert!(stamped.last_error.is_some(), "error must be stamped");
 
@@ -225,8 +226,7 @@ mod tests {
     async fn pull_all_enabled_fans_out_and_isolates_errors() {
         let (_view_tmp, view_db) = fresh_db();
         // Bad url — connection refused
-        let bad =
-            remote_sources::add(&view_db, "down", "http://127.0.0.1:1", Some("t")).unwrap();
+        let bad = remote_sources::add(&view_db, "down", "http://127.0.0.1:1", Some("t")).unwrap();
         // Disabled row — must be skipped
         let disabled =
             remote_sources::add(&view_db, "off", "http://127.0.0.1:2", Some("t")).unwrap();

@@ -376,10 +376,7 @@ fn handle_budget_alert(app: &AppHandle, v: &serde_json::Value) {
                     Some(r) => format!("{used:.0}% of weekly limit used · resets {r}"),
                     None => format!("{used:.0}% of weekly limit used"),
                 };
-                (
-                    format!("Token Dashboard — {pct}% of weekly limit"),
-                    body,
-                )
+                (format!("Token Dashboard — {pct}% of weekly limit"), body)
             }
             "five_hour" => {
                 let used = v.get("percent").and_then(|x| x.as_f64()).unwrap_or(0.0);
@@ -387,10 +384,7 @@ fn handle_budget_alert(app: &AppHandle, v: &serde_json::Value) {
                     Some(r) => format!("{used:.0}% of 5h window used · resets {r}"),
                     None => format!("{used:.0}% of 5h window used"),
                 };
-                (
-                    format!("Token Dashboard — {pct}% of 5h window"),
-                    body,
-                )
+                (format!("Token Dashboard — {pct}% of 5h window"), body)
             }
             _ => {
                 let mtd = v

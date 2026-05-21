@@ -320,7 +320,11 @@ mod tests {
         // Viewer ends up with both rows.
         let c = Connection::open(f_view.path()).unwrap();
         let count: i64 = c
-            .query_row("SELECT COUNT(*) FROM messages WHERE session_id = 's'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE session_id = 's'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 2);
     }
@@ -349,6 +353,9 @@ mod tests {
         let s1 = merge(f_view.path(), &snap).unwrap();
         assert_eq!(s1.tool_calls_inserted, 1);
         let s2 = merge(f_view.path(), &snap).unwrap();
-        assert_eq!(s2.tool_calls_inserted, 0, "tool-call dedup must hold on re-merge");
+        assert_eq!(
+            s2.tool_calls_inserted, 0,
+            "tool-call dedup must hold on re-merge"
+        );
     }
 }
