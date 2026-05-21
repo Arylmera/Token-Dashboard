@@ -1,11 +1,11 @@
 //! Cache hit-rate trend over a recent window of days.
 //!
-//! Per-day "hit rate" is `cache_read / (input + cache_read + cache_create_5m
-//! + cache_create_1h)` — every input-side token category goes in the
-//! denominator, so the rate drops when sessions churn new cache entries
-//! (mostly session starts) and climbs when most prompts are pulling from
-//! an existing cache. The earlier formula excluded cache_create_* and the
-//! metric saturated near 100% for every day, making the chart useless.
+//! Per-day "hit rate" divides `cache_read` by all input-side tokens
+//! (input, cache_read, cache_create_5m, cache_create_1h) so the rate
+//! drops when sessions churn new cache entries (mostly session starts)
+//! and climbs when most prompts are pulling from an existing cache. The
+//! earlier formula excluded `cache_create_*` and the metric saturated
+//! near 100% for every day, making the chart useless.
 //!
 //! Also surfaced: `churn_rate` (cache_create share of total) so the UI
 //! can show when new sessions are pushing fresh entries vs replaying.
