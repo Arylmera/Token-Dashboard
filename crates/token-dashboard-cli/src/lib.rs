@@ -264,7 +264,8 @@ async fn cache_sessions_handler(
     }
     let path = s.db_path.clone();
     let date = q.date;
-    blocking(move || token_dashboard_core::cache_stats::sessions_for_day(path.as_ref(), &date)).await
+    blocking(move || token_dashboard_core::cache_stats::sessions_for_day(path.as_ref(), &date))
+        .await
 }
 
 #[derive(Deserialize, Default)]
