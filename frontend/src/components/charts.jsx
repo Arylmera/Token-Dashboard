@@ -27,6 +27,9 @@ export const AreaChart = ({
   accent = "var(--accent)",
   annotate = false,
   format = (v) => `$${v.toFixed(2)}`,
+  guidelineY = null,
+  guidelineLabel = null,
+  guidelineAccent = "var(--warn)",
 }) => {
   if (!data || data.length === 0) {
     return (
@@ -35,7 +38,11 @@ export const AreaChart = ({
       </div>
     );
   }
-  const max = Math.max(...data.map((d) => d.cost)) || 1;
+  // Share the y-axis between the series and the guideline so an on-pace
+  // line above the peak still gets drawn inside the viewport.
+  const seriesMax = Math.max(...data.map((d) => d.cost)) || 1;
+  const max =
+    guidelineY != null && guidelineY > 0 ? Math.max(seriesMax, guidelineY) : seriesMax;
   const w = 100;
   const topPad = 22;
   const botPad = 14;
@@ -52,6 +59,8 @@ export const AreaChart = ({
   };
   const gradId = randId("a-area-grad");
   const hatchId = randId("a-area-hatch");
+  const guidelineYpx = guidelineY != null && guidelineY > 0 ? yOf(guidelineY) : null;
+  const guidelineYpct = guidelineYpx != null ? (guidelineYpx / height) * 100 : null;
   return (
     <div className="a-chart-wrap" style={{ position: "relative", height }}>
       <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="a-chart" style={{ height: "100%" }}>
@@ -67,6 +76,19 @@ export const AreaChart = ({
         <path d={area} fill={`url(#${gradId})`} />
         <path d={area} fill={`url(#${hatchId})`} />
         <path d={line} fill="none" stroke={accent} strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
+        {guidelineYpx != null && (
+          <line
+            x1="0"
+            x2={w}
+            y1={guidelineYpx}
+            y2={guidelineYpx}
+            stroke={guidelineAccent}
+            strokeWidth="0.5"
+            strokeDasharray="2 2"
+            opacity="0.85"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
         {annotate && data.length > 2 && [peakIdx, troughIdx].map((i, k) => {
           const p = ptAt(i);
           const above = k === 0;
@@ -78,6 +100,21 @@ export const AreaChart = ({
           );
         })}
       </svg>
+      {guidelineYpct != null && guidelineLabel && (
+        <div
+          className="a-chart-guideline-label"
+          style={{
+            position: "absolute",
+            right: 4,
+            top: `calc(${guidelineYpct}% - 14px)`,
+            color: guidelineAccent,
+            font: '500 10px "JetBrains Mono"',
+            pointerEvents: "none",
+          }}
+        >
+          {guidelineLabel}
+        </div>
+      )}
       {annotate && data.length > 2 && [peakIdx, troughIdx].map((i, k) => {
         const p = ptAt(i);
         const above = k === 0;

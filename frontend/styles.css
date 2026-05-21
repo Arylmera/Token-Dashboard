@@ -1414,20 +1414,7 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
   background: color-mix(in oklab, var(--accent) 12%, transparent);
 }
 
-/* Burn-rate chart */
-.dir-a-root .a-burn-chart { display: block; margin-top: 12px; max-height: 200px; }
-.dir-a-root .a-burn-area { fill: color-mix(in oklab, var(--accent) 22%, transparent); }
-.dir-a-root .a-burn-line { stroke: var(--accent); stroke-width: 1.5; }
-.dir-a-root .a-burn-guideline {
-  stroke: var(--warn);
-  stroke-width: 1;
-  stroke-dasharray: 4 3;
-  opacity: 0.85;
-}
-.dir-a-root .a-burn-guideline-label { fill: var(--warn); font-size: 10px; }
-.dir-a-root .a-chart-gridline { stroke: var(--iron-border); stroke-width: 0.5; opacity: 0.5; }
-.dir-a-root .a-chart-axislabel { fill: var(--gull); font-size: 10px; }
-.dir-a-root .a-chart-empty { fill: var(--gull); font-size: 12px; }
+/* (legacy burn-chart classes removed — BurnRatePanel now reuses AreaChart) */
 
 /* Calibration cells (Settings → Limits) */
 .dir-a-root .a-cal-grid {
