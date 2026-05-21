@@ -100,21 +100,12 @@ pub fn burn_rate<P: AsRef<Path>>(db: P, window_days: u32) -> rusqlite::Result<Bu
     let mut weekly_used_tokens: Option<i64> = None;
     let mut weekly_resets_at: Option<String> = None;
 
-    if plan == "api" {
-        if let Some(budget) = budgets.monthly {
-            if avg_daily_cost_usd > 0.0 {
-                let remaining_usd = (budget - mtd_cost_usd).max(0.0);
-                let days = remaining_usd / avg_daily_cost_usd;
-                projected_exhaustion_date = exhaust_date(&conn, days);
-                days_remaining = Some(days);
-                cap_mode = CapMode::UsdMonthly;
-            }
-        }
-    } else {
-        // Subscription plan: project against the weekly sonnet-equivalent
-        // token cap. Pulls live counts (used + anchor + reset) from
-        // `limits::compute_limits` so this stays in sync with the
-        // "Plan limits remaining" card on Overview.
+    // Try the projection appropriate to the active plan first. If nothing
+    // usable comes back (e.g. pricing.json has no weekly cap for this plan,
+    // or the weekly window is idle), fall back to USD-budget math when the
+    // user has configured a monthly budget. That keeps the card useful for
+    // subscription users who set a notional budget anyway.
+    if plan != "api" {
         if let Ok(snap) = compute_limits(db, &pricing) {
             weekly_cap_tokens = snap.weekly.cap;
             weekly_used_tokens = Some(snap.weekly.used);
@@ -123,6 +114,18 @@ pub fn burn_rate<P: AsRef<Path>>(db: P, window_days: u32) -> rusqlite::Result<Bu
                 days_remaining = Some(days);
                 projected_exhaustion_date = date;
                 cap_mode = CapMode::WeeklyTokens;
+            }
+        }
+    }
+
+    if matches!(cap_mode, CapMode::None) {
+        if let Some(budget) = budgets.monthly {
+            if avg_daily_cost_usd > 0.0 {
+                let remaining_usd = (budget - mtd_cost_usd).max(0.0);
+                let days = remaining_usd / avg_daily_cost_usd;
+                projected_exhaustion_date = exhaust_date(&conn, days);
+                days_remaining = Some(days);
+                cap_mode = CapMode::UsdMonthly;
             }
         }
     }
