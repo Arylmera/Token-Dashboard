@@ -26,13 +26,13 @@
 - Create: `crates/token-dashboard-core/src/loop_detector.rs`
 - Modify: `crates/token-dashboard-core/src/lib.rs`
 
-- [ ] **Step 1: Register**
+- [x] **Step 1: Register**
 
 ```rust
 pub mod loop_detector;
 ```
 
-- [ ] **Step 2: Failing test**
+- [x] **Step 2: Failing test**
 
 ```rust
 use rusqlite::Connection;
@@ -82,12 +82,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Confirm failure**
+- [x] **Step 3: Confirm failure**
 
 Run: `cargo test -p token-dashboard-core loop_detector`
 Expected: FAIL.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 ```rust
 pub fn detect(conn: &Connection, min_run: u32, days: u32) -> rusqlite::Result<Vec<StuckRun>> {
@@ -131,11 +131,11 @@ pub fn detect(conn: &Connection, min_run: u32, days: u32) -> rusqlite::Result<Ve
 }
 ```
 
-- [ ] **Step 5: Run**
+- [x] **Step 5: Run**
 
 `cargo test -p token-dashboard-core loop_detector` → PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/token-dashboard-core/src/{lib,loop_detector}.rs
@@ -151,7 +151,7 @@ git commit -m "feat(core): tool-call loop detector"
 - Modify: `crates/token-dashboard-core/src/tips.rs`
 - Modify: `frontend/src/routes/sessions.jsx`
 
-- [ ] **Step 1: Endpoint**
+- [x] **Step 1: Endpoint**
 
 ```rust
 #[derive(serde::Deserialize, Default)]
@@ -171,15 +171,15 @@ async fn get_loops(
 
 Register `.route("/api/loops", axum::routing::get(get_loops))`.
 
-- [ ] **Step 2: Tips rule**
+- [x] **Step 2: Tips rule**
 
 In `tips.rs`, add a rule that calls `loop_detector::detect(conn, 4, 7)` and emits a Tip if any rows are returned, naming the worst offender.
 
-- [ ] **Step 3: Sessions UI**
+- [x] **Step 3: Sessions UI**
 
 In `sessions.jsx`, fetch `/api/loops?days=30` once. Build a `Map<session_id, runs[]>`. For each session row that has runs, render a 🔁 chip with `runs.length` and tooltip showing the top run's tool + count.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add crates/token-dashboard-cli/src/lib.rs crates/token-dashboard-core/src/tips.rs frontend/src/routes/sessions.jsx

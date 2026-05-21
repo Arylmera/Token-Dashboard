@@ -202,6 +202,20 @@
         },
         "additionalProperties": true
       },
+      "StuckRun": {
+        "type": "object",
+        "description": "Consecutive-run of identical tool calls flagged by loop detector.",
+        "properties": {
+          "session_id": { "type": "string" },
+          "tool_name": { "type": "string", "example": "Bash" },
+          "target": { "type": "string", "description": "File path, command, or empty for non-targeted tools." },
+          "count": { "type": "integer", "format": "int64" },
+          "errors": { "type": "integer", "format": "int64" },
+          "first_seen": { "type": "string", "format": "date-time" },
+          "last_seen": { "type": "string", "format": "date-time" }
+        },
+        "required": ["session_id", "tool_name", "target", "count", "errors", "first_seen", "last_seen"]
+      },
       "Source": {
         "type": "object",
         "properties": {
@@ -466,6 +480,17 @@
         "tags": ["read"],
         "summary": "Rule-based tips (cache, retry storms, right-size, outliers, waste)",
         "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Tip" } } } } } }
+      }
+    },
+    "/api/loops": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Stuck-loop runs — consecutive identical tool calls per session",
+        "parameters": [
+          { "name": "min_run", "in": "query", "schema": { "type": "integer", "default": 3, "minimum": 2, "maximum": 1000 } },
+          { "name": "days", "in": "query", "schema": { "type": "integer", "default": 30, "minimum": 1, "maximum": 365 } }
+        ],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/StuckRun" } } } } } }
       }
     },
     "/api/tips/dismiss": {

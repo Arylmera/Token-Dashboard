@@ -18,6 +18,7 @@ pub mod cache_stats;
 pub mod credentials;
 pub mod db;
 pub mod limits;
+pub mod loop_detector;
 pub mod preferences;
 pub mod pricing;
 pub mod providers;

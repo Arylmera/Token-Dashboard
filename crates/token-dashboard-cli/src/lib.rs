@@ -2091,6 +2091,23 @@ async fn tips_handler(State(s): State<AppState>) -> Result<Json<Vec<Tip>>, ApiEr
     blocking(move || all_tips(path.as_ref(), None)).await
 }
 
+#[derive(Deserialize, Default)]
+struct LoopsQuery {
+    min_run: Option<u32>,
+    days: Option<u32>,
+}
+
+async fn loops_get(
+    State(s): State<AppState>,
+    Query(q): Query<LoopsQuery>,
+) -> Result<Json<Vec<token_dashboard_core::loop_detector::StuckRun>>, ApiError> {
+    let path = s.db_path.clone();
+    let min_run = q.min_run.unwrap_or(3).clamp(2, 1000);
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+    blocking(move || token_dashboard_core::loop_detector::detect_path(path.as_ref(), min_run, days))
+        .await
+}
+
 async fn session_tags_post(
     State(s): State<AppState>,
     AxumPath(sid): AxumPath<String>,
@@ -2586,6 +2603,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/scan", get(scan))
         .route("/api/stream", get(stream))
         .route("/api/tips", get(tips_handler))
+        .route("/api/loops", get(loops_get))
         .route(
             "/api/preferences",
             get(preferences_get).post(preferences_post),
