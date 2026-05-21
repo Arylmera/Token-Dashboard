@@ -1457,12 +1457,17 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 /* (legacy burn-chart classes removed — BurnRatePanel now reuses AreaChart) */
 
 /* Compact Cache mix card — smaller fonts + slimmer sparkline so it sits
-   nicely side-by-side with McpServersCard on the same row. */
+   nicely side-by-side with McpServersCard on the same row. The area
+   fill in the StripSpark visually drowned out the second (overlay) line,
+   so we hide it and rely on the two coloured strokes instead. */
 .dir-a-root .a-cache-mix-compact .a-kpi { padding: 10px 12px 8px; }
 .dir-a-root .a-cache-mix-compact .a-kpi .a-label { font-size: 10px; }
 .dir-a-root .a-cache-mix-compact .a-kpi .a-metric { font-size: clamp(18px, 2vw, 22px); }
 .dir-a-root .a-cache-mix-compact .a-strip-spark { padding: 6px 12px 4px; }
 .dir-a-root .a-cache-mix-compact .a-strip-legend { padding: 0 12px 8px; }
+.dir-a-root .a-cache-mix-compact .a-strip-spark-svg > path[fill]:not([stroke]) {
+  display: none;
+}
 
 /* MCP servers card (table form) */
 .dir-a-root .a-mcp-card .a-table { font-size: 12px; }
