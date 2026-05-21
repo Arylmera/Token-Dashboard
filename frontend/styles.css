@@ -1499,6 +1499,23 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* Remote sources add form */
+.dir-a-root .a-remote-add {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr auto;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+.dir-a-root .a-remote-add input {
+  padding: 6px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--iron-border);
+  color: var(--bone);
+  border-radius: 3px;
+  font: inherit;
+  font-size: 12px;
+}
 .dir-a-root .a-error-dot {
   display: inline-block;
   width: 6px;
