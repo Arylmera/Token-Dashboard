@@ -58,13 +58,29 @@ pub fn report<P: AsRef<Path>>(db: P, days: u32) -> rusqlite::Result<ToolCostRepo
     let days = days.max(1);
     let offset = format!("-{} days", days as i64);
 
+    // First pass: bucket sibling counts by message_uuid in one scan. The
+    // earlier correlated-subquery form (SELECT COUNT(*) per row) was O(N²)
+    // on tool_calls and hung the endpoint for users with large histories.
+    let mut sibling_stmt = conn.prepare(
+        "SELECT message_uuid, COUNT(*) FROM tool_calls \
+         WHERE substr(timestamp, 1, 10) >= date('now', ?1) \
+         GROUP BY message_uuid",
+    )?;
+    let mut sibling_counts: HashMap<String, i64> = HashMap::new();
+    for row in sibling_stmt.query_map(rusqlite::params![offset], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+    })? {
+        let (uuid, cnt) = row?;
+        sibling_counts.insert(uuid, cnt);
+    }
+
     let mut stmt = conn.prepare(
         "SELECT tc.tool_name, \
                 COALESCE(tc.is_error, 0), \
                 COALESCE(tc.result_tokens, 0), \
                 m.model, \
                 COALESCE(m.output_tokens, 0), \
-                (SELECT COUNT(*) FROM tool_calls WHERE message_uuid = m.uuid) AS sibling_count \
+                tc.message_uuid \
          FROM tool_calls tc \
          JOIN messages m ON m.uuid = tc.message_uuid \
          WHERE substr(tc.timestamp, 1, 10) >= date('now', ?1)",
@@ -76,13 +92,14 @@ pub fn report<P: AsRef<Path>>(db: P, days: u32) -> rusqlite::Result<ToolCostRepo
             r.get::<_, i64>(2)? as u64,
             r.get::<_, Option<String>>(3)?,
             r.get::<_, i64>(4)?,
-            r.get::<_, i64>(5)?,
+            r.get::<_, String>(5)?,
         ))
     })?;
 
     let mut tool_map: HashMap<String, ToolCost> = HashMap::new();
     for row in rows {
-        let (tool_name, is_error, result_tokens, model, parent_output, sibling_count) = row?;
+        let (tool_name, is_error, result_tokens, model, parent_output, message_uuid) = row?;
+        let sibling_count = sibling_counts.get(&message_uuid).copied().unwrap_or(1);
         let siblings = sibling_count.max(1) as f64;
         let parent_cost = match model.as_deref() {
             Some(m) => cost_for(
