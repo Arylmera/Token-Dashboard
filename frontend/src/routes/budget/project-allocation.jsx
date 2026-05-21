@@ -14,6 +14,10 @@ export function ProjectAllocation() {
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  // usePaginated calls useState internally — must run on every render to
+  // keep the hook call count stable, including the loading + empty
+  // branches that early-return below.
+  const { slice, ...nav } = usePaginated(rows || []);
 
   const load = () => {
     fetch("/api/budget/projects")
@@ -74,7 +78,6 @@ export function ProjectAllocation() {
   }
 
   const maxCost = Math.max(0.0001, ...rows.map((r) => r.mtd_cost_usd || 0));
-  const { slice, ...nav } = usePaginated(rows);
 
   return (
     <section className="a-card">
