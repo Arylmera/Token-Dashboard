@@ -329,6 +329,28 @@ pub(crate) async fn by_model(
     Ok(Json(out))
 }
 
+#[derive(Deserialize, Default)]
+pub(crate) struct ModelEfficiencyQuery {
+    pub(crate) days: Option<u32>,
+}
+
+pub(crate) async fn model_efficiency_handler(
+    State(s): State<AppState>,
+    Query(q): Query<ModelEfficiencyQuery>,
+) -> Result<Json<Vec<token_dashboard_core::model_efficiency::ModelRow>>, ApiError> {
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+    let path = s.db_path.clone();
+    let pricing = s.pricing.clone();
+    blocking(
+        move || -> rusqlite::Result<Vec<token_dashboard_core::model_efficiency::ModelRow>> {
+            let conn = rusqlite::Connection::open(path.as_ref())?;
+            conn.busy_timeout(std::time::Duration::from_secs(30))?;
+            token_dashboard_core::model_efficiency::leaderboard_with_pricing(&conn, days, &pricing)
+        },
+    )
+    .await
+}
+
 pub(crate) async fn tags(State(s): State<AppState>) -> Result<Json<Vec<TagRow>>, ApiError> {
     let path = s.db_path.clone();
     blocking(move || all_tags(path.as_ref())).await
@@ -2293,6 +2315,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/burn-rate", get(burn_rate_handler))
         .route("/api/anomalies", get(anomalies_handler))
         .route("/api/by-model", get(by_model))
+        .route("/api/model_efficiency", get(model_efficiency_handler))
         .route("/api/tags", get(tags))
         .route("/api/tags-summary", get(tags_summary))
         .route("/api/hourly", get(hourly))

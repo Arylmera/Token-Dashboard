@@ -764,6 +764,54 @@ const CacheTrendCard = () => {
   );
 };
 
+// Cost-per-accepted-edit leaderboard, sibling of `ModelsCard`. Data comes
+// from `/api/model_efficiency?days=30` and is rendered cheapest-first so
+// the top row is the actionable "use this model for edits" recommendation.
+const ModelLeaderboard = () => {
+  const rows = D.modelEfficiency || [];
+  if (rows.length === 0) {
+    return (
+      <div className="a-card">
+        <div className="a-card-head">
+          <h2>Model efficiency</h2>
+          <span className="a-card-meta">cost per accepted edit · 30d</span>
+        </div>
+        <div className="a-empty">No accepted edits in the last 30 days.</div>
+      </div>
+    );
+  }
+  return (
+    <div className="a-card">
+      <div className="a-card-head">
+        <h2>Model efficiency</h2>
+        <span className="a-card-meta">cost per accepted edit · 30d</span>
+      </div>
+      <table className="a-table">
+        <thead>
+          <tr>
+            <th>model</th>
+            <th className="num">cost</th>
+            <th className="num">edits</th>
+            <th className="num">$/edit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.model || "(unknown)"}>
+              <td><ModelBadge model={r.model || "unknown"} /></td>
+              <td className="num">{fmtCost(r.cost_usd || 0)}</td>
+              <td className="num">{r.edits || 0}</td>
+              <td className="num tone-good">
+                {r.cost_per_edit_usd != null ? fmtCost(r.cost_per_edit_usd) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 const ModelsCard = () => (
   <div className="a-card">
     <div className="a-card-head"><h2>By model</h2></div>
@@ -981,6 +1029,7 @@ export const Overview = () => {
       <section className="a-card-row">
         <ProjectsTable totals={totals} />
         <ModelsCard />
+        <ModelLeaderboard />
       </section>
       <section className="a-card-row">
         <PhaseSplitCard phase={D.phase} />
