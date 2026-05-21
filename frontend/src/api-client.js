@@ -127,6 +127,7 @@ const REG = [
   { key: "topSessionsRaw", trigger: "sessions", url: () => withProvider(`/api/sessions?order=cost&limit=50`), fallback: () => [] },
   { key: "skills",        trigger: "any",   url: ({ rangeSince, rangeUntil }) => withProvider(`/api/skills${rangeQuery(rangeSince, rangeUntil)}`) },
   { key: "byModel",       trigger: "models", url: ({ rangeSince, rangeUntil }) => withProvider(`/api/by-model${rangeQuery(rangeSince, rangeUntil)}`) },
+  { key: "toolCosts",     trigger: "any",   url: () => "/api/tool-costs?days=30", fallback: () => ({ tools: [], mcp_servers: [], total_cost_usd: 0, days: 30 }) },
   { key: "cacheStats",    trigger: "days",  url: () => "/api/cache-stats?days=30", fallback: () => ({ days: [], avg_7d: 0, avg_30d: 0 }) },
   { key: "burnRate",      trigger: "days",  url: () => "/api/burn-rate?window_days=7", fallback: () => null },
   { key: "prompts",       trigger: "sessions", url: ({ rangeSince, rangeUntil, promptQuery }) => {
@@ -223,6 +224,7 @@ function _rebuildMockData(range) {
     cacheStats:    c.cacheStats || { days: [], avg_7d: 0, avg_30d: 0 },
     burnRate:      c.burnRate || null,
     budgetAlerts:  c.budgetAlerts || null,
+    toolCosts:     c.toolCosts || { tools: [], mcp_servers: [], total_cost_usd: 0, days: 30 },
   };
   // Notify subscribers that MOCK_DATA was mutated. React components read
   // through a Proxy so they need an external nudge to re-render after

@@ -75,8 +75,8 @@ pub fn report<P: AsRef<Path>>(db: P, days: u32) -> rusqlite::Result<ToolCostRepo
             r.get::<_, i64>(1)? as u64,
             r.get::<_, i64>(2)? as u64,
             r.get::<_, Option<String>>(3)?,
-            r.get::<_, i64>(4)? as i64,
-            r.get::<_, i64>(5)? as i64,
+            r.get::<_, i64>(4)?,
+            r.get::<_, i64>(5)?,
         ))
     })?;
 

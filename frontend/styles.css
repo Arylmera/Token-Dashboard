@@ -1456,6 +1456,36 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 
 /* (legacy burn-chart classes removed — BurnRatePanel now reuses AreaChart) */
 
+/* MCP servers strip */
+.dir-a-root .a-mcp-strip {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 0 4px;
+}
+.dir-a-root .a-mcp-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--iron-border);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.dir-a-root .a-mcp-name { color: var(--bone); font-weight: 500; }
+.dir-a-root .a-mcp-cost { color: var(--accent); font: 500 13px "JetBrains Mono"; }
+.dir-a-root .a-mcp-calls { color: var(--gull); font-size: 11px; }
+.dir-a-root .a-error-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bad);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 /* Calibration cells (Settings → Limits) */
 .dir-a-root .a-cal-grid {
   display: grid;
