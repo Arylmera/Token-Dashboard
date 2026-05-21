@@ -26,13 +26,13 @@
 - Create: `crates/token-dashboard-core/src/anomaly.rs`
 - Modify: `crates/token-dashboard-core/src/lib.rs`
 
-- [ ] **Step 1: Register**
+- [x] **Step 1: Register**
 
 ```rust
 pub mod anomaly;
 ```
 
-- [ ] **Step 2: Failing test**
+- [x] **Step 2: Failing test**
 
 ```rust
 use rusqlite::Connection;
@@ -92,12 +92,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Confirm failure**
+- [x] **Step 3: Confirm failure**
 
 Run: `cargo test -p token-dashboard-core anomaly`
 Expected: FAIL.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 ```rust
 pub fn detect(conn: &Connection, days: u32, k: f64) -> rusqlite::Result<Vec<Anomaly>> {
@@ -156,11 +156,11 @@ pub fn detect(conn: &Connection, days: u32, k: f64) -> rusqlite::Result<Vec<Anom
 }
 ```
 
-- [ ] **Step 5: Run**
+- [x] **Step 5: Run**
 
 `cargo test -p token-dashboard-core anomaly` → PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Commit** _(pending — staged for caveman-commit)_
 
 ```bash
 git add crates/token-dashboard-core/src/{lib,anomaly}.rs
@@ -176,7 +176,7 @@ git commit -m "feat(core): 3σ session-cost anomaly detector"
 - Modify: `crates/token-dashboard-core/src/tips.rs`
 - Modify: `frontend/src/routes/overview.jsx`
 
-- [ ] **Step 1: Endpoint**
+- [x] **Step 1: Endpoint**
 
 ```rust
 #[derive(serde::Deserialize, Default)]
@@ -196,11 +196,11 @@ async fn get_anomalies(
 
 Register `.route("/api/anomalies", axum::routing::get(get_anomalies))`.
 
-- [ ] **Step 2: Tips rule**
+- [x] **Step 2: Tips rule**
 
 In `tips.rs`, call `anomaly::detect(conn, 30, 3.0)`. If non-empty, emit a Tip naming the worst offender (`session_id`, project, z-score).
 
-- [ ] **Step 3: Overview card**
+- [x] **Step 3: Overview card**
 
 ```jsx
 function AnomalyCard() {
@@ -231,7 +231,7 @@ function AnomalyCard() {
 
 Render in `Overview`.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Commit** _(pending — staged for caveman-commit)_
 
 ```bash
 git add crates/token-dashboard-cli/src/lib.rs crates/token-dashboard-core/src/tips.rs frontend/src/routes/overview.jsx

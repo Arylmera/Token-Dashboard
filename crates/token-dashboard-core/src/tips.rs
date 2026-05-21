@@ -585,6 +585,49 @@ fn project_cwds<P: AsRef<Path>>(db: P) -> rusqlite::Result<HashMap<String, Strin
     Ok(out)
 }
 
+fn anomaly_tips<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<Tip>> {
+    let conn = open(db.as_ref())?;
+    let rows = crate::anomaly::detect(&conn, 30, 3.0)?;
+    let Some(worst) = rows.into_iter().next() else {
+        return Ok(Vec::new());
+    };
+    let k = key("anomaly", &worst.session_id);
+    if is_dismissed(&conn, &k)? {
+        return Ok(Vec::new());
+    }
+    let short_sid = &worst.session_id[..worst.session_id.len().min(8)];
+    let mut extras = serde_json::Map::new();
+    extras.insert(
+        "session_id".into(),
+        serde_json::Value::String(worst.session_id.clone()),
+    );
+    extras.insert("z_score".into(), serde_json::Value::from(worst.z_score));
+    extras.insert("cost_usd".into(), serde_json::Value::from(worst.cost_usd));
+    extras.insert(
+        "baseline_mean".into(),
+        serde_json::Value::from(worst.baseline_mean),
+    );
+    Ok(vec![Tip {
+        key: k,
+        category: "anomaly".into(),
+        title: format!(
+            "Cost outlier in session {short_sid} ({slug})",
+            slug = worst.project_slug
+        ),
+        body: format!(
+            "Session cost ${cost:.2} is {z:.1}σ above the {slug} 30-day baseline (${mean:.2}/session). Worth a look — usually means a long retry storm or an unusually expensive run.",
+            cost = worst.cost_usd,
+            z = worst.z_score,
+            slug = worst.project_slug,
+            mean = worst.baseline_mean,
+        ),
+        scope: worst.session_id.clone(),
+        project_slug: Some(worst.project_slug),
+        project_cwd: None,
+        extras,
+    }])
+}
+
 pub fn all_tips<P: AsRef<Path>>(db: P, today_iso: Option<&str>) -> rusqlite::Result<Vec<Tip>> {
     let owned;
     let today = match today_iso {
@@ -601,6 +644,7 @@ pub fn all_tips<P: AsRef<Path>>(db: P, today_iso: Option<&str>) -> rusqlite::Res
     tips.extend(outlier_tips(db.as_ref(), today)?);
     tips.extend(waste_tips(db.as_ref(), today)?);
     tips.extend(stuck_loop_tips(db.as_ref())?);
+    tips.extend(anomaly_tips(db.as_ref())?);
     let cwds = project_cwds(db.as_ref())?;
     for t in &mut tips {
         if let Some(slug) = &t.project_slug {

@@ -9,6 +9,7 @@
 
 #![warn(rustdoc::broken_intra_doc_links)]
 
+pub mod anomaly;
 pub mod anthropic_sync;
 pub mod budget_alerts;
 pub mod budget_history;

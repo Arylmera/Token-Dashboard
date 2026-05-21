@@ -299,6 +299,22 @@ async fn burn_rate_handler(
     blocking(move || token_dashboard_core::burn_rate::burn_rate(path.as_ref(), window)).await
 }
 
+#[derive(Deserialize, Default)]
+struct AnomalyQuery {
+    days: Option<u32>,
+    k: Option<f64>,
+}
+
+async fn anomalies_handler(
+    State(s): State<AppState>,
+    Query(q): Query<AnomalyQuery>,
+) -> Result<Json<Vec<token_dashboard_core::anomaly::Anomaly>>, ApiError> {
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+    let k = q.k.unwrap_or(3.0).max(0.5);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::anomaly::detect_db(path.as_ref(), days, k)).await
+}
+
 #[derive(Serialize)]
 struct ModelRowWithCost {
     #[serde(flatten)]
@@ -2874,6 +2890,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/cache-stats", get(cache_stats_handler))
         .route("/api/cache-stats/sessions", get(cache_sessions_handler))
         .route("/api/burn-rate", get(burn_rate_handler))
+        .route("/api/anomalies", get(anomalies_handler))
         .route("/api/by-model", get(by_model))
         .route("/api/tags", get(tags))
         .route("/api/tags-summary", get(tags_summary))
