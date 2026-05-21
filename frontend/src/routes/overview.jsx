@@ -920,10 +920,8 @@ export const Overview = () => {
         <PhaseSplitCard phase={D.phase} />
         <TopToolsCard />
       </section>
-      <section className="a-card-row">
-        <CacheTrendCard />
-        <McpServersCard />
-      </section>
+      {/* Cache mix + MCP servers cards moved to their dedicated tabs
+          (Cache top-level + Sink → mcp) so Overview stays focused. */}
       <RecentSessions />
     </div>
   );
