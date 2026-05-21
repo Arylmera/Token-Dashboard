@@ -38,12 +38,18 @@ pub struct DailySpend {
 #[derive(Debug, Clone, Copy, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum CapMode {
-    /// Subscription plan + weekly token cap available.
+    /// Subscription plan + weekly token cap available; days are how long
+    /// until either the cap is exhausted or the window resets, whichever
+    /// comes first.
     WeeklyTokens,
+    /// Subscription plan without a projectable token cap; days are how
+    /// long until the weekly window resets. Honest fallback that matches
+    /// what subscription users actually care about.
+    WeeklyReset,
     /// API plan with `budget_monthly_usd` configured.
     UsdMonthly,
     /// No projection available — API plan with no budget, or subscription
-    /// plan with no cap / idle window.
+    /// plan with no anchor / reset known.
     None,
 }
 
@@ -100,11 +106,15 @@ pub fn burn_rate<P: AsRef<Path>>(db: P, window_days: u32) -> rusqlite::Result<Bu
     let mut weekly_used_tokens: Option<i64> = None;
     let mut weekly_resets_at: Option<String> = None;
 
-    // Try the projection appropriate to the active plan first. If nothing
-    // usable comes back (e.g. pricing.json has no weekly cap for this plan,
-    // or the weekly window is idle), fall back to USD-budget math when the
-    // user has configured a monthly budget. That keeps the card useful for
-    // subscription users who set a notional budget anyway.
+    // Subscription plans: project against the weekly window. Order of
+    // preference:
+    //   1. WeeklyTokens — we have cap + anchor + recent usage, so we can
+    //      give a real "you'll hit the cap in N days" answer.
+    //   2. WeeklyReset — no projectable cap, but we know when the window
+    //      resets. That's the actual constraint subscription users care
+    //      about (they get a fresh cap on reset). Counting down to it is
+    //      honest and useful.
+    //   3. Fall through to USD-budget math only if no weekly info exists.
     if plan != "api" {
         if let Ok(snap) = compute_limits(db, &pricing) {
             weekly_cap_tokens = snap.weekly.cap;
@@ -114,10 +124,25 @@ pub fn burn_rate<P: AsRef<Path>>(db: P, window_days: u32) -> rusqlite::Result<Bu
                 days_remaining = Some(days);
                 projected_exhaustion_date = date;
                 cap_mode = CapMode::WeeklyTokens;
+            } else if let Some(reset_at) = snap.weekly.resets_at.as_deref() {
+                let days_to_reset: Option<f64> = conn
+                    .query_row(
+                        "SELECT julianday(?1) - julianday('now')",
+                        params![reset_at],
+                        |r| r.get(0),
+                    )
+                    .ok()
+                    .filter(|d: &f64| *d > 0.0);
+                if let Some(days) = days_to_reset {
+                    days_remaining = Some(days);
+                    projected_exhaustion_date = Some(reset_at[..10].to_string());
+                    cap_mode = CapMode::WeeklyReset;
+                }
             }
         }
     }
 
+    // API plan (or subscription with no weekly info) falls back to USD math.
     if matches!(cap_mode, CapMode::None) {
         if let Some(budget) = budgets.monthly {
             if avg_daily_cost_usd > 0.0 {

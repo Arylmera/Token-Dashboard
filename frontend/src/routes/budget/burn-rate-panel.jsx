@@ -64,20 +64,26 @@ export function BurnRatePanel() {
   const tone =
     daysLeft == null ? "" : daysLeft < 3 ? "tone-bad" : daysLeft < 7 ? "tone-warn" : "tone-good";
   const exhaust = data.projected_exhaustion_date || "—";
-  const isWeekly = data.cap_mode === "weekly_tokens";
-  const secondaryLabel = isWeekly ? "cap reached" : "hits zero";
-  // The on-pace guideline only makes sense for USD-budget projections —
-  // hide it on subscription where the cap is in tokens, not dollars.
-  const showOnPace = !isWeekly && onPace != null;
-  const hint = isWeekly
-    ? `Subscription plan · projecting against weekly token cap (${
-        data.weekly_used_tokens != null ? `${(data.weekly_used_tokens / 1e6).toFixed(1)}M used` : "—"
-      }${
-        data.weekly_cap_tokens != null ? ` of ${(data.weekly_cap_tokens / 1e6).toFixed(1)}M cap` : ""
-      }).`
-    : onPace == null && data.cap_mode !== "usd_monthly"
-      ? "Set a monthly budget to see the on-pace guideline."
-      : null;
+  const isSubscription = data.cap_mode === "weekly_tokens" || data.cap_mode === "weekly_reset";
+  const secondaryLabel =
+    data.cap_mode === "weekly_tokens" ? "cap reached"
+    : data.cap_mode === "weekly_reset" ? "window resets"
+    : "hits zero";
+  // The on-pace guideline assumes a USD-budget projection — hide it on
+  // subscription where the constraint is a token cap or window reset.
+  const showOnPace = !isSubscription && onPace != null;
+  const hint =
+    data.cap_mode === "weekly_tokens"
+      ? `Subscription plan · projecting against weekly token cap (${
+          data.weekly_used_tokens != null ? `${(data.weekly_used_tokens / 1e6).toFixed(1)}M used` : "—"
+        }${
+          data.weekly_cap_tokens != null ? ` of ${(data.weekly_cap_tokens / 1e6).toFixed(1)}M cap` : ""
+        }).`
+      : data.cap_mode === "weekly_reset"
+        ? "Subscription plan · no projectable token cap configured. Showing time until the weekly window resets."
+        : onPace == null && data.cap_mode !== "usd_monthly"
+          ? "Set a monthly budget to see the on-pace guideline."
+          : null;
 
   return (
     <section className="a-card">

@@ -151,25 +151,25 @@ const BurnRateCard = () => {
     : daysLeft >= 99 ? "99+ days"
     : `${daysLeft.toFixed(1)} days`;
 
-  // Subtitle + secondary KPI dispatch on cap_mode so subscription users get
-  // weekly-cap projection while API users keep the USD-budget readout.
+  // Subtitle + secondary KPI dispatch on cap_mode so each plan flavour
+  // gets the projection that actually matches its constraint.
   let sub;
   let secondaryLabel = "hits zero";
   let secondaryValue = br.projected_exhaustion_date || "—";
   if (br.cap_mode === "weekly_tokens") {
     const used = br.weekly_used_tokens;
     const cap = br.weekly_cap_tokens;
-    sub = cap != null
-      ? `${fmtTokensShort(used)} / ${fmtTokensShort(cap)} sonnet-eq tokens this week`
-      : "weekly window — no cap configured";
+    sub = `${fmtTokensShort(used)} / ${fmtTokensShort(cap)} sonnet-eq tokens this week`;
     secondaryLabel = "cap reached";
-    secondaryValue = br.projected_exhaustion_date || "—";
+  } else if (br.cap_mode === "weekly_reset") {
+    sub = `subscription plan · counting down to weekly window reset`;
+    secondaryLabel = "window resets";
   } else if (br.cap_mode === "usd_monthly") {
     sub = `${fmtCost(br.mtd_cost_usd || 0)} of ${fmtCost(br.monthly_budget_usd)} this month`;
   } else {
     sub = br.plan === "api"
       ? "set a monthly budget in Settings to enable projection"
-      : "weekly cap not configured for this plan";
+      : "weekly window idle · projection unavailable";
   }
 
   return (
