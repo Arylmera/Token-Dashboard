@@ -61,8 +61,17 @@ export function BurnRatePanel() {
   }
 
   const daysLeft = data.days_remaining;
+  // weekly_reset just counts down to an automatic refresh, so don't paint
+  // it red even when small — that would imply urgency where there is none.
+  const isAutoReset = data.cap_mode === "weekly_reset";
   const tone =
-    daysLeft == null ? "" : daysLeft < 3 ? "tone-bad" : daysLeft < 7 ? "tone-warn" : "tone-good";
+    daysLeft == null || isAutoReset
+      ? ""
+      : daysLeft < 3
+        ? "tone-bad"
+        : daysLeft < 7
+          ? "tone-warn"
+          : "tone-good";
   const exhaust = data.projected_exhaustion_date || "—";
   const isSubscription = data.cap_mode === "weekly_tokens" || data.cap_mode === "weekly_reset";
   const secondaryLabel =

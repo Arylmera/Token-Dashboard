@@ -142,7 +142,10 @@ const BurnRateCard = () => {
   const br = D.burnRate;
   if (!br) return null;
   const daysLeft = br.days_remaining;
-  const tone = daysLeft == null ? ""
+  // Only colour the countdown when running out is bad. weekly_reset is just
+  // counting down to an automatic refresh, so a small number isn't urgent.
+  const isAutoReset = br.cap_mode === "weekly_reset";
+  const tone = daysLeft == null || isAutoReset ? ""
     : daysLeft < 3 ? "tone-bad"
     : daysLeft < 7 ? "tone-warn"
     : "tone-good";
