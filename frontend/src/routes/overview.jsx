@@ -721,9 +721,10 @@ const CacheTrendCard = () => {
       <div className="a-kpi-row">
         <KPI label="hit 7d" value={fmtPct(cs.avg_7d)} />
         <KPI label="hit 30d" value={fmtPct(cs.avg_30d)} />
+        <KPI label="hit today" value={fmtPct(lastHit)} />
         <KPI label="churn 7d" value={fmtPct(cs.churn_7d || 0)} />
         <KPI label="churn 30d" value={fmtPct(cs.churn_30d || 0)} />
-        <KPI label="today" value={`${fmtPct(lastHit)} / ${fmtPct(lastChurn)}`} />
+        <KPI label="churn today" value={fmtPct(lastChurn)} />
       </div>
       <CacheMixChart hit={hitSeries} churn={churnSeries} />
       <div className="a-strip-legend">

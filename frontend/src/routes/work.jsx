@@ -156,6 +156,62 @@ const buildMcpRows = () => {
   });
 };
 
+const buildCacheRows = () => {
+  const days = (D.cacheStats && D.cacheStats.days) || [];
+  return days.map((d) => ({
+    name: d.date,
+    slug: d.date,
+    hit: d.hit_rate || 0,
+    churn: d.churn_rate || 0,
+    input: d.input || 0,
+    cacheRead: d.cache_read || 0,
+    cacheCreate: (d.cache_create_5m || 0) + (d.cache_create_1h || 0),
+    cost: 0, // satisfies the shared total/max math without affecting display
+  }));
+};
+
+const CacheTable = ({ rows }) => {
+  const { sorted, sortState, requestSort } = useSortable(rows, "name", "desc", {
+    name: (r) => r.name,
+    hit: (r) => r.hit || 0,
+    churn: (r) => r.churn || 0,
+    input: (r) => r.input || 0,
+    cacheRead: (r) => r.cacheRead || 0,
+    cacheCreate: (r) => r.cacheCreate || 0,
+  });
+  const headProps = { state: sortState, requestSort };
+  const maxRead = Math.max(1, ...rows.map((r) => r.cacheRead || 0));
+  return (
+    <div className="a-table-scroll">
+      <table className="a-table a-sink-table">
+        <thead><tr>
+          <SortHeader sortKey="name" {...headProps}>date</SortHeader>
+          <SortHeader sortKey="hit" className="num" {...headProps}>hit %</SortHeader>
+          <SortHeader sortKey="churn" className="num" {...headProps}>churn %</SortHeader>
+          <SortHeader sortKey="input" className="num" {...headProps}>fresh input</SortHeader>
+          <SortHeader sortKey="cacheRead" className="num" {...headProps}>cache reads</SortHeader>
+          <SortHeader sortKey="cacheCreate" className="num" {...headProps}>cache writes</SortHeader>
+        </tr></thead>
+        <tbody>
+          {sorted.map((r) => {
+            const hitTone = r.hit >= 0.9 ? "tone-good" : r.hit >= 0.7 ? "tone-warn" : "tone-bad";
+            return (
+              <tr key={r.slug} className="has-bar" style={pctStyle(r.cacheRead, maxRead)}>
+                <td className="mono">{r.name}</td>
+                <td className={`num ${hitTone}`}>{(r.hit * 100).toFixed(1)}%</td>
+                <td className="num">{(r.churn * 100).toFixed(1)}%</td>
+                <td className="num muted">{fmtTokens(r.input)}</td>
+                <td className="num">{fmtTokens(r.cacheRead)}</td>
+                <td className="num muted">{fmtTokens(r.cacheCreate)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 const McpTable = ({ rows, max }) => {
   const { sorted, sortState, requestSort } = useSortable(rows, "cost", "desc", {
     name: (r) => r.name,
@@ -199,9 +255,11 @@ const McpTable = ({ rows, max }) => {
 export const Work = () => {
   const [view, setView] = useState("projects");
   const mcpRows = view === "mcp" ? buildMcpRows() : [];
+  const cacheRows = view === "cache" ? buildCacheRows() : [];
   const source = view === "projects" ? (D.projects || [])
     : view === "skills" ? (D.skills || [])
     : view === "mcp" ? mcpRows
+    : view === "cache" ? cacheRows
     : (D.topSessions || []);
   const rows = source;
   const max = Math.max(1, ...rows.map((r) => r.cost || 0));
@@ -210,6 +268,7 @@ export const Work = () => {
   const totalSuffix = view === "projects" ? "all-time"
     : view === "skills" ? "est. attributed"
     : view === "mcp" ? "attributed · 30d"
+    : view === "cache" ? "days · per-day token mix"
     : "top by cost";
   return (
     <div className="a-route">
@@ -221,6 +280,7 @@ export const Work = () => {
               <button className={`a-range-tab ${view === "projects" ? "is-active" : ""}`} onClick={() => setView("projects")}>projects</button>
               <button className={`a-range-tab ${view === "skills" ? "is-active" : ""}`} onClick={() => setView("skills")}>skills</button>
               <button className={`a-range-tab ${view === "mcp" ? "is-active" : ""}`} onClick={() => setView("mcp")}>mcp</button>
+              <button className={`a-range-tab ${view === "cache" ? "is-active" : ""}`} onClick={() => setView("cache")}>cache</button>
               <button className={`a-range-tab ${view === "sessions" ? "is-active" : ""}`} onClick={() => setView("sessions")}>sessions</button>
             </div>
           </div>
@@ -242,6 +302,8 @@ export const Work = () => {
           ? <SkillsTable rows={rows} />
           : view === "mcp"
           ? <McpTable rows={rows} max={max} />
+          : view === "cache"
+          ? <CacheTable rows={rows} />
           : <SessionsTable rows={rows} max={max} />}
       </section>
     </div>
