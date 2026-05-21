@@ -40,7 +40,15 @@ pub fn history<P: AsRef<Path>>(db: P, months: u32) -> rusqlite::Result<Vec<Month
     let db = db.as_ref();
     let conn = open_ro(db)?;
     let pricing = Pricing::embedded();
-    let budget_at_time = preferences::get_budgets(db)?.monthly;
+    // USD budgets don't apply on subscription plans (Pro/Max/Team/etc.) —
+    // hide them in History so the % and threshold columns don't pretend
+    // to constrain spend they don't actually cap.
+    let plan = crate::queries::get_plan(db).unwrap_or_else(|_| "api".to_string());
+    let budget_at_time = if plan == "api" {
+        preferences::get_budgets(db)?.monthly
+    } else {
+        None
+    };
     let thresholds = crate::budget_alerts::get_config(db)
         .map(|c| {
             let mut t = c.thresholds;

@@ -1456,6 +1456,59 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 
 /* (legacy burn-chart classes removed — BurnRatePanel now reuses AreaChart) */
 
+/* Compact Cache mix card — smaller fonts + slimmer sparkline so it sits
+   nicely side-by-side with McpServersCard on the same row. The area
+   fill in the StripSpark visually drowned out the second (overlay) line,
+   so we hide it and rely on the two coloured strokes instead. */
+.dir-a-root .a-cache-mix-compact .a-kpi { padding: 10px 12px 8px; }
+.dir-a-root .a-cache-mix-compact .a-kpi .a-label { font-size: 10px; }
+.dir-a-root .a-cache-mix-compact .a-kpi .a-metric { font-size: clamp(18px, 2vw, 22px); }
+.dir-a-root .a-cache-mix-compact .a-strip-spark { padding: 6px 12px 4px; }
+.dir-a-root .a-cache-mix-compact .a-strip-legend { padding: 0 12px 8px; }
+.dir-a-root .a-cache-mix-chart { display: block; padding: 4px 12px 0; max-height: 110px; }
+
+/* MCP servers card (table form) */
+.dir-a-root .a-mcp-card .a-table { font-size: 12px; }
+.dir-a-root .a-mcp-card .a-table td { padding: 4px 8px; }
+
+/* Table pagination footer */
+.dir-a-root .a-page-nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--gull);
+  border-top: 1px solid var(--iron-border);
+}
+.dir-a-root .a-page-status { font-variant-numeric: tabular-nums; }
+.dir-a-root .a-page-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--iron-border);
+  color: var(--bone);
+  cursor: pointer;
+  border-radius: 3px;
+  font: inherit;
+}
+.dir-a-root .a-page-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.dir-a-root .a-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.dir-a-root .a-error-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bad);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 /* Calibration cells (Settings → Limits) */
 .dir-a-root .a-cal-grid {
   display: grid;

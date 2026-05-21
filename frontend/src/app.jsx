@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Topbar } from "./components/topbar.jsx";
 import { Overview } from "./routes/overview.jsx";
 import { Budget } from "./routes/budget.jsx";
+import { Cache } from "./routes/cache.jsx";
 import { Prompts } from "./routes/prompts.jsx";
 import { Sessions } from "./routes/sessions.jsx";
 import { Settings } from "./routes/settings.jsx";
@@ -22,6 +23,7 @@ const ADVANCED_TABS = new Set(["api"]);
 const ROUTES = {
   overview: Overview,
   budget: Budget,
+  cache: Cache,
   prompts: Prompts,
   sessions: Sessions,
   "token sink": Work,

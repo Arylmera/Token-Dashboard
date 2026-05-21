@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { PageNav, usePaginated } from "../../components/sortable.jsx";
 import { fmtCost } from "../../format.js";
 
 function toneFor(pct) {
@@ -13,6 +14,10 @@ export function ProjectAllocation() {
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  // usePaginated calls useState internally — must run on every render to
+  // keep the hook call count stable, including the loading + empty
+  // branches that early-return below.
+  const { slice, ...nav } = usePaginated(rows || []);
 
   const load = () => {
     fetch("/api/budget/projects")
@@ -91,7 +96,7 @@ export function ProjectAllocation() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
+          {slice.map((r) => {
             const pct = r.percent;
             const tone = toneFor(pct);
             const widthPct = ((r.mtd_cost_usd || 0) / maxCost) * 100;
@@ -149,6 +154,7 @@ export function ProjectAllocation() {
           })}
         </tbody>
       </table>
+      <PageNav {...nav} />
     </section>
   );
 }

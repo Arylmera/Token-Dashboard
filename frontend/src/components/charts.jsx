@@ -30,6 +30,18 @@ export const AreaChart = ({
   guidelineY = null,
   guidelineLabel = null,
   guidelineAccent = "var(--warn)",
+  /** Optional second series rendered as a dashed line (no fill). Same
+   *  length and same x-spacing as `data`. */
+  overlaySeries = null,
+  overlayAccent = "var(--warn)",
+  /** Override the auto-computed y-axis ceiling. Useful when the series is
+   *  normalised to 0..1 and a hard 1.0 ceiling reads better than the
+   *  data peak. */
+  yMax = null,
+  /** Optional y-axis tick values (array of numbers in series-value space).
+   *  When provided, gridlines + labels render at each tick. */
+  yTicks = null,
+  yFormat = null,
 }) => {
   if (!data || data.length === 0) {
     return (
@@ -38,11 +50,16 @@ export const AreaChart = ({
       </div>
     );
   }
-  // Share the y-axis between the series and the guideline so an on-pace
-  // line above the peak still gets drawn inside the viewport.
+  // Share the y-axis between the main series, the optional overlay, and
+  // the guideline so an on-pace line (or a second series with bigger
+  // peaks) still gets drawn inside the viewport.
   const seriesMax = Math.max(...data.map((d) => d.cost)) || 1;
-  const max =
-    guidelineY != null && guidelineY > 0 ? Math.max(seriesMax, guidelineY) : seriesMax;
+  const overlayMax = Array.isArray(overlaySeries) && overlaySeries.length > 0
+    ? Math.max(...overlaySeries) || 0
+    : 0;
+  const max = yMax != null
+    ? yMax
+    : Math.max(seriesMax, overlayMax, guidelineY != null && guidelineY > 0 ? guidelineY : 0);
   const w = 100;
   const topPad = 22;
   const botPad = 14;
@@ -61,8 +78,11 @@ export const AreaChart = ({
   const hatchId = randId("a-area-hatch");
   const guidelineYpx = guidelineY != null && guidelineY > 0 ? yOf(guidelineY) : null;
   const guidelineYpct = guidelineYpx != null ? (guidelineYpx / height) * 100 : null;
+  const ticks = Array.isArray(yTicks) && yTicks.length > 0 ? yTicks : null;
+  const fmtTick = yFormat || ((v) => `${v}`);
+  const wrapPadLeft = ticks ? 44 : 0;
   return (
-    <div className="a-chart-wrap" style={{ position: "relative", height }}>
+    <div className="a-chart-wrap" style={{ position: "relative", height, paddingLeft: wrapPadLeft }}>
       <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="a-chart" style={{ height: "100%" }}>
         <defs>
           <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
@@ -73,9 +93,36 @@ export const AreaChart = ({
             <line x1="0" y1="0" x2="0" y2="2" stroke={accent} strokeWidth="0.4" opacity="0.35" />
           </pattern>
         </defs>
+        {ticks && ticks.map((t, i) => (
+          <line
+            key={`grid-${i}`}
+            x1="0"
+            x2={w}
+            y1={yOf(t)}
+            y2={yOf(t)}
+            stroke="var(--iron-border)"
+            strokeWidth="0.3"
+            opacity="0.5"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
         <path d={area} fill={`url(#${gradId})`} />
         <path d={area} fill={`url(#${hatchId})`} />
         <path d={line} fill="none" stroke={accent} strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
+        {Array.isArray(overlaySeries) && overlaySeries.length > 0 && (
+          <path
+            d={smoothPath(overlaySeries.map((v, i) => ({
+              x: (i / Math.max(1, overlaySeries.length - 1)) * w,
+              y: yOf(v),
+            })))}
+            fill="none"
+            stroke={overlayAccent}
+            strokeWidth="0.5"
+            strokeDasharray="2 2"
+            opacity="0.9"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
         {guidelineYpx != null && (
           <line
             x1="0"
@@ -100,6 +147,26 @@ export const AreaChart = ({
           );
         })}
       </svg>
+      {ticks && ticks.map((t, i) => {
+        const yPct = (yOf(t) / height) * 100;
+        return (
+          <div
+            key={`tick-${i}`}
+            style={{
+              position: "absolute",
+              left: 0,
+              width: wrapPadLeft - 6,
+              top: `calc(${yPct}% - 6px)`,
+              textAlign: "right",
+              color: "var(--gull)",
+              font: '500 10px "JetBrains Mono"',
+              pointerEvents: "none",
+            }}
+          >
+            {fmtTick(t)}
+          </div>
+        );
+      })}
       {guidelineYpct != null && guidelineLabel && (
         <div
           className="a-chart-guideline-label"
