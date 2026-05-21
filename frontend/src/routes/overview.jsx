@@ -5,6 +5,7 @@ import { HBar, KPI, ModelBadge } from "../components/atoms.jsx";
 import { AreaChart, Donut, DualAreaChart, StripSpark } from "../components/charts.jsx";
 import { SortHeader, useSortable } from "../components/sortable.jsx";
 import { CountUp } from "../components/count-up.jsx";
+import { displayProject } from "../project-name.js";
 
 const rangeDaysFromKey = (key) => {
   const k = String(key || "").toLowerCase();
@@ -875,7 +876,7 @@ const AnomalyCard = () => {
               onClick={() => { window.location.hash = `/sessions/${encodeURIComponent(a.session_id)}`; }}
             >
               <td className="mono">{a.session_id.slice(0, 8)}</td>
-              <td className="mono">{a.project_slug}</td>
+              <td className="mono" title={a.project_slug}>{displayProject(a.project_slug)}</td>
               <td className="num tone-bad">{fmtCost(a.cost_usd)}</td>
               <td className="num">{a.z_score.toFixed(1)}σ</td>
               <td className="num">{fmtCost(a.baseline_mean)}</td>
@@ -893,7 +894,7 @@ const RecentSessions = () => {
   const scroll = sessions.length > 20;
   const { sorted, sortState, requestSort } = useSortable(sessions, null, "desc", {
     id: (r) => r.id,
-    project: (r) => r.project,
+    project: (r) => displayProject(r.project),
     started: (r) => r.started,
     model: (r) => r.model,
     turns: (r) => r.turns || 0,
@@ -918,7 +919,7 @@ const RecentSessions = () => {
         {sorted.map((s) => (
           <tr key={s.id} className="clickable" onClick={() => { window.location.hash = `/sessions/${encodeURIComponent(s.id)}`; }}>
             <td className="mono">{s.id}</td>
-            <td className="mono">{s.project}</td>
+            <td className="mono" title={s.project}>{displayProject(s.project)}</td>
             <td>{s.started}</td>
             <td><ModelBadge model={s.model} /></td>
             <td className="num">{s.turns}</td>

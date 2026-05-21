@@ -3,6 +3,7 @@ import { D } from "../data-store.js";
 import { KPI } from "../components/atoms.jsx";
 import { AreaChart } from "../components/charts.jsx";
 import { PageNav, SortHeader, usePaginated, useSortable } from "../components/sortable.jsx";
+import { displayProject } from "../project-name.js";
 import { fmtPct, fmtTokens } from "../format.js";
 
 const pctStyle = (v, max) => ({ "--pct": Math.min(100, Math.round(((v || 0) / (max || 1)) * 100)) });
@@ -105,7 +106,7 @@ const SessionDrilldown = ({ date }) => {
                   {r.session_id.slice(0, 8)}
                 </a>
               </td>
-              <td className="muted">{r.project_slug}</td>
+              <td className="muted" title={r.project_slug}>{displayProject(r.project_slug)}</td>
               <td className="num">{r.turns}</td>
               <td className={`num ${tone}`}>{(r.hit_rate * 100).toFixed(1)}%</td>
               <td className="num">{(r.churn_rate * 100).toFixed(1)}%</td>

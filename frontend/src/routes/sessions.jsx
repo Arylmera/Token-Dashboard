@@ -3,6 +3,7 @@ import { D } from "../data-store.js";
 import { fmtCost, fmtTokens } from "../format.js";
 import { HBar, KPI, Label, ModelBadge } from "../components/atoms.jsx";
 import { SortHeader, useSortable } from "../components/sortable.jsx";
+import { displayProject } from "../project-name.js";
 
 const BANDS = [
   { from: 0,  to: 6,  label: "00:00–06:00" },
@@ -182,6 +183,7 @@ const useFilteredSessions = (sessions, query, tagFilter) => useMemo(() => {
     if (!q) return true;
     return (s.id || "").toLowerCase().includes(q)
       || (s.project || "").toLowerCase().includes(q)
+      || displayProject(s.project).toLowerCase().includes(q)
       || (s.started || "").toLowerCase().includes(q)
       || (s.tags || []).some((t) => t.toLowerCase().includes(q));
   });
@@ -239,7 +241,7 @@ const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSele
   const exportHref = `/api/export.csv${tagFilter ? `?tag=${encodeURIComponent(tagFilter)}` : ""}`;
   const { sorted, sortState, requestSort } = useSortable(filtered, null, "desc", {
     id: (r) => r.id,
-    project: (r) => r.project,
+    project: (r) => displayProject(r.project),
     started: (r) => r.started,
     turns: (r) => r.turns || 0,
     tokens: (r) => r.tokens || 0,
@@ -295,7 +297,7 @@ const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSele
           {sorted.map((s) => (
             <tr key={s.id} className={`clickable ${selectedId === s.id ? "is-active" : ""}`} onClick={() => setSelectedId(s.id)}>
               <td className="mono" style={{ color: "var(--bone)" }}>{s.id}</td>
-              <td className="muted">{s.project}</td>
+              <td className="muted" title={s.project}>{displayProject(s.project)}</td>
               <td className="muted">{s.started}</td>
               <td className="num">{s.turns}</td>
               <td className="num">{fmtTokens(s.tokens)}</td>
@@ -419,7 +421,7 @@ const SessionDetail = ({ selected, turns, allTags, onMutateTags }) => {
         <h2>{selected.id}</h2>
         <span className="a-card-meta">
           <ModelBadge model={selected.model} />
-          <span style={{ marginLeft: 8 }}>{selected.project} · {selected.started} · {selected.turns} turns</span>
+          <span style={{ marginLeft: 8 }} title={selected.project}>{displayProject(selected.project)} · {selected.started} · {selected.turns} turns</span>
         </span>
       </div>
       <TagEditor
