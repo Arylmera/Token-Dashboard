@@ -96,7 +96,15 @@ const SessionDrilldown = ({ date }) => {
           const tone = r.hit_rate >= 0.9 ? "tone-good" : r.hit_rate >= 0.7 ? "tone-warn" : "tone-bad";
           return (
             <tr key={r.session_id + (r.model || "")}>
-              <td className="mono">{r.session_id.slice(0, 8)}</td>
+              <td className="mono">
+                <a
+                  className="a-link-button"
+                  href={`#/sessions/${encodeURIComponent(r.session_id)}`}
+                  title={`open session ${r.session_id}`}
+                >
+                  {r.session_id.slice(0, 8)}
+                </a>
+              </td>
               <td className="muted">{r.project_slug}</td>
               <td className="num">{r.turns}</td>
               <td className={`num ${tone}`}>{(r.hit_rate * 100).toFixed(1)}%</td>
