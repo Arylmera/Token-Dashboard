@@ -38,6 +38,10 @@ export const AreaChart = ({
    *  normalised to 0..1 and a hard 1.0 ceiling reads better than the
    *  data peak. */
   yMax = null,
+  /** Optional y-axis tick values (array of numbers in series-value space).
+   *  When provided, gridlines + labels render at each tick. */
+  yTicks = null,
+  yFormat = null,
 }) => {
   if (!data || data.length === 0) {
     return (
@@ -74,8 +78,11 @@ export const AreaChart = ({
   const hatchId = randId("a-area-hatch");
   const guidelineYpx = guidelineY != null && guidelineY > 0 ? yOf(guidelineY) : null;
   const guidelineYpct = guidelineYpx != null ? (guidelineYpx / height) * 100 : null;
+  const ticks = Array.isArray(yTicks) && yTicks.length > 0 ? yTicks : null;
+  const fmtTick = yFormat || ((v) => `${v}`);
+  const wrapPadLeft = ticks ? 44 : 0;
   return (
-    <div className="a-chart-wrap" style={{ position: "relative", height }}>
+    <div className="a-chart-wrap" style={{ position: "relative", height, paddingLeft: wrapPadLeft }}>
       <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="a-chart" style={{ height: "100%" }}>
         <defs>
           <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
@@ -86,6 +93,19 @@ export const AreaChart = ({
             <line x1="0" y1="0" x2="0" y2="2" stroke={accent} strokeWidth="0.4" opacity="0.35" />
           </pattern>
         </defs>
+        {ticks && ticks.map((t, i) => (
+          <line
+            key={`grid-${i}`}
+            x1="0"
+            x2={w}
+            y1={yOf(t)}
+            y2={yOf(t)}
+            stroke="var(--iron-border)"
+            strokeWidth="0.3"
+            opacity="0.5"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
         <path d={area} fill={`url(#${gradId})`} />
         <path d={area} fill={`url(#${hatchId})`} />
         <path d={line} fill="none" stroke={accent} strokeWidth="0.6" vectorEffect="non-scaling-stroke" />
@@ -127,6 +147,26 @@ export const AreaChart = ({
           );
         })}
       </svg>
+      {ticks && ticks.map((t, i) => {
+        const yPct = (yOf(t) / height) * 100;
+        return (
+          <div
+            key={`tick-${i}`}
+            style={{
+              position: "absolute",
+              left: 0,
+              width: wrapPadLeft - 6,
+              top: `calc(${yPct}% - 6px)`,
+              textAlign: "right",
+              color: "var(--gull)",
+              font: '500 10px "JetBrains Mono"',
+              pointerEvents: "none",
+            }}
+          >
+            {fmtTick(t)}
+          </div>
+        );
+      })}
       {guidelineYpct != null && guidelineLabel && (
         <div
           className="a-chart-guideline-label"

@@ -45,6 +45,8 @@ const SummaryCard = () => {
         accent="var(--accent)"
         overlayAccent="var(--warn)"
         yMax={1}
+        yTicks={[0, 0.25, 0.5, 0.75, 1]}
+        yFormat={(v) => `${Math.round(v * 100)}%`}
         format={(v) => `${(v * 100).toFixed(1)}%`}
       />
       <div className="a-strip-legend">
