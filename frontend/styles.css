@@ -1286,6 +1286,33 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 }
 .dir-a-root .a-banner-detail { color: var(--gull); }
 
+/* Compact burn-rate card on Overview (graph migrated to TopStrip overlay).
+   Strip the outer .a-kpi-row border so it doesn't stack with the .a-card
+   border and the per-cell .a-kpi borders — three nested 1px lines look
+   like a double frame at this size. */
+.dir-a-root .a-burn-rate-compact { padding-bottom: 8px; }
+.dir-a-root .a-burn-rate-compact .a-kpi-row {
+  padding: 0;
+  margin: 4px 0 0;
+  border: none;
+}
+
+/* TopStrip overlay legend */
+.dir-a-root .a-strip-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--gull);
+}
+.dir-a-root .a-strip-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.dir-a-root .a-strip-legend-sw { width: 10px; height: 2px; display: inline-block; background: var(--accent); }
+.dir-a-root .a-strip-legend-sw-dashed {
+  background: transparent;
+  border-top: 1px dashed var(--warn);
+  height: 0;
+}
+
 /* Budget tab layout */
 .dir-a-root .a-budget-tab {
   display: flex;
@@ -1334,7 +1361,40 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
   border-color: var(--accent-2);
 }
 .dir-a-root .a-threshold-row .a-chip.is-muted { opacity: 0.55; }
-.dir-a-root .a-threshold-row .a-chip input { margin: 0; }
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--iron-border-2);
+  border-radius: 2px;
+  background: var(--panel);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms, border-color 120ms;
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:checked::after {
+  content: "";
+  width: 4px;
+  height: 7px;
+  border-right: 1.5px solid var(--bg, #0a0a0a);
+  border-bottom: 1.5px solid var(--bg, #0a0a0a);
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:focus-visible {
+  outline: 1px solid var(--accent-2, var(--accent));
+  outline-offset: 1px;
+}
 .dir-a-root .a-threshold-row .a-chip button {
   background: transparent;
   border: 1px solid transparent;
@@ -1394,20 +1454,7 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
   background: color-mix(in oklab, var(--accent) 12%, transparent);
 }
 
-/* Burn-rate chart */
-.dir-a-root .a-burn-chart { display: block; margin-top: 12px; max-height: 200px; }
-.dir-a-root .a-burn-area { fill: color-mix(in oklab, var(--accent) 22%, transparent); }
-.dir-a-root .a-burn-line { stroke: var(--accent); stroke-width: 1.5; }
-.dir-a-root .a-burn-guideline {
-  stroke: var(--warn);
-  stroke-width: 1;
-  stroke-dasharray: 4 3;
-  opacity: 0.85;
-}
-.dir-a-root .a-burn-guideline-label { fill: var(--warn); font-size: 10px; }
-.dir-a-root .a-chart-gridline { stroke: var(--iron-border); stroke-width: 0.5; opacity: 0.5; }
-.dir-a-root .a-chart-axislabel { fill: var(--gull); font-size: 10px; }
-.dir-a-root .a-chart-empty { fill: var(--gull); font-size: 12px; }
+/* (legacy burn-chart classes removed — BurnRatePanel now reuses AreaChart) */
 
 /* Calibration cells (Settings → Limits) */
 .dir-a-root .a-cal-grid {

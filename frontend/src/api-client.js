@@ -569,6 +569,27 @@ window.SET_PROMPT_QUERY = setPromptQuery;
 // just before RELOAD_DATA on every provider change.
 window.SET_PROVIDER = (p) => { currentProvider = p || "all"; };
 
+// Auto-refresh on local midnight rollover. All `since=isoDaysAgo(0)` URLs
+// are anchored to local midnight, so a session that spans the boundary
+// (e.g. opened at 23:55 and still up at 00:01) keeps showing yesterday's
+// counters until the user manually reloads — including "prompts today",
+// "today · live", and the widget's today tile. Scheduling a loadAll() at
+// the next local midnight resets every today-anchored value at once.
+//
+// Reschedules itself recursively so the timer survives across days. A
+// small +500ms slack avoids tripping at 23:59:59.999 and reading the
+// previous day on slow clocks.
+const _scheduleMidnightRefresh = () => {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(24, 0, 0, 500);
+  const delay = Math.max(1000, next.getTime() - now.getTime());
+  setTimeout(() => {
+    loadAll().catch(() => {}).finally(_scheduleMidnightRefresh);
+  }, delay);
+};
+_scheduleMidnightRefresh();
+
 // /api/stream consumer.
 //
 // In the 3.x Electron build the main process held the SSE connection

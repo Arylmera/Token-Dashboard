@@ -10,6 +10,7 @@ import { BackupCard } from "./settings/backup-card.jsx";
 import { SourcesCard } from "./settings/sources-card.jsx";
 import { GlassCard } from "./settings/glass-card.jsx";
 import { WidgetCard } from "./settings/widget-card.jsx";
+import { ThresholdPicker } from "./budget/threshold-picker.jsx";
 import { AdvancedModeCard, DensityCard, DeveloperCard, AboutCard, Glossary, MultiProviderCard } from "./settings/misc-cards.jsx";
 import { broadcastAdvancedMode } from "../use-advanced-mode.js";
 
@@ -114,7 +115,7 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
 
       <SettingsGroup title="Pricing &amp; budgets" description="how cost and quotas are calculated">
         <PlanCard plan={plan} saving={saving} onPick={onPick} />
-        <BudgetCard />
+        {plan === "api" && <BudgetCard />}
         <LimitsCard
           enabled={limitsEnabled}
           onChange={onToggleLimits}
@@ -124,8 +125,9 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
         <PricingTable readOnly={!advancedMode} />
       </SettingsGroup>
 
-      <SettingsGroup title="Limits &amp; alerts" description="dock/menubar indicator">
+      <SettingsGroup title="Limits &amp; alerts" description="dock indicator + budget threshold notifications">
         <BadgeCard limitsEnabled={limitsEnabled} />
+        <ThresholdPicker />
       </SettingsGroup>
 
       <SettingsGroup title="Data" description="export, portability, and external sources">
