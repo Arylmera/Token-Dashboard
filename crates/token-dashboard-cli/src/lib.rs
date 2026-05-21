@@ -2554,6 +2554,158 @@ impl IntoResponse for ApiError {
     }
 }
 
+// --- multi-machine sync (plan 11) ---------------------------------------
+//
+// Host side: `/api/sync/snapshot` returns every message + tool_call newer
+// than `?since=`, gated by a Bearer token from the env var
+// `TOKEN_DASHBOARD_SYNC_TOKEN`. The endpoint is disabled (503) when the
+// env var is unset so a careless `cargo run` doesn't expose data on a
+// shared box. Tokens never round-trip through preferences — only the
+// viewer that initiates the pull stores them.
+//
+// Viewer side: `/api/remote-sources` is a CRUD over the local
+// `remote_sources` table. `POST /api/remote-sources/:id/sync` triggers
+// a one-shot pull + merge for that source.
+
+#[derive(Deserialize, Default)]
+struct SnapshotQuery {
+    since: Option<String>,
+}
+
+async fn sync_snapshot_handler(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<SnapshotQuery>,
+) -> Result<Json<token_dashboard_core::sync_snapshot::Snapshot>, ApiError> {
+    let expected = std::env::var("TOKEN_DASHBOARD_SYNC_TOKEN").ok();
+    if expected.as_deref().unwrap_or("").is_empty() {
+        return Err(ApiError {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            msg: "sync disabled — set TOKEN_DASHBOARD_SYNC_TOKEN to share this DB".into(),
+        });
+    }
+    let provided = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "));
+    if provided != expected.as_deref() {
+        return Err(ApiError {
+            status: StatusCode::UNAUTHORIZED,
+            msg: "bearer token mismatch".into(),
+        });
+    }
+    let path = s.db_path.clone();
+    let since = q.since;
+    blocking(move || token_dashboard_core::sync_snapshot::build(path.as_ref(), since.as_deref()))
+        .await
+}
+
+#[derive(Deserialize)]
+struct AddRemoteBody {
+    label: String,
+    base_url: String,
+    bearer: Option<String>,
+}
+
+async fn remote_sources_list(
+    State(s): State<AppState>,
+) -> Result<Json<Vec<token_dashboard_core::remote_sources::RemoteSource>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::remote_sources::list(path.as_ref())).await
+}
+
+async fn remote_sources_add(
+    State(s): State<AppState>,
+    Json(body): Json<AddRemoteBody>,
+) -> Result<Json<token_dashboard_core::remote_sources::RemoteSource>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || {
+        token_dashboard_core::remote_sources::add(
+            path.as_ref(),
+            &body.label,
+            &body.base_url,
+            body.bearer.as_deref().filter(|s| !s.is_empty()),
+        )
+    })
+    .await
+}
+
+async fn remote_sources_delete(
+    State(s): State<AppState>,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<StatusCode, ApiError> {
+    let path = s.db_path.clone();
+    let ok = blocking_unit(move || {
+        token_dashboard_core::remote_sources::delete(path.as_ref(), id).map(|_| ())
+    })
+    .await;
+    ok?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, Default)]
+struct ToggleBody {
+    enabled: Option<bool>,
+}
+
+async fn remote_sources_toggle(
+    State(s): State<AppState>,
+    AxumPath(id): AxumPath<i64>,
+    Json(body): Json<ToggleBody>,
+) -> Result<StatusCode, ApiError> {
+    let want = body.enabled.unwrap_or(true);
+    let path = s.db_path.clone();
+    let ok = blocking_unit(move || {
+        token_dashboard_core::remote_sources::set_enabled(path.as_ref(), id, want).map(|_| ())
+    })
+    .await;
+    ok?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remote_sources_sync(
+    State(s): State<AppState>,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<Json<token_dashboard_core::sync_snapshot::MergeStats>, ApiError> {
+    let path = s.db_path.clone();
+    let join_result = tokio::task::spawn_blocking(
+        move || -> Result<token_dashboard_core::sync_snapshot::MergeStats, String> {
+            let row = token_dashboard_core::remote_sources::get_with_bearer(path.as_ref(), id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "unknown remote source".to_string())?;
+            if !row.enabled {
+                return Err("remote source disabled".to_string());
+            }
+            let url = format!("{}/api/sync/snapshot", row.base_url.trim_end_matches('/'));
+            let mut req = ureq::get(&url).timeout(std::time::Duration::from_secs(60));
+            if let Some(bearer) = row.bearer.as_deref() {
+                req = req.set("Authorization", &format!("Bearer {}", bearer));
+            }
+            let snap: token_dashboard_core::sync_snapshot::Snapshot = match req.call() {
+                Ok(resp) => resp.into_json().map_err(|e| e.to_string())?,
+                Err(e) => {
+                    let msg = e.to_string();
+                    let _ = token_dashboard_core::remote_sources::stamp_sync(
+                        path.as_ref(),
+                        id,
+                        Some(&msg),
+                    );
+                    return Err(msg);
+                }
+            };
+            let stats = token_dashboard_core::sync_snapshot::merge(path.as_ref(), &snap)
+                .map_err(|e| e.to_string())?;
+            let _ = token_dashboard_core::remote_sources::stamp_sync(path.as_ref(), id, None);
+            Ok(stats)
+        },
+    )
+    .await;
+    let stats = join_result
+        .map_err(|e| ApiError::internal(format!("join: {e}")))?
+        .map_err(ApiError::internal)?;
+    Ok(Json(stats))
+}
+
 /// Build the axum router. `static_dir` is the optional path to a
 /// frontend bundle (e.g. `frontend/dist`) — when present it's mounted
 /// at `/web/` and `/` so the Tauri shell can boot the same routes the
@@ -2567,6 +2719,20 @@ pub fn app(state: AppState) -> Router {
         .route("/api/projects", get(projects))
         .route("/api/tools", get(tools))
         .route("/api/tool-costs", get(tool_costs_handler))
+        .route("/api/sync/snapshot", get(sync_snapshot_handler))
+        .route(
+            "/api/remote-sources",
+            get(remote_sources_list).post(remote_sources_add),
+        )
+        .route(
+            "/api/remote-sources/:id",
+            axum::routing::delete(remote_sources_delete),
+        )
+        .route(
+            "/api/remote-sources/:id/toggle",
+            post(remote_sources_toggle),
+        )
+        .route("/api/remote-sources/:id/sync", post(remote_sources_sync))
         .route("/api/daily", get(daily))
         .route("/api/cache-stats", get(cache_stats_handler))
         .route("/api/cache-stats/sessions", get(cache_sessions_handler))
