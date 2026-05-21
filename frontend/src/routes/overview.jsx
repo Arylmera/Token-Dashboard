@@ -634,6 +634,78 @@ const ProjectsTable = ({ totals }) => {
   );
 };
 
+/**
+ * Custom mini-chart for the Cache mix card. Hit series rendered as a
+ * filled area + line (green), churn series as a dashed line (orange).
+ * Y-axis ticks at 0% / 50% / 100% on the left. Trailing dot on the hit
+ * line for the "where you are now" cue.
+ */
+const CacheMixChart = ({ hit, churn }) => {
+  const W = 600;
+  const H = 110;
+  const PAD_L = 38;
+  const PAD_R = 16;
+  const PAD_T = 6;
+  const PAD_B = 18;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+  if (!hit || hit.length === 0) {
+    return <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="a-cache-mix-chart" />;
+  }
+  const n = hit.length;
+  const step = n > 1 ? innerW / (n - 1) : innerW;
+  const yOf = (v) => PAD_T + innerH - Math.max(0, Math.min(1, v)) * innerH;
+  const xOf = (i) => PAD_L + i * step;
+  const lineFor = (series) =>
+    series.map((v, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(2)},${yOf(v).toFixed(2)}`).join(" ");
+  const areaFor = (series) =>
+    `M${xOf(0).toFixed(2)},${(PAD_T + innerH).toFixed(2)} ` +
+    series.map((v, i) => `L${xOf(i).toFixed(2)},${yOf(v).toFixed(2)}`).join(" ") +
+    ` L${xOf(n - 1).toFixed(2)},${(PAD_T + innerH).toFixed(2)} Z`;
+  const ticks = [0, 0.5, 1];
+  const last = hit[n - 1];
+  const gid = `a-cache-mix-${Math.random().toString(36).slice(2, 7)}`;
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="a-cache-mix-chart">
+      <defs>
+        <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.30" />
+          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {ticks.map((t) => (
+        <g key={t}>
+          <line
+            x1={PAD_L}
+            x2={W - PAD_R}
+            y1={yOf(t)}
+            y2={yOf(t)}
+            stroke="var(--iron-border)"
+            strokeWidth="0.5"
+            opacity="0.5"
+          />
+          <text x={PAD_L - 6} y={yOf(t) + 3} textAnchor="end" fill="var(--gull)" fontSize="10">
+            {Math.round(t * 100)}%
+          </text>
+        </g>
+      ))}
+      <path d={areaFor(hit)} fill={`url(#${gid})`} />
+      <path d={lineFor(hit)} fill="none" stroke="var(--accent)" strokeWidth="1.2" />
+      {churn && churn.length > 0 && (
+        <path
+          d={lineFor(churn)}
+          fill="none"
+          stroke="var(--warn)"
+          strokeWidth="1"
+          strokeDasharray="3 2"
+          opacity="0.9"
+        />
+      )}
+      <circle cx={xOf(n - 1)} cy={yOf(last)} r="2.4" fill="var(--accent)" />
+    </svg>
+  );
+};
+
 const CacheTrendCard = () => {
   const cs = D.cacheStats || { days: [], avg_7d: 0, avg_30d: 0, churn_7d: 0, churn_30d: 0 };
   const hitSeries = (cs.days || []).map((d) => d.hit_rate);
@@ -653,13 +725,7 @@ const CacheTrendCard = () => {
         <KPI label="churn 30d" value={fmtPct(cs.churn_30d || 0)} />
         <KPI label="today" value={`${fmtPct(lastHit)} / ${fmtPct(lastChurn)}`} />
       </div>
-      <StripSpark
-        data={hitSeries.length ? hitSeries : [0]}
-        overlayData={churnSeries.length ? churnSeries : null}
-        accent="var(--accent)"
-        overlayAccent="var(--warn)"
-        height={22}
-      />
+      <CacheMixChart hit={hitSeries} churn={churnSeries} />
       <div className="a-strip-legend">
         <span className="a-strip-legend-item">
           <span className="a-strip-legend-sw" style={{ background: "var(--accent)" }} /> hit

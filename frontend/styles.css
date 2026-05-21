@@ -1465,9 +1465,7 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 .dir-a-root .a-cache-mix-compact .a-kpi .a-metric { font-size: clamp(18px, 2vw, 22px); }
 .dir-a-root .a-cache-mix-compact .a-strip-spark { padding: 6px 12px 4px; }
 .dir-a-root .a-cache-mix-compact .a-strip-legend { padding: 0 12px 8px; }
-.dir-a-root .a-cache-mix-compact .a-strip-spark-svg > path[fill]:not([stroke]) {
-  display: none;
-}
+.dir-a-root .a-cache-mix-chart { display: block; padding: 4px 12px 0; max-height: 110px; }
 
 /* MCP servers card (table form) */
 .dir-a-root .a-mcp-card .a-table { font-size: 12px; }
