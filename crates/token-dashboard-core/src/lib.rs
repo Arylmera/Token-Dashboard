@@ -11,6 +11,7 @@
 
 pub mod anomaly;
 pub mod anthropic_sync;
+pub mod auto_tags;
 pub mod budget_alerts;
 pub mod budget_history;
 pub mod budget_projects;
