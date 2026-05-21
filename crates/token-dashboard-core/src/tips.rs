@@ -496,6 +496,77 @@ fn waste_tips<P: AsRef<Path>>(db: P, today: &str) -> rusqlite::Result<Vec<Tip>> 
     Ok(out)
 }
 
+fn stuck_loop_tips<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<Tip>> {
+    let conn = open(db)?;
+    let runs = crate::loop_detector::detect(&conn, 4, 7)?;
+    let mut out = Vec::new();
+    if runs.is_empty() {
+        return Ok(out);
+    }
+    // Pick the worst offender (already sorted by count desc).
+    let worst = &runs[0];
+    let k = key(
+        "stuck-loop",
+        &format!("{}:{}", worst.session_id, worst.tool_name),
+    );
+    if is_dismissed(&conn, &k)? {
+        return Ok(out);
+    }
+    let target_display = if worst.target.is_empty() {
+        "(no target)".to_string()
+    } else {
+        worst.target.clone()
+    };
+    let mut extras = serde_json::Map::new();
+    extras.insert(
+        "session_id".into(),
+        serde_json::Value::String(worst.session_id.clone()),
+    );
+    extras.insert(
+        "tool_name".into(),
+        serde_json::Value::String(worst.tool_name.clone()),
+    );
+    extras.insert(
+        "target".into(),
+        serde_json::Value::String(worst.target.clone()),
+    );
+    extras.insert("count".into(), serde_json::Value::from(worst.count));
+    extras.insert("errors".into(), serde_json::Value::from(worst.errors));
+    extras.insert(
+        "runs_total".into(),
+        serde_json::Value::from(runs.len() as i64),
+    );
+    let short = &worst.session_id[..worst.session_id.len().min(8)];
+    out.push(Tip {
+        key: k,
+        category: "stuck-loop".into(),
+        title: format!(
+            "Stuck loop: {tool} × {n} on `{tgt}` (session {short})",
+            tool = worst.tool_name,
+            n = worst.count,
+            tgt = target_display,
+        ),
+        body: format!(
+            "{n} consecutive `{tool}` calls hit the same target with {errs} error(s). \
+             That's almost always a retry loop; check the session and add an early-stop \
+             condition or a different tactic.{extra}",
+            n = worst.count,
+            tool = worst.tool_name,
+            errs = worst.errors,
+            extra = if runs.len() > 1 {
+                format!(" ({} other stuck runs this week.)", runs.len() - 1)
+            } else {
+                String::new()
+            },
+        ),
+        scope: format!("{}:{}", worst.session_id, worst.tool_name),
+        project_slug: None,
+        project_cwd: None,
+        extras,
+    });
+    Ok(out)
+}
+
 fn project_cwds<P: AsRef<Path>>(db: P) -> rusqlite::Result<HashMap<String, String>> {
     let conn = open(db)?;
     let mut stmt = conn.prepare(
@@ -529,6 +600,7 @@ pub fn all_tips<P: AsRef<Path>>(db: P, today_iso: Option<&str>) -> rusqlite::Res
     tips.extend(right_size_tips(db.as_ref(), today)?);
     tips.extend(outlier_tips(db.as_ref(), today)?);
     tips.extend(waste_tips(db.as_ref(), today)?);
+    tips.extend(stuck_loop_tips(db.as_ref())?);
     let cwds = project_cwds(db.as_ref())?;
     for t in &mut tips {
         if let Some(slug) = &t.project_slug {
