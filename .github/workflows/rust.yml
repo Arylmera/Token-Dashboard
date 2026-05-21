@@ -86,3 +86,24 @@ jobs:
       # cli need verification here. The desktop bundle is exercised by
       # the release workflow, where signed/notarised builds matter.
       - run: cargo test -p token-dashboard-core -p token-dashboard-cli
+
+  deny:
+    name: cargo-deny (advisories, licenses, sources)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses sources bans
+
+  audit:
+    name: cargo-audit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Cargo.lock is gitignored in this repo; generate one so audit can run.
+      - run: cargo generate-lockfile
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
