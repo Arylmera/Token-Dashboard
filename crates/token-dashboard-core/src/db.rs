@@ -93,6 +93,17 @@ CREATE TABLE IF NOT EXISTS session_tags (
 );
 CREATE INDEX IF NOT EXISTS idx_session_tags_tag ON session_tags(tag);
 
+-- Records every (session, tag) the auto-tagger has applied at least once
+-- so that if the user later removes the tag, the next scan doesn't
+-- re-apply it. Independent of session_tags so the user-facing state stays
+-- authoritative.
+CREATE TABLE IF NOT EXISTS session_auto_tag_log (
+  session_id  TEXT NOT NULL,
+  tag         TEXT NOT NULL,
+  applied_at  REAL NOT NULL,
+  PRIMARY KEY (session_id, tag)
+);
+
 CREATE TABLE IF NOT EXISTS attached_sources (
   name        TEXT PRIMARY KEY,
   path        TEXT NOT NULL,

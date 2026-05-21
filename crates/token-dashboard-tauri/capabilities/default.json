@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default permissions for the Token Dashboard tauri shell",
-  "windows": ["main", "widget"],
+  "windows": ["main", "widget", "setup-help"],
   "remote": {
     "urls": ["http://127.0.0.1:*", "http://localhost:*"]
   },
@@ -19,6 +19,9 @@
     "core:window:allow-inner-size",
     "core:window:allow-scale-factor",
     "core:webview:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
     "core:event:default",
     "core:tray:default",
     "notification:default"

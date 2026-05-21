@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { DirectionA } from "./src/app.jsx";
 import { Widget } from "./src/widget.jsx";
+import { SetupHelpWindow } from "./src/setup-help.jsx";
 import "./src/api-client.js";
 
 // Tauri shell bridge. v3 used an Electron preload to expose `window.td`;
@@ -30,6 +31,11 @@ const isWidget = () => {
   } catch (_) { return false; }
 };
 
+const isSetupHelp = () => {
+  try { return window.location.hash === "#setup-help"; }
+  catch (_) { return false; }
+};
+
 const Shell = () => (
   <div className="dir-a-root" style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
     <DirectionA />
@@ -45,6 +51,11 @@ const Shell = () => (
     if (plat) document.body.classList.add(`platform-${plat}`);
   } catch (_) {}
   const root = createRoot(document.getElementById("root"));
+  if (isSetupHelp()) {
+    document.body.classList.add("td-setup-help-body");
+    root.render(<SetupHelpWindow />);
+    return;
+  }
   if (isWidget()) {
     // widget.html ships this class on <body>; when we mount via the
     // index.html route (with #widget), apply it here so the

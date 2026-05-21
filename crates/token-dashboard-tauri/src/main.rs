@@ -581,6 +581,45 @@ fn open_widget(app: AppHandle, base_url: tauri::State<'_, BaseUrl>) -> Result<()
     spawn_widget(&app, &base_url.0).map_err(|e| e.to_string())
 }
 
+/// Standalone help window for the remote-machine sync setup walkthrough.
+/// Renders the `#setup-help` route from the same bundle — entry.jsx
+/// reads the fragment and mounts SetupHelp instead of the full shell.
+fn spawn_setup_help(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
+    if let Some(existing) = app.get_webview_window("setup-help") {
+        let _ = existing.show();
+        let _ = existing.unminimize();
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+    let url = format!("{base_url}/#setup-help");
+    let parsed: tauri::Url = url.parse().expect("setup-help url parse");
+    // Always opaque — the help text doesn't need acrylic and a transparent
+    // surface let the dashboard underneath bleed through.
+    let opaque_bg = tauri::utils::config::Color(0x0a, 0x0a, 0x0a, 0xff);
+    let builder = WebviewWindowBuilder::new(app, "setup-help", WebviewUrl::External(parsed))
+        .title("Remote machine setup")
+        .inner_size(760.0, 720.0)
+        .min_inner_size(420.0, 320.0)
+        .decorations(false)
+        .resizable(true)
+        .center()
+        .background_color(opaque_bg)
+        .visible(true);
+    let win = builder.build().map_err(|e| {
+        eprintln!("spawn_setup_help: build failed: {e}");
+        e
+    })?;
+    let _ = win.show();
+    let _ = win.unminimize();
+    let _ = win.set_focus();
+    Ok(())
+}
+
+#[tauri::command]
+fn open_setup_help(app: AppHandle, base_url: tauri::State<'_, BaseUrl>) -> Result<(), String> {
+    spawn_setup_help(&app, &base_url.0).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn close_widget(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("widget") {
@@ -792,6 +831,7 @@ async fn main() {
         .invoke_handler(tauri::generate_handler![
             open_external,
             open_widget,
+            open_setup_help,
             close_widget,
             is_widget_open,
             show_main,
