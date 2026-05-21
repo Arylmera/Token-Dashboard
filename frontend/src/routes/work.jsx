@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { D } from "../data-store.js";
 import { fmtCost, fmtTokens } from "../format.js";
 import { PageNav, SortHeader, usePaginated, useSortable } from "../components/sortable.jsx";
+import { displayProject } from "../project-name.js";
 
 const pctStyle = (v, max) => ({ "--pct": Math.min(100, Math.round(((v || 0) / (max || 1)) * 100)) });
 
@@ -15,7 +16,7 @@ const fmtLastActive = (iso) => {
 
 const ProjectsTable = ({ rows, max }) => {
   const { sorted, sortState, requestSort } = useSortable(rows, "tokens", "desc", {
-    name: (r) => r.name,
+    name: (r) => displayProject(r.name),
     lastActive: (r) => r.lastActive,
     sessions: (r) => r.sessions || 0,
     tokens: (r) => r.tokens || 0,
@@ -36,8 +37,8 @@ const ProjectsTable = ({ rows, max }) => {
         <tbody>
           {slice.map((p) => (
             <tr key={p.slug} className="clickable has-bar" style={pctStyle(p.cost, max)}>
-              <td>
-                <div className="a-proj-nick">{p.name}</div>
+              <td title={p.slug || p.name}>
+                <div className="a-proj-nick">{displayProject(p.name)}</div>
                 {p.slug && p.slug !== p.name && <div className="a-proj-slug">{p.slug}</div>}
               </td>
               <td className="muted">{fmtLastActive(p.lastActive)}</td>
@@ -97,7 +98,7 @@ const SkillsTable = ({ rows }) => {
 const SessionsTable = ({ rows, max }) => {
   const { sorted, sortState, requestSort } = useSortable(rows, "cost", "desc", {
     id: (r) => r.id,
-    project: (r) => r.project,
+    project: (r) => displayProject(r.project),
     started: (r) => r.started,
     turns: (r) => r.turns || 0,
     tokens: (r) => r.tokens || 0,
@@ -120,7 +121,7 @@ const SessionsTable = ({ rows, max }) => {
           {slice.map((s) => (
             <tr key={s.fullId || s.id} className="has-bar" style={pctStyle(s.cost, max)}>
               <td className="mono" style={{ color: "var(--bone)" }}>{s.id}</td>
-              <td className="mono">{s.project}</td>
+              <td className="mono" title={s.project}>{displayProject(s.project)}</td>
               <td className="muted">{s.started}</td>
               <td className="num">{s.turns}</td>
               <td className="num">{fmtTokens(s.tokens)}</td>

@@ -18,3 +18,17 @@ rust-version = "1.82"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+print_stdout = "allow"
+print_stderr = "allow"
+# Promote these to "warn" in a follow-up after a sweep:
+# unwrap_used = "warn"
+# expect_used = "warn"

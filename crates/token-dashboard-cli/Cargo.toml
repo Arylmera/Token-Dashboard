@@ -1,6 +1,6 @@
 [package]
 name = "token-dashboard-cli"
-version = "4.1.1"
+version = "4.1.2"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -33,3 +33,6 @@ ureq = { version = "2.10", features = ["json"] }
 tempfile = "3"
 http-body-util = "0.1"
 hyper = "1"
+
+[lints]
+workspace = true

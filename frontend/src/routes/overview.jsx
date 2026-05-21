@@ -4,6 +4,8 @@ import { fmtCost, fmtCostWhole, fmtNum, fmtPct, fmtTokens } from "../format.js";
 import { HBar, KPI, ModelBadge } from "../components/atoms.jsx";
 import { AreaChart, Donut, DualAreaChart, StripSpark } from "../components/charts.jsx";
 import { SortHeader, useSortable } from "../components/sortable.jsx";
+import { CountUp } from "../components/count-up.jsx";
+import { displayProject } from "../project-name.js";
 
 const rangeDaysFromKey = (key) => {
   const k = String(key || "").toLowerCase();
@@ -63,7 +65,7 @@ const KpiRow = ({ totals }) => {
     {
       key: "range",
       label: t.rangeLabel || "range",
-      value: fmtCostWhole(t.range || 0),
+      value: <CountUp to={t.range || 0} format={fmtCostWhole} />,
       sub: `${fmtTokens(t.rangeTokens)} tok · ${t.rangeSessions || 0} sessions`,
       sparkData: useHourly ? (D.hourlyDetail || []) : daily,
       sparkDays: useHourly ? 24 : rangeDays,
@@ -71,7 +73,7 @@ const KpiRow = ({ totals }) => {
     {
       key: "plus",
       label: t.plusLabel || "plus",
-      value: fmtCostWhole(t.plusCost || 0),
+      value: <CountUp to={t.plusCost || 0} format={fmtCostWhole} />,
       sub: `${fmtTokens(t.plusTokens || 0)} tok · ${plusAvg}`,
       sparkData: plusSparkData,
       sparkDays: plusSparkDays,
@@ -90,19 +92,19 @@ const KpiRow = ({ totals }) => {
       ))}
       <KPI
         label="input"
-        value={fmtTokens(t.inputTokens)}
+        value={<CountUp to={t.inputTokens || 0} format={fmtTokens} />}
         sub={`tokens · ${t.rangeLabel || "range"}`}
         spark={<KpiSpark daily={ioSeries} days={ioDays} pick={(d) => Number(d.input) || 0} />}
       />
       <KPI
         label="output"
-        value={fmtTokens(t.outputTokens)}
+        value={<CountUp to={t.outputTokens || 0} format={fmtTokens} />}
         sub={`tokens · ${t.rangeLabel || "range"}`}
         spark={<KpiSpark daily={ioSeries} days={ioDays} pick={(d) => Number(d.output) || 0} />}
       />
       <KPI
         label="cache hit"
-        value={fmtPct(t.cacheHitRate)}
+        value={<CountUp to={t.cacheHitRate || 0} format={fmtPct} />}
         sub={`last ${t.rangeLabel || "range"}`}
         spark={<KpiSpark daily={ioSeries} days={ioDays} pick={cacheHitOf} />}
       />
@@ -184,7 +186,7 @@ const BurnRateCard = () => {
         <span className="a-card-meta">7-day average · {sub} · trend overlaid on Today</span>
       </div>
       <div className="a-kpi-row">
-        <KPI label="avg / day" value={fmtCost(br.avg_daily_cost_usd || 0)} />
+        <KPI label="avg / day" value={<CountUp to={br.avg_daily_cost_usd || 0} format={fmtCost} />} />
         <KPI label="days left" value={<span className={tone}>{fmtDaysLeft}</span>} />
         <KPI label={secondaryLabel} value={secondaryValue} />
       </div>
@@ -523,7 +525,7 @@ const TopStrip = ({ totals, burn }) => {
     <section className="a-strip">
       <div className="a-strip-left">
         <div className="a-label">today · live</div>
-        <div className="a-strip-num">{fmtCost(totals.today)}</div>
+        <div className="a-strip-num"><CountUp to={totals.today || 0} format={fmtCost} /></div>
         <div className="a-strip-sub">
           {fmtTokens(totals.todayTokens)} tok · vs {fmtCost(totals.yesterday)} yesterday · {totals.rangeSessions || 0} sessions·{totals.rangeKey || "30d"}
         </div>
@@ -548,7 +550,7 @@ const TopStrip = ({ totals, burn }) => {
       </div>
       <div className="a-strip-right">
         <div className="a-label">burn rate</div>
-        <div className="a-strip-num">${burn.rate.toFixed(2)}<span className="a-strip-unit">/hr</span></div>
+        <div className="a-strip-num">$<CountUp to={burn.rate || 0} format={(v) => v.toFixed(2)} /><span className="a-strip-unit">/hr</span></div>
         <div className="a-gauge">
           <div className="a-gauge-track">
             <div className="a-gauge-fill" style={{ width: `${Math.min(burn.multiple / 6, 1) * 100}%` }} />
@@ -874,7 +876,7 @@ const AnomalyCard = () => {
               onClick={() => { window.location.hash = `/sessions/${encodeURIComponent(a.session_id)}`; }}
             >
               <td className="mono">{a.session_id.slice(0, 8)}</td>
-              <td className="mono">{a.project_slug}</td>
+              <td className="mono" title={a.project_slug}>{displayProject(a.project_slug)}</td>
               <td className="num tone-bad">{fmtCost(a.cost_usd)}</td>
               <td className="num">{a.z_score.toFixed(1)}σ</td>
               <td className="num">{fmtCost(a.baseline_mean)}</td>
@@ -892,7 +894,7 @@ const RecentSessions = () => {
   const scroll = sessions.length > 20;
   const { sorted, sortState, requestSort } = useSortable(sessions, null, "desc", {
     id: (r) => r.id,
-    project: (r) => r.project,
+    project: (r) => displayProject(r.project),
     started: (r) => r.started,
     model: (r) => r.model,
     turns: (r) => r.turns || 0,
@@ -917,7 +919,7 @@ const RecentSessions = () => {
         {sorted.map((s) => (
           <tr key={s.id} className="clickable" onClick={() => { window.location.hash = `/sessions/${encodeURIComponent(s.id)}`; }}>
             <td className="mono">{s.id}</td>
-            <td className="mono">{s.project}</td>
+            <td className="mono" title={s.project}>{displayProject(s.project)}</td>
             <td>{s.started}</td>
             <td><ModelBadge model={s.model} /></td>
             <td className="num">{s.turns}</td>

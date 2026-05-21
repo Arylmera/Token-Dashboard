@@ -1,6 +1,6 @@
 [package]
 name = "token-dashboard-core"
-version = "4.1.1"
+version = "4.1.2"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -34,3 +34,6 @@ http = ["dep:ureq"]
 [dev-dependencies]
 tempfile = "3"
 filetime = "0.2"
+
+[lints]
+workspace = true

@@ -2290,3 +2290,82 @@ html:has(body.td-widget-body)::-webkit-scrollbar { width: 0; height: 0; display:
 .a-widget-pick input { margin-top: 2px; accent-color: var(--accent, #d4a14a); }
 .a-widget-pick-title { font-size: 12px; font-weight: 500; color: var(--bone, #e7e2d5); }
 .a-widget-pick-note { font-size: 11px; color: var(--gull, #9aa0a6); margin-top: 2px; }
+
+/* ─── Loading / page-transition animations ─────────────────────────────
+   Stagger fade-up on route mount, cross-fade between tabs, skeleton
+   shimmer for loading placeholders. All respect prefers-reduced-motion. */
+
+@keyframes a-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes a-page-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes a-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.dir-a-root .a-page-enter {
+  animation: a-page-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dir-a-root .a-route > * {
+  animation: a-fade-up 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(40ms * var(--stagger, 0));
+}
+.dir-a-root .a-route > *:nth-child(1)  { --stagger: 0; }
+.dir-a-root .a-route > *:nth-child(2)  { --stagger: 1; }
+.dir-a-root .a-route > *:nth-child(3)  { --stagger: 2; }
+.dir-a-root .a-route > *:nth-child(4)  { --stagger: 3; }
+.dir-a-root .a-route > *:nth-child(5)  { --stagger: 4; }
+.dir-a-root .a-route > *:nth-child(6)  { --stagger: 5; }
+.dir-a-root .a-route > *:nth-child(7)  { --stagger: 6; }
+.dir-a-root .a-route > *:nth-child(8)  { --stagger: 7; }
+.dir-a-root .a-route > *:nth-child(9)  { --stagger: 8; }
+.dir-a-root .a-route > *:nth-child(10) { --stagger: 9; }
+.dir-a-root .a-route > *:nth-child(n+11) { --stagger: 10; }
+
+/* Stagger KPI tiles inside the row a bit too, after the row itself
+   has faded in. Uses a smaller delay so the row doesn't feel sluggish. */
+.dir-a-root .a-kpi-row > .a-kpi {
+  animation: a-fade-up 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(60ms * var(--kpi-stagger, 0));
+}
+.dir-a-root .a-kpi-row > .a-kpi:nth-child(1) { --kpi-stagger: 0; }
+.dir-a-root .a-kpi-row > .a-kpi:nth-child(2) { --kpi-stagger: 1; }
+.dir-a-root .a-kpi-row > .a-kpi:nth-child(3) { --kpi-stagger: 2; }
+.dir-a-root .a-kpi-row > .a-kpi:nth-child(4) { --kpi-stagger: 3; }
+.dir-a-root .a-kpi-row > .a-kpi:nth-child(5) { --kpi-stagger: 4; }
+.dir-a-root .a-kpi-row > .a-kpi:nth-child(6) { --kpi-stagger: 5; }
+.dir-a-root .a-kpi-row > .a-kpi:nth-child(n+7) { --kpi-stagger: 6; }
+
+/* Skeleton block: shimmering rectangle for loading placeholders. */
+.dir-a-root .a-skel {
+  display: inline-block;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--panel-2, #15181d) 80%, transparent),
+    color-mix(in srgb, var(--iron-border-2, #2a2e36) 80%, transparent),
+    color-mix(in srgb, var(--panel-2, #15181d) 80%, transparent)
+  );
+  background-size: 200% 100%;
+  animation: a-shimmer 1.4s linear infinite;
+  color: transparent !important;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dir-a-root .a-page-enter,
+  .dir-a-root .a-route > *,
+  .dir-a-root .a-kpi-row > .a-kpi {
+    animation: none !important;
+  }
+  .dir-a-root .a-skel { animation: none !important; }
+}
+

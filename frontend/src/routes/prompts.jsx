@@ -3,6 +3,7 @@ import { D } from "../data-store.js";
 import { fmtCost, fmtTokens } from "../format.js";
 import { Label, ModelBadge } from "../components/atoms.jsx";
 import { SortHeader, useSortable } from "../components/sortable.jsx";
+import { displayProject } from "../project-name.js";
 
 // /api/verbosity returns prompts where input chars vastly exceed output tokens
 // — the long-prompt-tiny-reply pattern. Mixed units (chars vs tokens) is the
@@ -103,7 +104,7 @@ export const Prompts = () => {
   const [query, setQuery] = usePromptSearch();
   const { sorted, sortState, requestSort } = useSortable(D.prompts || [], "tokens", "desc", {
     preview: (r) => r.preview,
-    project: (r) => r.project,
+    project: (r) => displayProject(r.project),
     session: (r) => r.session,
     model: (r) => r.model,
     tokens: (r) => r.tokens || 0,
@@ -166,7 +167,7 @@ export const Prompts = () => {
                     <span style={{ marginRight: 6, color: "var(--gull)" }}>{openId === p.id ? "▾" : "▸"}</span>
                     {p.preview}
                   </td>
-                  <td className="mono">{p.project}</td>
+                  <td className="mono" title={p.project}>{displayProject(p.project)}</td>
                   <td className="mono">{p.session}</td>
                   <td><ModelBadge model={p.model} /></td>
                   <td className="num">{fmtTokens(p.tokens)}</td>
