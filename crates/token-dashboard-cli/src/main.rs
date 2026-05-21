@@ -7,10 +7,17 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use token_dashboard_cli::{app, spawn_scan_loop, spawn_startup_oauth_sync, AppState};
+use token_dashboard_cli::{
+    app, spawn_remote_sync_loop, spawn_scan_loop, spawn_startup_oauth_sync, AppState,
+};
 use token_dashboard_core::{default_db_path, Pricing};
 
 const SCAN_INTERVAL: Duration = Duration::from_secs(10);
+/// Default cadence for the viewer-side remote-source pull. 5 minutes is
+/// the same order of magnitude as the user's typical "switch laptops"
+/// gap; the manual "Sync now" button in Settings covers immediate refresh.
+/// Both machines stay local — no telemetry, no third-party endpoint.
+const REMOTE_SYNC_INTERVAL: Duration = Duration::from_secs(300);
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
     std::env::var(key)
@@ -61,6 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     spawn_scan_loop(state.clone(), SCAN_INTERVAL);
     spawn_startup_oauth_sync(state.clone());
+    spawn_remote_sync_loop(state.clone(), REMOTE_SYNC_INTERVAL);
 
     axum::serve(listener, app(state))
         .with_graceful_shutdown(shutdown_signal())

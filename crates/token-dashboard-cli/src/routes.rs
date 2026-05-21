@@ -2249,37 +2249,9 @@ pub(crate) async fn remote_sources_sync(
     AxumPath(id): AxumPath<i64>,
 ) -> Result<Json<token_dashboard_core::sync_snapshot::MergeStats>, ApiError> {
     let path = s.db_path.clone();
-    let join_result = tokio::task::spawn_blocking(
-        move || -> Result<token_dashboard_core::sync_snapshot::MergeStats, String> {
-            let row = token_dashboard_core::remote_sources::get_with_bearer(path.as_ref(), id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "unknown remote source".to_string())?;
-            if !row.enabled {
-                return Err("remote source disabled".to_string());
-            }
-            let url = format!("{}/api/sync/snapshot", row.base_url.trim_end_matches('/'));
-            let mut req = ureq::get(&url).timeout(std::time::Duration::from_secs(60));
-            if let Some(bearer) = row.bearer.as_deref() {
-                req = req.set("Authorization", &format!("Bearer {}", bearer));
-            }
-            let snap: token_dashboard_core::sync_snapshot::Snapshot = match req.call() {
-                Ok(resp) => resp.into_json().map_err(|e| e.to_string())?,
-                Err(e) => {
-                    let msg = e.to_string();
-                    let _ = token_dashboard_core::remote_sources::stamp_sync(
-                        path.as_ref(),
-                        id,
-                        Some(&msg),
-                    );
-                    return Err(msg);
-                }
-            };
-            let stats = token_dashboard_core::sync_snapshot::merge(path.as_ref(), &snap)
-                .map_err(|e| e.to_string())?;
-            let _ = token_dashboard_core::remote_sources::stamp_sync(path.as_ref(), id, None);
-            Ok(stats)
-        },
-    )
+    let join_result = tokio::task::spawn_blocking(move || {
+        crate::remote_sync::pull_remote_once(path.as_ref(), id)
+    })
     .await;
     let stats = join_result
         .map_err(|e| ApiError::internal(format!("join: {e}")))?

@@ -1,13 +1,20 @@
-//! Monthly budget threshold alerts.
+//! Budget threshold alerts.
 //!
-//! Watches month-to-date spend against the configured monthly budget and
-//! flags newly-crossed thresholds (default: 50/80/100%). State is persisted
-//! in the `plan` table under a single JSON value so each threshold fires
-//! at most once per month; mutes are honoured immediately.
+//! Two regimes depending on the active plan:
 //!
-//! The OS-notification side of this feature is intentionally deferred to a
-//! follow-up (needs `tauri-plugin-notification` + per-platform capability
-//! grants). The in-app banner reads `newly_crossed` from `/api/budget-alerts`.
+//! * **API plan** — watches month-to-date USD spend against the configured
+//!   monthly budget and flags newly-crossed thresholds. State keyed by
+//!   `YYYY-MM`, resets on month rollover.
+//! * **Subscription plan (Pro/Max/Team/…)** — USD budgets don't apply.
+//!   Watches the server-synced *weekly* utilization (from Anthropic
+//!   rate-limit headers) and the *5h window* utilization independently.
+//!   Each window keeps its own fired list keyed by the current reset
+//!   timestamp, so thresholds re-fire automatically when a fresh window
+//!   opens. Monthly USD alerts are suppressed.
+//!
+//! Mutes are honoured immediately and apply across all three windows.
+//! The OS-notification side is wired through the SSE bus in `scan.rs`;
+//! the in-app banner reads `newly_crossed*` from `/api/budget-alerts`.
 
 use std::path::Path;
 
@@ -16,16 +23,30 @@ use serde::{Deserialize, Serialize};
 
 use crate::preferences;
 use crate::pricing::{cost_for, Pricing, Usage};
-use crate::queries::open_ro;
+use crate::queries::{get_plan, open_ro};
 
 const CONFIG_KEY: &str = "budget_alerts_config";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct AlertsState {
-    /// `YYYY-MM` of the month whose thresholds we already fired for.
-    /// New month resets `fired` automatically.
+    /// `YYYY-MM` of the month whose monthly-USD thresholds we already
+    /// fired for. New month resets `fired` automatically. Only used
+    /// on the API plan.
     pub month: String,
     pub fired: Vec<u32>,
+    /// Subscription mode: reset timestamp of the weekly window whose
+    /// thresholds were fired. When the stored key differs from the
+    /// current `limits_weekly_reset_at`, `weekly_fired` is cleared.
+    #[serde(default)]
+    pub weekly_window: String,
+    #[serde(default)]
+    pub weekly_fired: Vec<u32>,
+    /// Same shape as the weekly fields, but for the 5h window keyed
+    /// off `limits_five_hour_reset_at`.
+    #[serde(default)]
+    pub five_hour_window: String,
+    #[serde(default)]
+    pub five_hour_fired: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -47,14 +68,35 @@ impl Default for AlertsConfig {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct AlertResult {
+    /// Active plan key (`"api"`, `"max"`, `"pro"`, …). Drives which
+    /// alert regime fired.
+    pub plan: String,
+    /// True when the subscription regime is active. Mirrors `plan != "api"`.
+    pub subscription_mode: bool,
+    /// Configured thresholds and mutes (shared across all windows).
+    pub thresholds: Vec<u32>,
+    pub muted: Vec<u32>,
+
+    // --- Monthly USD regime (API plan only) ---
     pub mtd_cost_usd: f64,
     pub monthly_budget_usd: Option<f64>,
     pub percent: f64,
-    pub thresholds: Vec<u32>,
-    pub muted: Vec<u32>,
     pub newly_crossed: Vec<u32>,
     pub fired_this_month: Vec<u32>,
     pub month: String,
+
+    // --- Subscription regime: weekly window ---
+    /// 0–100. `None` when no weekly server snapshot is available.
+    pub weekly_percent: Option<f64>,
+    pub weekly_resets_at: Option<String>,
+    pub newly_crossed_weekly: Vec<u32>,
+    pub fired_this_weekly: Vec<u32>,
+
+    // --- Subscription regime: 5h window ---
+    pub five_hour_percent: Option<f64>,
+    pub five_hour_resets_at: Option<String>,
+    pub newly_crossed_5h: Vec<u32>,
+    pub fired_this_5h: Vec<u32>,
 }
 
 /// Read the persisted alerts config, falling back to defaults.
@@ -89,58 +131,168 @@ pub fn set_config<P: AsRef<Path>>(db: P, cfg: &AlertsConfig) -> rusqlite::Result
     Ok(())
 }
 
-/// Inspect the current month's spend against the configured monthly budget,
-/// flag any newly-crossed thresholds, and persist the updated state so each
-/// threshold fires at most once per month.
+/// Check whichever alert regime is active for the current plan, flag any
+/// newly-crossed thresholds, and persist updated state so each threshold
+/// fires at most once per window. See module docs for the two regimes.
 pub fn check<P: AsRef<Path>>(db: P) -> rusqlite::Result<AlertResult> {
     let db = db.as_ref();
     let conn = open_ro(db)?;
     let pricing = Pricing::embedded();
-    let monthly_budget_usd = preferences::get_budgets(db)?.monthly;
     let mut cfg = get_config(db)?;
+    let plan = get_plan(db).unwrap_or_else(|_| "api".to_string());
+    let subscription_mode = plan != "api";
 
     let month: String = conn
         .query_row("SELECT strftime('%Y-%m', 'now')", [], |r| r.get(0))
         .unwrap_or_else(|_| String::new());
 
-    // Reset `fired` whenever we roll into a new month so thresholds can re-fire.
-    if cfg.state.month != month {
-        cfg.state.month = month.clone();
-        cfg.state.fired.clear();
-    }
-
+    let monthly_budget_usd = preferences::get_budgets(db)?.monthly;
     let mtd_cost_usd = mtd_cost(&conn, &pricing)?;
     let percent = match monthly_budget_usd {
         Some(b) if b > 0.0 => (mtd_cost_usd / b) * 100.0,
         _ => 0.0,
     };
 
-    let mut newly_crossed = Vec::new();
-    if monthly_budget_usd.is_some() {
-        for t in cfg.thresholds.iter().copied() {
-            if cfg.muted.contains(&t) {
-                continue;
-            }
-            if percent >= t as f64 && !cfg.state.fired.contains(&t) {
-                newly_crossed.push(t);
-                cfg.state.fired.push(t);
-            }
+    let mut dirty = false;
+    let mut newly_crossed_monthly = Vec::new();
+    let mut newly_crossed_weekly = Vec::new();
+    let mut newly_crossed_5h = Vec::new();
+    let mut weekly_percent: Option<f64> = None;
+    let mut weekly_resets_at: Option<String> = None;
+    let mut five_hour_percent: Option<f64> = None;
+    let mut five_hour_resets_at: Option<String> = None;
+
+    if subscription_mode {
+        // Subscription regime: monthly USD budgets don't apply. Reset the
+        // month state so any prior API-mode fired entries don't leak.
+        if !cfg.state.fired.is_empty() {
+            cfg.state.fired.clear();
+            dirty = true;
         }
-        if !newly_crossed.is_empty() {
-            set_config(db, &cfg)?;
+        cfg.state.month = month.clone();
+
+        let snap = preferences::get_limits_server_snapshot(db)?;
+        weekly_resets_at = preferences::get_limit_reset_at(db, "limits_weekly_reset_at")?;
+        five_hour_resets_at = preferences::get_limit_reset_at(db, "limits_five_hour_reset_at")?;
+
+        weekly_percent = snap.weekly_utilization.map(util_to_percent);
+        if let Some(pct) = weekly_percent {
+            evaluate_window(
+                &mut WindowState {
+                    key: &mut cfg.state.weekly_window,
+                    fired: &mut cfg.state.weekly_fired,
+                },
+                weekly_resets_at.as_deref().unwrap_or(""),
+                pct,
+                &cfg.thresholds,
+                &cfg.muted,
+                &mut newly_crossed_weekly,
+                &mut dirty,
+            );
         }
+
+        five_hour_percent = snap.five_hour_utilization.map(util_to_percent);
+        if let Some(pct) = five_hour_percent {
+            evaluate_window(
+                &mut WindowState {
+                    key: &mut cfg.state.five_hour_window,
+                    fired: &mut cfg.state.five_hour_fired,
+                },
+                five_hour_resets_at.as_deref().unwrap_or(""),
+                pct,
+                &cfg.thresholds,
+                &cfg.muted,
+                &mut newly_crossed_5h,
+                &mut dirty,
+            );
+        }
+    } else if monthly_budget_usd.is_some() {
+        evaluate_window(
+            &mut WindowState {
+                key: &mut cfg.state.month,
+                fired: &mut cfg.state.fired,
+            },
+            &month,
+            percent,
+            &cfg.thresholds,
+            &cfg.muted,
+            &mut newly_crossed_monthly,
+            &mut dirty,
+        );
+    } else if cfg.state.month != month {
+        // No budget configured — keep month state aligned so a future
+        // budget edit starts with a clean fired list.
+        cfg.state.month = month.clone();
+        cfg.state.fired.clear();
+        dirty = true;
+    }
+
+    if dirty {
+        set_config(db, &cfg)?;
     }
 
     Ok(AlertResult {
+        plan,
+        subscription_mode,
+        thresholds: cfg.thresholds.clone(),
+        muted: cfg.muted.clone(),
         mtd_cost_usd,
         monthly_budget_usd,
         percent,
-        thresholds: cfg.thresholds.clone(),
-        muted: cfg.muted.clone(),
-        newly_crossed,
+        newly_crossed: newly_crossed_monthly,
         fired_this_month: cfg.state.fired.clone(),
         month,
+        weekly_percent,
+        weekly_resets_at,
+        newly_crossed_weekly,
+        fired_this_weekly: cfg.state.weekly_fired.clone(),
+        five_hour_percent,
+        five_hour_resets_at,
+        newly_crossed_5h,
+        fired_this_5h: cfg.state.five_hour_fired.clone(),
     })
+}
+
+/// Mutable view over one window's persisted state. Lets `evaluate_window`
+/// rotate the window key + fired list without taking a mutable borrow on
+/// the whole `AlertsConfig`.
+struct WindowState<'a> {
+    key: &'a mut String,
+    fired: &'a mut Vec<u32>,
+}
+
+fn util_to_percent(util: f64) -> f64 {
+    (util * 100.0).clamp(0.0, 100.0)
+}
+
+/// Score `percent` against `thresholds` for one window. If the stored
+/// window key has changed, the fired list is cleared first (new window
+/// = thresholds become eligible again). Crossings are appended to
+/// `newly_crossed`; `dirty` is set whenever persisted state mutated.
+fn evaluate_window(
+    state: &mut WindowState<'_>,
+    current_key: &str,
+    percent: f64,
+    thresholds: &[u32],
+    muted: &[u32],
+    newly_crossed: &mut Vec<u32>,
+    dirty: &mut bool,
+) {
+    if state.key != current_key {
+        *state.key = current_key.to_string();
+        state.fired.clear();
+        *dirty = true;
+    }
+    for t in thresholds.iter().copied() {
+        if muted.contains(&t) {
+            continue;
+        }
+        if percent >= t as f64 && !state.fired.contains(&t) {
+            newly_crossed.push(t);
+            state.fired.push(t);
+            *dirty = true;
+        }
+    }
 }
 
 fn mtd_cost(conn: &rusqlite::Connection, pricing: &Pricing) -> rusqlite::Result<f64> {
@@ -305,6 +457,82 @@ mod tests {
         assert!(r.newly_crossed.contains(&100));
     }
 
+    fn set_server_util(conn: &Connection, key: &str, util: f64) {
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES (?1, ?2)",
+            params![key, util.to_string()],
+        )
+        .unwrap();
+    }
+
+    fn set_plan(conn: &Connection, plan: &str) {
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('plan', ?1)",
+            params![plan],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn subscription_mode_fires_on_weekly_and_5h_thresholds() {
+        let f = fresh_db();
+        let conn = Connection::open(f.path()).unwrap();
+        set_plan(&conn, "max");
+        set_server_util(&conn, "limits_weekly_pct_server", 0.85);
+        set_server_util(&conn, "limits_5h_pct_server", 0.55);
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_weekly_reset_at', '2099-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_five_hour_reset_at', '2099-01-01T05:00:00Z')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let r = check(f.path()).unwrap();
+        assert!(r.subscription_mode);
+        assert_eq!(r.newly_crossed_weekly, vec![50, 80]);
+        assert_eq!(r.newly_crossed_5h, vec![50]);
+        // Monthly USD alerts suppressed in subscription mode.
+        assert!(r.newly_crossed.is_empty());
+
+        // Second call doesn't re-fire.
+        let r2 = check(f.path()).unwrap();
+        assert!(r2.newly_crossed_weekly.is_empty());
+        assert!(r2.newly_crossed_5h.is_empty());
+    }
+
+    #[test]
+    fn subscription_new_window_resets_fired() {
+        let f = fresh_db();
+        let conn = Connection::open(f.path()).unwrap();
+        set_plan(&conn, "max");
+        set_server_util(&conn, "limits_weekly_pct_server", 0.85);
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_weekly_reset_at', '2099-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let r1 = check(f.path()).unwrap();
+        assert_eq!(r1.newly_crossed_weekly, vec![50, 80]);
+
+        // Roll the weekly window — fired list should clear.
+        let conn = Connection::open(f.path()).unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('limits_weekly_reset_at', '2099-02-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let r2 = check(f.path()).unwrap();
+        assert_eq!(r2.newly_crossed_weekly, vec![50, 80]);
+    }
+
     #[test]
     fn rolling_into_new_month_resets_fired() {
         let f = fresh_db();
@@ -315,6 +543,7 @@ mod tests {
             state: AlertsState {
                 month: "2020-01".into(),
                 fired: vec![50, 80, 100],
+                ..AlertsState::default()
             },
         };
         set_config(f.path(), &stale_cfg).unwrap();

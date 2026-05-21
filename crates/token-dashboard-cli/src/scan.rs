@@ -114,11 +114,32 @@ pub(crate) async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, Str
         if !result.newly_crossed.is_empty() {
             let _ = s.events.send(serde_json::json!({
                 "type": "budget_alert",
+                "window": "monthly",
                 "mtd_cost_usd": result.mtd_cost_usd,
                 "monthly_budget_usd": result.monthly_budget_usd,
                 "percent": result.percent,
                 "newly_crossed": result.newly_crossed,
                 "month": result.month,
+            }));
+        }
+        if !result.newly_crossed_weekly.is_empty() {
+            let _ = s.events.send(serde_json::json!({
+                "type": "budget_alert",
+                "window": "weekly",
+                "plan": result.plan,
+                "percent": result.weekly_percent,
+                "resets_at": result.weekly_resets_at,
+                "newly_crossed": result.newly_crossed_weekly,
+            }));
+        }
+        if !result.newly_crossed_5h.is_empty() {
+            let _ = s.events.send(serde_json::json!({
+                "type": "budget_alert",
+                "window": "five_hour",
+                "plan": result.plan,
+                "percent": result.five_hour_percent,
+                "resets_at": result.five_hour_resets_at,
+                "newly_crossed": result.newly_crossed_5h,
             }));
         }
     }
