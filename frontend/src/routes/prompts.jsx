@@ -27,15 +27,16 @@ const VerbosityList = () => {
       <div className="a-card-head">
         <h2>Wasted prompts</h2>
         <span className="a-card-meta">long prompt, tiny reply · ratio = chars in / tokens out</span>
-        <label style={{ marginLeft: "auto", color: "var(--gull)" }}>
-          min chars{" "}
+        <label className="a-prompt-search-label">
+          min chars
           <input
             type="number"
             min="1"
             max="100000"
             value={minChars}
             onChange={(e) => setMinChars(Math.max(1, +e.target.value || 1))}
-            style={{ width: 90 }}
+            className="a-prompt-search"
+            style={{ minWidth: 80, width: 80 }}
           />
         </label>
       </div>
@@ -112,11 +113,11 @@ export const Prompts = () => {
   const headProps = { state: sortState, requestSort };
   return (
     <div className="a-route">
-      <div className="a-tabs" role="tablist" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <div className="a-pill-btn-row" role="tablist" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button
           role="tab"
           aria-selected={tab === "expensive"}
-          className={tab === "expensive" ? "a-tab is-active" : "a-tab"}
+          className={tab === "expensive" ? "a-pill-btn is-active" : "a-pill-btn"}
           onClick={() => setTab("expensive")}
         >
           Expensive
@@ -124,7 +125,7 @@ export const Prompts = () => {
         <button
           role="tab"
           aria-selected={tab === "wasted"}
-          className={tab === "wasted" ? "a-tab is-active" : "a-tab"}
+          className={tab === "wasted" ? "a-pill-btn is-active" : "a-pill-btn"}
           onClick={() => setTab("wasted")}
         >
           Wasted

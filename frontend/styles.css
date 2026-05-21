@@ -386,6 +386,136 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
   min-width: 220px; outline: none; margin-left: auto;
 }
 .a-prompt-search:focus { border-color: var(--accent); }
+.a-prompt-search-label {
+  margin-left: auto;
+  color: var(--gull);
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 500 11px "JetBrains Mono";
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+.a-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+.a-modal {
+  background: var(--panel);
+  border: 1px solid var(--iron-border-2);
+  max-width: 720px; width: 100%;
+  max-height: 85vh; overflow: hidden;
+  display: flex; flex-direction: column;
+  font: 400 13px "JetBrains Mono";
+  color: var(--bone);
+}
+.a-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--iron-border);
+  background: var(--panel-2);
+}
+.a-modal-head h3 {
+  margin: 0; font: 600 13px "JetBrains Mono";
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--bone);
+}
+.a-modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  line-height: 1.55;
+}
+.a-modal-body h4 {
+  margin: 16px 0 6px;
+  font: 600 11px "JetBrains Mono";
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.a-modal-body p,
+.a-modal-body li { color: var(--bone); }
+.a-modal-body ol,
+.a-modal-body ul { padding-left: 22px; margin: 6px 0 10px; }
+.a-modal-body li { margin: 3px 0; }
+.a-modal-body code {
+  background: var(--panel-2);
+  border: 1px solid var(--iron-border);
+  padding: 1px 5px;
+  color: var(--accent-2, var(--bone));
+}
+.a-modal-body .a-pre {
+  margin: 6px 0 10px;
+  white-space: pre-wrap;
+}
+
+/* Standalone Tauri webview window for setup help (mirrors widget popup) */
+html:has(body.td-setup-help-body),
+body.td-setup-help-body {
+  margin: 0; padding: 0; overflow: hidden;
+  background: var(--bg, #0a0a0a);
+  height: 100%;
+}
+body.td-setup-help-body #root { height: 100%; }
+.a-setup-help-root {
+  background: var(--bg, #0a0a0a);
+  color: var(--bone);
+  display: flex; flex-direction: column;
+  height: 100%;
+}
+.a-setup-help {
+  display: flex; flex-direction: column;
+  height: 100%;
+  border: 1px solid var(--iron-border-2);
+  background: var(--panel);
+  font: 400 13px "JetBrains Mono";
+}
+.a-setup-help-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--iron-border);
+  background: var(--panel-2);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.a-setup-help-head h3 {
+  margin: 0;
+  font: 600 12px "JetBrains Mono";
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--accent);
+}
+.a-setup-help-head .a-pill-btn { -webkit-app-region: no-drag; }
+.a-setup-help-body {
+  padding: 14px 18px;
+  overflow-y: auto;
+  line-height: 1.55;
+  flex: 1;
+}
+.a-setup-help-body h4 {
+  margin: 16px 0 6px;
+  font: 600 11px "JetBrains Mono";
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.a-setup-help-body p,
+.a-setup-help-body li { color: var(--bone); }
+.a-setup-help-body ol,
+.a-setup-help-body ul { padding-left: 22px; margin: 6px 0 10px; }
+.a-setup-help-body li { margin: 3px 0; }
+.a-setup-help-body code {
+  background: var(--panel-2);
+  border: 1px solid var(--iron-border);
+  padding: 1px 5px;
+}
+.a-setup-help-body .a-pre {
+  margin: 6px 0 10px;
+  white-space: pre-wrap;
+}
+
+/* When rendered inside the inline modal, drop the outer chrome */
+.a-modal .a-setup-help {
+  border: 0;
+  background: transparent;
+}
+.a-modal .a-setup-help-head { -webkit-app-region: unset; }
 .a-pill-btn {
   background: var(--panel-2); border: 1px solid var(--iron-border); cursor: pointer;
   font: 500 11px "JetBrains Mono"; color: var(--bone);
@@ -548,6 +678,10 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 .a-scroll-5 .a-table th:first-child,
 .a-scroll-5 .a-table td:first-child { padding-left: 20px; }
 .a-scroll-5 .a-table tbody tr.is-active td:first-child::before { left: 8px; }
+.a-scroll-10 { max-height: 360px; overflow-y: auto; }
+.a-scroll-10 .a-table th:first-child,
+.a-scroll-10 .a-table td:first-child { padding-left: 20px; }
+.a-scroll-10 .a-table tbody tr.is-active td:first-child::before { left: 8px; }
 .a-recent-scroll { max-height: 588px; overflow-y: auto; }
 .a-recent-sessions .a-table th:nth-child(2),
 .a-recent-sessions .a-table td:nth-child(2) {
@@ -638,8 +772,12 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
   max-height: 620px; overflow-y: auto;
 }
 .a-sticky-head thead th {
-  position: sticky; top: 0; background: var(--panel); z-index: 1;
+  position: sticky; top: 0; background: var(--panel); z-index: 5;
+  box-shadow: inset 0 -1px 0 var(--iron-border);
 }
+/* Solid backdrop layer so semi-transparent backgrounds (glass themes)
+   don't let scrolled rows bleed through the sticky header. */
+.a-sticky-head thead { background: var(--panel); }
 .a-search {
   background: var(--panel-2); border: 1px solid var(--iron-border);
   color: var(--bone); padding: 4px 8px; font: 400 11px "JetBrains Mono";
@@ -1034,25 +1172,115 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
   .dir-a-root .a-card-head h2 { font-size: 10px; }
 }
 
+/* Sessions table tag column — left-aligned with extra space from the
+   right-aligned cost cell. !important defends against density overrides. */
+.dir-a-root .a-table th.a-tag-cell,
+.dir-a-root .a-table td.a-tag-cell {
+  text-align: left;
+  padding-left: 40px !important;
+}
+.dir-a-root .a-table td.a-tag-cell .a-tag-chips { justify-content: flex-start; }
+
 /* Tag chips (Sessions tab) */
-.dir-a-root .a-tag-chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.dir-a-root .a-tag-chips {
+  display: inline-flex; gap: 4px; flex-wrap: wrap;
+  align-items: center; vertical-align: middle;
+  max-width: 100%;
+}
 .dir-a-root .a-tag-chip {
-  display: inline-block;
-  padding: 1px 6px;
-  font: 500 10px "JetBrains Mono", monospace;
-  border-radius: 3px;
-  background: color-mix(in oklab, var(--accent) 18%, transparent);
-  color: var(--bone);
-  border: 1px solid var(--iron-border-2);
-  cursor: pointer;
-  user-select: none;
+  /* Modern pill: subtle accent dot + lowercase mono · sized to content. */
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 1px 8px 1px 7px;
+  height: 16px; line-height: 1;
+  font: 500 9.5px/1 "JetBrains Mono", monospace;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  color: color-mix(in oklab, var(--accent) 70%, var(--bone));
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  cursor: pointer; user-select: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.dir-a-root .a-tag-chip::before {
+  content: "";
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 .dir-a-root .a-tag-chip:hover {
-  background: color-mix(in oklab, var(--warn, var(--accent)) 25%, transparent);
+  background: color-mix(in oklab, var(--bad, var(--warn)) 18%, transparent);
+  border-color: color-mix(in oklab, var(--bad, var(--warn)) 45%, transparent);
+  color: var(--bone);
 }
+.dir-a-root .a-tag-chip:hover::before { background: var(--bad, var(--warn)); opacity: 1; }
+/* On the Tags page chips act as nav buttons → keep the accent-hover but
+   drop the warn tint that signals "click to remove" on the Sessions tab. */
+.dir-a-root .a-tag-chip.a-tag-chip-btn {
+  background: none;
+  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
+  color: var(--accent);
+  padding: 2px 10px 2px 9px;
+  height: 20px;
+  font-size: 10.5px;
+}
+.dir-a-root .a-tag-chip.a-tag-chip-btn::before { background: var(--accent); opacity: 0.9; }
+.dir-a-root .a-tag-chip.a-tag-chip-btn:hover {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  border-color: var(--accent);
+  color: var(--bone);
+}
+.dir-a-root .a-tag-chip.a-tag-chip-btn:hover::before { background: var(--accent); opacity: 1; }
 .dir-a-root .a-tag-editor {
   display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
   margin: 8px 0 4px;
+}
+.dir-a-root .a-tag-combo { position: relative; }
+.dir-a-root .a-tag-combo-menu {
+  position: absolute; top: calc(100% + 4px); left: 0;
+  list-style: none; margin: 0; padding: 4px 0;
+  min-width: 220px; max-height: 260px; overflow-y: auto;
+  /* Hardcoded opaque dark panel — never inherits theme alpha, never
+     composes against the row underneath. */
+  background: #14171a;
+  border: 1px solid #2a2f36;
+  border-radius: 4px;
+  z-index: 20;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  backdrop-filter: none;
+  isolation: isolate;
+}
+/* Light themes — solid off-white instead, plus a darker border. */
+.dir-a-root.theme-paper .a-tag-combo-menu,
+.dir-a-root.theme-linen .a-tag-combo-menu,
+.dir-a-root.theme-bb-light .a-tag-combo-menu,
+.dir-a-root.theme-cyber-light .a-tag-combo-menu {
+  background: #fafafa;
+  border-color: #c8c8c8;
+}
+.dir-a-root .a-tag-combo-item {
+  width: 100%;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  background: none; border: 0; cursor: pointer;
+  font: 500 11px "JetBrains Mono", monospace;
+  color: var(--bone);
+  text-align: left;
+}
+.dir-a-root .a-tag-combo-item:hover,
+.dir-a-root .a-tag-combo-item:focus-visible {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  outline: none;
+}
+.dir-a-root .a-tag-combo-name { color: var(--bone); }
+.dir-a-root .a-tag-combo-meta {
+  color: var(--gull);
+  font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.04em;
 }
 
 /* ============================================================
@@ -1423,6 +1651,46 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
 .dir-a-root .a-stacked-bar-fill.tone-warn { background: var(--warn); }
 .dir-a-root .a-stacked-bar-fill.tone-bad { background: var(--bad); }
 .dir-a-root .a-stacked-bar-fill.tone-good { background: var(--good); }
+
+/* Per-project allocation table */
+.dir-a-root .a-allocation-table th.a-col-cap,
+.dir-a-root .a-allocation-table td.a-col-cap {
+  width: 140px;
+  min-width: 140px;
+  white-space: nowrap;
+  padding-right: 16px;
+  padding-left: 8px;
+}
+.dir-a-root .a-allocation-table td.a-col-cap .a-link-button {
+  display: inline-block;
+  width: 100px;
+  min-width: 100px;
+  padding: 4px 8px;
+  text-align: left;
+  border: 1px dashed var(--iron-border-2);
+  border-radius: 3px;
+  text-decoration: none;
+}
+.dir-a-root .a-allocation-table td.a-col-cap .a-link-button:hover {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+.dir-a-root .a-allocation-table .a-project-members {
+  margin-left: 6px;
+  color: var(--gull-2);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.dir-a-root .a-cap-input {
+  width: 88px;
+  padding: 2px 6px;
+  font: 400 12.5px "JetBrains Mono";
+  text-align: right;
+  height: 22px;
+  box-sizing: border-box;
+  flex: none;
+}
+
 .dir-a-root .a-link-button {
   background: transparent;
   border: none;

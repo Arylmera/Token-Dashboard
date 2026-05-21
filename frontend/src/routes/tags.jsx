@@ -116,7 +116,7 @@ export const Tags = () => {
                   <td>
                     <button
                       type="button"
-                      className="a-link"
+                      className="a-tag-chip a-tag-chip-btn"
                       onClick={() => openTag(r.tag)}
                       title={`Open sessions tagged "${r.tag}"`}
                     >

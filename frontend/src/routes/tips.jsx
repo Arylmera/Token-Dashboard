@@ -223,6 +223,13 @@ export const Tips = () => {
     <div className="a-route">
       <section className="a-card">
         <div className="a-card-head"><h2>Tips</h2><span className="a-card-meta">rule-based suggestions · no telemetry</span></div>
+        {keys.length === 0 && (
+          <div className="muted" style={{ padding: "12px 16px" }}>
+            No tips yet — the rule engine hasn't flagged anything in the current window.
+            Tips appear once usage crosses thresholds (low cache hit rate, repeated file reads,
+            tool-result bloat, etc.). Try widening the date range from the top bar.
+          </div>
+        )}
         {keys.map((k, idx) => (
           <TipsGroup key={k} groupKey={k} tips={groups[k]} defaultOpen={idx === 0} />
         ))}

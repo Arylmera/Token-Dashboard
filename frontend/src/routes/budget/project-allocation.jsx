@@ -85,12 +85,12 @@ export function ProjectAllocation() {
         <h2>Per-project allocation</h2>
         <span className="a-card-meta">month-to-date — set caps to track per-project</span>
       </div>
-      <table className="a-table">
+      <table className="a-table a-allocation-table">
         <thead>
           <tr>
             <th>Project</th>
             <th>MTD</th>
-            <th>Cap</th>
+            <th className="a-col-cap">Cap</th>
             <th>%</th>
             <th>Share</th>
           </tr>
@@ -101,17 +101,31 @@ export function ProjectAllocation() {
             const tone = toneFor(pct);
             const widthPct = ((r.mtd_cost_usd || 0) / maxCost) * 100;
             const isEditing = editing === r.project_slug;
+            const label = r.display_name || r.project_slug;
+            const members = r.member_count || 1;
             return (
               <tr key={r.project_slug}>
-                <td title={r.project_slug}>{r.project_slug}</td>
+                <td title={r.project_slug}>
+                  <span className="a-project-name">{label}</span>
+                  {members > 1 ? (
+                    <span
+                      className="a-project-members"
+                      title={`${members} worktrees / clones grouped`}
+                    >
+                      {" ×"}
+                      {members}
+                    </span>
+                  ) : null}
+                </td>
                 <td>{fmtCost(r.mtd_cost_usd || 0)}</td>
-                <td>
+                <td className="a-col-cap">
                   {isEditing ? (
                     <input
                       autoFocus
                       type="number"
                       min="0"
                       step="0.01"
+                      className="a-text-input a-cap-input"
                       value={draft}
                       disabled={saving}
                       onChange={(e) => setDraft(e.target.value)}
