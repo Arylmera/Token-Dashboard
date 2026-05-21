@@ -206,6 +206,20 @@ async fn tools(
     .await
 }
 
+#[derive(Deserialize, Default)]
+struct ToolCostsQuery {
+    days: Option<u32>,
+}
+
+async fn tool_costs_handler(
+    State(s): State<AppState>,
+    Query(q): Query<ToolCostsQuery>,
+) -> Result<Json<token_dashboard_core::tool_costs::ToolCostReport>, ApiError> {
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::tool_costs::report(path.as_ref(), days)).await
+}
+
 async fn daily(
     State(s): State<AppState>,
     Query(q): Query<RangeQs>,
@@ -2521,6 +2535,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/overview", get(overview))
         .route("/api/projects", get(projects))
         .route("/api/tools", get(tools))
+        .route("/api/tool-costs", get(tool_costs_handler))
         .route("/api/daily", get(daily))
         .route("/api/cache-stats", get(cache_stats_handler))
         .route("/api/burn-rate", get(burn_rate_handler))
