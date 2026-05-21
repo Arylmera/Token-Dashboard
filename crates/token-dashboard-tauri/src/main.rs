@@ -311,6 +311,69 @@ fn spawn_widget_reconciler(app: AppHandle, base_url: String) {
     });
 }
 
+/// Subscribe to the embedded server's SSE stream and fire an OS notification
+/// for every `budget_alert` event. The CLI emits these from
+/// `run_scan_and_broadcast` after `core::budget_alerts::check` flags newly
+/// crossed thresholds, so this listener does no detection itself — it just
+/// surfaces what the core already decided.
+///
+/// Reconnects with a short backoff if the stream drops (process restart,
+/// laptop sleep, etc.). The server-side budget_alert state is persisted, so
+/// a missed event isn't dropped silently — it'll re-fire on the next scan
+/// only if `core::budget_alerts::check` records a new crossing.
+fn spawn_budget_alert_listener(app: AppHandle, base_url: String) {
+    tokio::task::spawn_blocking(move || loop {
+        let url = format!("{base_url}/api/stream");
+        let resp = match ureq::get(&url).call() {
+            Ok(r) => r,
+            Err(_) => {
+                std::thread::sleep(Duration::from_secs(5));
+                continue;
+            }
+        };
+        let reader = std::io::BufReader::new(resp.into_reader());
+        use std::io::BufRead;
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            let Some(payload) = line.strip_prefix("data: ") else {
+                continue;
+            };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
+                continue;
+            };
+            if v.get("type").and_then(|t| t.as_str()) != Some("budget_alert") {
+                continue;
+            }
+            handle_budget_alert(&app, &v);
+        }
+        // Stream ended (server restart or transient drop). Brief pause then reconnect.
+        std::thread::sleep(Duration::from_secs(2));
+    });
+}
+
+fn handle_budget_alert(app: &AppHandle, v: &serde_json::Value) {
+    use tauri_plugin_notification::NotificationExt;
+    let crossed = v
+        .get("newly_crossed")
+        .and_then(|c| c.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mtd = v
+        .get("mtd_cost_usd")
+        .and_then(|x| x.as_f64())
+        .unwrap_or(0.0);
+    let budget = v.get("monthly_budget_usd").and_then(|x| x.as_f64());
+    for t in crossed {
+        let Some(pct) = t.as_u64() else { continue };
+        let title = format!("Token Dashboard — {pct}% of budget");
+        let body = match budget {
+            Some(b) => format!("${mtd:.2} of ${b:.2} this month"),
+            None => format!("${mtd:.2} spent this month"),
+        };
+        let _ = app.notification().builder().title(title).body(body).show();
+    }
+}
+
 fn spawn_tray_updater(app: AppHandle, base_url: String) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
@@ -722,6 +785,7 @@ async fn main() {
                 let _ = w.set_focus();
             }
         }))
+        .plugin(tauri_plugin_notification::init())
         .manage(BaseUrl(base_url.clone()))
         .manage(DbPath(db_path_for_state))
         .manage(GlassState(std::sync::Mutex::new(glass_enabled)))
@@ -762,6 +826,7 @@ async fn main() {
                 let _ = win.set_focus();
                 build_tray(app.handle(), &base_url)?;
                 spawn_tray_updater(app.handle().clone(), base_url.clone());
+                spawn_budget_alert_listener(app.handle().clone(), base_url.clone());
                 // Restore the widget if it was open at last shutdown.
                 // Driven entirely by the reconciler (which reads the
                 // `widget_open` pref and respawns within its first tick)

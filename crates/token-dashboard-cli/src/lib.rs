@@ -28,9 +28,9 @@ use token_dashboard_core::{
         add_session_tag, all_tags, daily_token_breakdown, dismiss_tip, expensive_prompts,
         first_prompts, get_plan, hourly_breakdown, model_breakdown, normalise_tag, overview_totals,
         phase_split, project_summary, recent_sessions, remove_session_tag, session_model_usage,
-        session_tags, session_turns, set_plan, skill_breakdown, tool_token_breakdown, DailyRow,
-        ExpensivePromptRow, ModelRow, OverviewTotals, ProjectRow, SessionRow, SessionTurn,
-        SkillRow, TagRow, ToolRow,
+        session_tags, session_turns, set_plan, skill_breakdown, tag_aggregates, tag_session_counts,
+        tool_token_breakdown, DailyRow, ExpensivePromptRow, ModelRow, OverviewTotals, ProjectRow,
+        SessionRow, SessionTurn, SkillRow, TagRow, ToolRow,
     },
     scan_dir, Pricing, ScanStats, Source, Usage,
 };
@@ -206,6 +206,37 @@ async fn tools(
     .await
 }
 
+#[derive(Deserialize, Default)]
+struct ToolCostsQuery {
+    days: Option<u32>,
+}
+
+async fn tool_costs_handler(
+    State(s): State<AppState>,
+    Query(q): Query<ToolCostsQuery>,
+) -> Result<Json<token_dashboard_core::tool_costs::ToolCostReport>, ApiError> {
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::tool_costs::report(path.as_ref(), days)).await
+}
+
+#[derive(Deserialize, Default)]
+struct VerbosityQuery {
+    min_chars: Option<u32>,
+    top: Option<u32>,
+}
+
+async fn verbosity_handler(
+    State(s): State<AppState>,
+    Query(q): Query<VerbosityQuery>,
+) -> Result<Json<Vec<token_dashboard_core::verbosity::WastedPrompt>>, ApiError> {
+    let min_chars = q.min_chars.unwrap_or(200).clamp(1, 1_000_000);
+    let top = q.top.unwrap_or(50).clamp(1, 500);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::verbosity::worst_at_path(path.as_ref(), min_chars, top))
+        .await
+}
+
 async fn daily(
     State(s): State<AppState>,
     Query(q): Query<RangeQs>,
@@ -220,6 +251,68 @@ async fn daily(
         )
     })
     .await
+}
+
+#[derive(Deserialize, Default)]
+struct CacheStatsQuery {
+    days: Option<u32>,
+}
+
+async fn cache_stats_handler(
+    State(s): State<AppState>,
+    Query(q): Query<CacheStatsQuery>,
+) -> Result<Json<token_dashboard_core::cache_stats::CacheTrend>, ApiError> {
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::cache_stats::cache_trend(path.as_ref(), days)).await
+}
+
+#[derive(Deserialize)]
+struct CacheSessionsQuery {
+    date: String,
+}
+
+async fn cache_sessions_handler(
+    State(s): State<AppState>,
+    Query(q): Query<CacheSessionsQuery>,
+) -> Result<Json<Vec<token_dashboard_core::cache_stats::SessionCacheRow>>, ApiError> {
+    if q.date.len() != 10 {
+        return Err(ApiError::bad_request("date must be YYYY-MM-DD"));
+    }
+    let path = s.db_path.clone();
+    let date = q.date;
+    blocking(move || token_dashboard_core::cache_stats::sessions_for_day(path.as_ref(), &date))
+        .await
+}
+
+#[derive(Deserialize, Default)]
+struct BurnRateQuery {
+    window_days: Option<u32>,
+}
+
+async fn burn_rate_handler(
+    State(s): State<AppState>,
+    Query(q): Query<BurnRateQuery>,
+) -> Result<Json<token_dashboard_core::burn_rate::BurnRate>, ApiError> {
+    let window = q.window_days.unwrap_or(7).clamp(1, 90);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::burn_rate::burn_rate(path.as_ref(), window)).await
+}
+
+#[derive(Deserialize, Default)]
+struct AnomalyQuery {
+    days: Option<u32>,
+    k: Option<f64>,
+}
+
+async fn anomalies_handler(
+    State(s): State<AppState>,
+    Query(q): Query<AnomalyQuery>,
+) -> Result<Json<Vec<token_dashboard_core::anomaly::Anomaly>>, ApiError> {
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+    let k = q.k.unwrap_or(3.0).max(0.5);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::anomaly::detect_db(path.as_ref(), days, k)).await
 }
 
 #[derive(Serialize)]
@@ -271,6 +364,108 @@ async fn by_model(
 async fn tags(State(s): State<AppState>) -> Result<Json<Vec<TagRow>>, ApiError> {
     let path = s.db_path.clone();
     blocking(move || all_tags(path.as_ref())).await
+}
+
+#[derive(Serialize)]
+struct TagSummaryRow {
+    tag: String,
+    sessions: i64,
+    total_tokens: i64,
+    cost_usd: f64,
+    first_seen: Option<String>,
+    last_seen: Option<String>,
+}
+
+async fn tags_summary(State(s): State<AppState>) -> Result<Json<Vec<TagSummaryRow>>, ApiError> {
+    let path_a = s.db_path.clone();
+    let path_b = s.db_path.clone();
+    let aggregates = blocking(move || tag_aggregates(path_a.as_ref())).await?.0;
+    let counts = blocking(move || tag_session_counts(path_b.as_ref()))
+        .await?
+        .0;
+    let pricing = s.pricing.clone();
+
+    let mut by_tag: std::collections::BTreeMap<String, TagSummaryRow> = Default::default();
+    for row in aggregates {
+        let entry = by_tag
+            .entry(row.tag.clone())
+            .or_insert_with(|| TagSummaryRow {
+                tag: row.tag.clone(),
+                sessions: 0,
+                total_tokens: 0,
+                cost_usd: 0.0,
+                first_seen: None,
+                last_seen: None,
+            });
+        let cost = row
+            .model
+            .as_deref()
+            .map(|m| {
+                cost_for(
+                    m,
+                    &Usage {
+                        input_tokens: row.input_tokens,
+                        output_tokens: row.output_tokens,
+                        cache_read_tokens: row.cache_read_tokens,
+                        cache_create_5m_tokens: row.cache_create_5m_tokens,
+                        cache_create_1h_tokens: row.cache_create_1h_tokens,
+                    },
+                    &pricing,
+                )
+                .usd
+                .unwrap_or(0.0)
+            })
+            .unwrap_or(0.0);
+        entry.cost_usd += cost;
+        entry.total_tokens += row.input_tokens
+            + row.output_tokens
+            + row.cache_read_tokens
+            + row.cache_create_5m_tokens
+            + row.cache_create_1h_tokens;
+        entry.first_seen = match (entry.first_seen.take(), row.first_seen) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        entry.last_seen = match (entry.last_seen.take(), row.last_seen) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        };
+    }
+
+    for c in counts {
+        if let Some(entry) = by_tag.get_mut(&c.tag) {
+            entry.sessions = c.sessions;
+        } else {
+            // Tag exists with sessions but no assistant messages — still
+            // surface it so users can prune empty tags from the UI.
+            by_tag.insert(
+                c.tag.clone(),
+                TagSummaryRow {
+                    tag: c.tag,
+                    sessions: c.sessions,
+                    total_tokens: 0,
+                    cost_usd: 0.0,
+                    first_seen: None,
+                    last_seen: None,
+                },
+            );
+        }
+    }
+
+    let mut out: Vec<TagSummaryRow> = by_tag
+        .into_values()
+        .map(|mut r| {
+            r.cost_usd = round4(r.cost_usd);
+            r
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.cost_usd
+            .partial_cmp(&a.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.tag.cmp(&b.tag))
+    });
+    Ok(Json(out))
 }
 
 #[derive(Deserialize, Default)]
@@ -500,6 +695,21 @@ async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, String> {
         "days": stats.days,
         "models": stats.models,
     }));
+    // Best-effort budget-threshold check. Failure must not abort the scan path.
+    // `check` persists the fired state internally so subsequent calls won't re-fire
+    // already-crossed thresholds within the same month.
+    if let Ok(result) = token_dashboard_core::budget_alerts::check(s.db_path.as_ref()) {
+        if !result.newly_crossed.is_empty() {
+            let _ = s.events.send(serde_json::json!({
+                "type": "budget_alert",
+                "mtd_cost_usd": result.mtd_cost_usd,
+                "monthly_budget_usd": result.monthly_budget_usd,
+                "percent": result.percent,
+                "newly_crossed": result.newly_crossed,
+                "month": result.month,
+            }));
+        }
+    }
     // When the OAuth limits source is active, piggy-back on the
     // activity signal from the scan to refresh the rate-limit headers
     // — but throttle so a chatty session doesn't burn a Haiku token
@@ -547,7 +757,20 @@ async fn set_plan_handler(
 ) -> Result<Json<OkResponse>, ApiError> {
     let path = s.db_path.clone();
     let plan = body.plan.unwrap_or_else(|| "api".into());
-    blocking_unit(move || set_plan(path.as_ref(), &plan)).await?;
+    blocking_unit(move || -> rusqlite::Result<()> {
+        set_plan(path.as_ref(), &plan)?;
+        // Switching to a subscription plan: clear USD budgets so the
+        // History card stops attributing stale "% of $X budget" to months
+        // where the cap doesn't apply. The user can re-enter values after
+        // switching back to API mode.
+        if plan != "api" {
+            for key in token_dashboard_core::preferences::BUDGET_KEYS {
+                let _ = token_dashboard_core::preferences::set_budget(path.as_ref(), key, None);
+            }
+        }
+        Ok(())
+    })
+    .await?;
     Ok(Json(OkResponse { ok: true }))
 }
 
@@ -843,6 +1066,100 @@ struct BudgetResponse {
     daily: Option<f64>,
     weekly: Option<f64>,
     monthly: Option<f64>,
+}
+
+async fn budget_alerts_handler(
+    State(s): State<AppState>,
+) -> Result<Json<token_dashboard_core::budget_alerts::AlertResult>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::budget_alerts::check(path.as_ref())).await
+}
+
+async fn budget_alerts_config_get(
+    State(s): State<AppState>,
+) -> Result<Json<token_dashboard_core::budget_alerts::AlertsConfig>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::budget_alerts::get_config(path.as_ref())).await
+}
+
+#[derive(Deserialize, Default)]
+struct BudgetAlertsConfigBody {
+    #[serde(default)]
+    thresholds: Option<Vec<u32>>,
+    #[serde(default)]
+    muted: Option<Vec<u32>>,
+}
+
+async fn budget_alerts_config_post(
+    State(s): State<AppState>,
+    Json(body): Json<BudgetAlertsConfigBody>,
+) -> Result<Json<token_dashboard_core::budget_alerts::AlertsConfig>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(
+        move || -> rusqlite::Result<token_dashboard_core::budget_alerts::AlertsConfig> {
+            let mut cfg = token_dashboard_core::budget_alerts::get_config(path.as_ref())?;
+            if let Some(t) = body.thresholds {
+                cfg.thresholds = t;
+                cfg.thresholds.sort();
+                cfg.thresholds.dedup();
+            }
+            if let Some(m) = body.muted {
+                cfg.muted = m;
+                cfg.muted.sort();
+                cfg.muted.dedup();
+            }
+            token_dashboard_core::budget_alerts::set_config(path.as_ref(), &cfg)?;
+            Ok(cfg)
+        },
+    )
+    .await
+}
+
+async fn budget_projects_get(
+    State(s): State<AppState>,
+) -> Result<Json<Vec<token_dashboard_core::budget_projects::ProjectAllocation>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::budget_projects::allocations(path.as_ref())).await
+}
+
+#[derive(Deserialize)]
+struct ProjectBudgetBody {
+    slug: String,
+    #[serde(default)]
+    amount: Option<f64>,
+}
+
+async fn budget_projects_post(
+    State(s): State<AppState>,
+    Json(body): Json<ProjectBudgetBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let path = s.db_path.clone();
+    let amount = body.amount;
+    let slug_for_save = body.slug.clone();
+    blocking_unit(move || {
+        token_dashboard_core::preferences::set_project_budget(path.as_ref(), &slug_for_save, amount)
+            .map(|_| ())
+    })
+    .await?;
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "slug": body.slug,
+        "amount": body.amount,
+    })))
+}
+
+#[derive(Deserialize, Default)]
+struct BudgetHistoryQuery {
+    months: Option<u32>,
+}
+
+async fn budget_history_get(
+    State(s): State<AppState>,
+    Query(q): Query<BudgetHistoryQuery>,
+) -> Result<Json<Vec<token_dashboard_core::budget_history::MonthRow>>, ApiError> {
+    let months = q.months.unwrap_or(6).clamp(1, 36);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::budget_history::history(path.as_ref(), months)).await
 }
 
 async fn budget_get(State(s): State<AppState>) -> Result<Json<BudgetResponse>, ApiError> {
@@ -1909,6 +2226,23 @@ async fn tips_handler(State(s): State<AppState>) -> Result<Json<Vec<Tip>>, ApiEr
     blocking(move || all_tips(path.as_ref(), None)).await
 }
 
+#[derive(Deserialize, Default)]
+struct LoopsQuery {
+    min_run: Option<u32>,
+    days: Option<u32>,
+}
+
+async fn loops_get(
+    State(s): State<AppState>,
+    Query(q): Query<LoopsQuery>,
+) -> Result<Json<Vec<token_dashboard_core::loop_detector::StuckRun>>, ApiError> {
+    let path = s.db_path.clone();
+    let min_run = q.min_run.unwrap_or(3).clamp(2, 1000);
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+    blocking(move || token_dashboard_core::loop_detector::detect_path(path.as_ref(), min_run, days))
+        .await
+}
+
 async fn session_tags_post(
     State(s): State<AppState>,
     AxumPath(sid): AxumPath<String>,
@@ -2372,6 +2706,158 @@ impl IntoResponse for ApiError {
     }
 }
 
+// --- multi-machine sync (plan 11) ---------------------------------------
+//
+// Host side: `/api/sync/snapshot` returns every message + tool_call newer
+// than `?since=`, gated by a Bearer token from the env var
+// `TOKEN_DASHBOARD_SYNC_TOKEN`. The endpoint is disabled (503) when the
+// env var is unset so a careless `cargo run` doesn't expose data on a
+// shared box. Tokens never round-trip through preferences — only the
+// viewer that initiates the pull stores them.
+//
+// Viewer side: `/api/remote-sources` is a CRUD over the local
+// `remote_sources` table. `POST /api/remote-sources/:id/sync` triggers
+// a one-shot pull + merge for that source.
+
+#[derive(Deserialize, Default)]
+struct SnapshotQuery {
+    since: Option<String>,
+}
+
+async fn sync_snapshot_handler(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(q): Query<SnapshotQuery>,
+) -> Result<Json<token_dashboard_core::sync_snapshot::Snapshot>, ApiError> {
+    let expected = std::env::var("TOKEN_DASHBOARD_SYNC_TOKEN").ok();
+    if expected.as_deref().unwrap_or("").is_empty() {
+        return Err(ApiError {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            msg: "sync disabled — set TOKEN_DASHBOARD_SYNC_TOKEN to share this DB".into(),
+        });
+    }
+    let provided = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "));
+    if provided != expected.as_deref() {
+        return Err(ApiError {
+            status: StatusCode::UNAUTHORIZED,
+            msg: "bearer token mismatch".into(),
+        });
+    }
+    let path = s.db_path.clone();
+    let since = q.since;
+    blocking(move || token_dashboard_core::sync_snapshot::build(path.as_ref(), since.as_deref()))
+        .await
+}
+
+#[derive(Deserialize)]
+struct AddRemoteBody {
+    label: String,
+    base_url: String,
+    bearer: Option<String>,
+}
+
+async fn remote_sources_list(
+    State(s): State<AppState>,
+) -> Result<Json<Vec<token_dashboard_core::remote_sources::RemoteSource>>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::remote_sources::list(path.as_ref())).await
+}
+
+async fn remote_sources_add(
+    State(s): State<AppState>,
+    Json(body): Json<AddRemoteBody>,
+) -> Result<Json<token_dashboard_core::remote_sources::RemoteSource>, ApiError> {
+    let path = s.db_path.clone();
+    blocking(move || {
+        token_dashboard_core::remote_sources::add(
+            path.as_ref(),
+            &body.label,
+            &body.base_url,
+            body.bearer.as_deref().filter(|s| !s.is_empty()),
+        )
+    })
+    .await
+}
+
+async fn remote_sources_delete(
+    State(s): State<AppState>,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<StatusCode, ApiError> {
+    let path = s.db_path.clone();
+    let ok = blocking_unit(move || {
+        token_dashboard_core::remote_sources::delete(path.as_ref(), id).map(|_| ())
+    })
+    .await;
+    ok?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, Default)]
+struct ToggleBody {
+    enabled: Option<bool>,
+}
+
+async fn remote_sources_toggle(
+    State(s): State<AppState>,
+    AxumPath(id): AxumPath<i64>,
+    Json(body): Json<ToggleBody>,
+) -> Result<StatusCode, ApiError> {
+    let want = body.enabled.unwrap_or(true);
+    let path = s.db_path.clone();
+    let ok = blocking_unit(move || {
+        token_dashboard_core::remote_sources::set_enabled(path.as_ref(), id, want).map(|_| ())
+    })
+    .await;
+    ok?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remote_sources_sync(
+    State(s): State<AppState>,
+    AxumPath(id): AxumPath<i64>,
+) -> Result<Json<token_dashboard_core::sync_snapshot::MergeStats>, ApiError> {
+    let path = s.db_path.clone();
+    let join_result = tokio::task::spawn_blocking(
+        move || -> Result<token_dashboard_core::sync_snapshot::MergeStats, String> {
+            let row = token_dashboard_core::remote_sources::get_with_bearer(path.as_ref(), id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "unknown remote source".to_string())?;
+            if !row.enabled {
+                return Err("remote source disabled".to_string());
+            }
+            let url = format!("{}/api/sync/snapshot", row.base_url.trim_end_matches('/'));
+            let mut req = ureq::get(&url).timeout(std::time::Duration::from_secs(60));
+            if let Some(bearer) = row.bearer.as_deref() {
+                req = req.set("Authorization", &format!("Bearer {}", bearer));
+            }
+            let snap: token_dashboard_core::sync_snapshot::Snapshot = match req.call() {
+                Ok(resp) => resp.into_json().map_err(|e| e.to_string())?,
+                Err(e) => {
+                    let msg = e.to_string();
+                    let _ = token_dashboard_core::remote_sources::stamp_sync(
+                        path.as_ref(),
+                        id,
+                        Some(&msg),
+                    );
+                    return Err(msg);
+                }
+            };
+            let stats = token_dashboard_core::sync_snapshot::merge(path.as_ref(), &snap)
+                .map_err(|e| e.to_string())?;
+            let _ = token_dashboard_core::remote_sources::stamp_sync(path.as_ref(), id, None);
+            Ok(stats)
+        },
+    )
+    .await;
+    let stats = join_result
+        .map_err(|e| ApiError::internal(format!("join: {e}")))?
+        .map_err(ApiError::internal)?;
+    Ok(Json(stats))
+}
+
 /// Build the axum router. `static_dir` is the optional path to a
 /// frontend bundle (e.g. `frontend/dist`) — when present it's mounted
 /// at `/web/` and `/` so the Tauri shell can boot the same routes the
@@ -2384,9 +2870,30 @@ pub fn app(state: AppState) -> Router {
         .route("/api/overview", get(overview))
         .route("/api/projects", get(projects))
         .route("/api/tools", get(tools))
+        .route("/api/tool-costs", get(tool_costs_handler))
+        .route("/api/verbosity", get(verbosity_handler))
+        .route("/api/sync/snapshot", get(sync_snapshot_handler))
+        .route(
+            "/api/remote-sources",
+            get(remote_sources_list).post(remote_sources_add),
+        )
+        .route(
+            "/api/remote-sources/:id",
+            axum::routing::delete(remote_sources_delete),
+        )
+        .route(
+            "/api/remote-sources/:id/toggle",
+            post(remote_sources_toggle),
+        )
+        .route("/api/remote-sources/:id/sync", post(remote_sources_sync))
         .route("/api/daily", get(daily))
+        .route("/api/cache-stats", get(cache_stats_handler))
+        .route("/api/cache-stats/sessions", get(cache_sessions_handler))
+        .route("/api/burn-rate", get(burn_rate_handler))
+        .route("/api/anomalies", get(anomalies_handler))
         .route("/api/by-model", get(by_model))
         .route("/api/tags", get(tags))
+        .route("/api/tags-summary", get(tags_summary))
         .route("/api/hourly", get(hourly))
         .route("/api/phase-split", get(phase_split_endpoint))
         .route("/api/prompts", get(prompts))
@@ -2400,11 +2907,22 @@ pub fn app(state: AppState) -> Router {
         .route("/api/scan", get(scan))
         .route("/api/stream", get(stream))
         .route("/api/tips", get(tips_handler))
+        .route("/api/loops", get(loops_get))
         .route(
             "/api/preferences",
             get(preferences_get).post(preferences_post),
         )
         .route("/api/budget", get(budget_get).post(budget_post))
+        .route(
+            "/api/budget/projects",
+            get(budget_projects_get).post(budget_projects_post),
+        )
+        .route("/api/budget/history", get(budget_history_get))
+        .route("/api/budget-alerts", get(budget_alerts_handler))
+        .route(
+            "/api/budget-alerts/config",
+            get(budget_alerts_config_get).post(budget_alerts_config_post),
+        )
         .route("/api/limits", get(limits_get))
         .route("/api/limits/sync_oauth", post(limits_sync_oauth))
         .route("/api/limits/oauth_status", get(limits_oauth_status))

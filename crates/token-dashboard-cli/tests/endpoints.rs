@@ -267,6 +267,43 @@ async fn tags_empty_for_untagged_db() {
 }
 
 #[tokio::test]
+async fn tags_summary_empty_for_untagged_db() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, body) = get_json(&fx.state, "/api/tags-summary").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_array().map(|a| a.len()), Some(0));
+}
+
+#[tokio::test]
+async fn tags_summary_aggregates_cost_and_tokens_per_tag() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-04-10T00:00:00Z", "hi"),
+        assistant("a1", "2026-04-10T00:00:01Z", "claude-opus-4-7", 1_000),
+    ]);
+    let (status, _) = post_json(
+        &fx.state,
+        "/api/sessions/s1/tags",
+        &json!({"add": ["billable-feature"], "remove": []}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = get_json(&fx.state, "/api/tags-summary").await;
+    assert_eq!(status, StatusCode::OK);
+    let arr = body.as_array().expect("array");
+    assert_eq!(arr.len(), 1);
+    let row = &arr[0];
+    assert_eq!(row["tag"].as_str(), Some("billable-feature"));
+    assert_eq!(row["sessions"].as_i64(), Some(1));
+    assert!(row["total_tokens"].as_i64().unwrap() > 0);
+    // assistant() helper writes nonzero usage on a priced opus model, so
+    // cost must compute to a positive value.
+    assert!(row["cost_usd"].as_f64().unwrap() > 0.0);
+    assert!(row["first_seen"].as_str().is_some());
+    assert!(row["last_seen"].as_str().is_some());
+}
+
+#[tokio::test]
 async fn sources_empty_for_clean_db() {
     let fx = setup_with_jsonl(&[]);
     let (status, body) = get_json(&fx.state, "/api/sources").await;

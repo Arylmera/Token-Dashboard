@@ -110,6 +110,88 @@ const KpiRow = ({ totals }) => {
   );
 };
 
+const BudgetAlertBanner = () => {
+  const a = D.budgetAlerts;
+  if (!a || !a.newly_crossed || a.newly_crossed.length === 0) return null;
+  const max = Math.max(...a.newly_crossed);
+  const tone = max >= 100 ? "tone-bad" : max >= 80 ? "tone-warn" : "tone-good";
+  const label = max >= 100 ? "Monthly budget reached"
+    : max >= 80 ? `${max}% of monthly budget consumed`
+    : `${max}% of monthly budget consumed`;
+  const detail = a.monthly_budget_usd != null
+    ? `${fmtCost(a.mtd_cost_usd || 0)} of ${fmtCost(a.monthly_budget_usd)} (${(a.percent || 0).toFixed(0)}%)`
+    : "";
+  return (
+    <div className={`a-banner ${tone}`}>
+      <strong>{label}</strong>
+      {detail && <span className="a-banner-detail"> · {detail}</span>}
+    </div>
+  );
+};
+
+const fmtTokensShort = (n) => {
+  if (n == null || !isFinite(n)) return "—";
+  const a = Math.abs(n);
+  if (a >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (a >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return `${n}`;
+};
+
+const BurnRateCard = () => {
+  const br = D.burnRate;
+  if (!br) return null;
+  const daysLeft = br.days_remaining;
+  // Only colour the countdown when running out is bad. weekly_reset is just
+  // counting down to an automatic refresh, so a small number isn't urgent.
+  const isAutoReset = br.cap_mode === "weekly_reset";
+  const tone = daysLeft == null || isAutoReset ? ""
+    : daysLeft < 3 ? "tone-bad"
+    : daysLeft < 7 ? "tone-warn"
+    : "tone-good";
+  // Under 48h, hours are more meaningful than fractional days — switch
+  // units so "0.4 days" reads as "10 h".
+  const fmtDaysLeft = daysLeft == null ? "—"
+    : daysLeft < 2 ? `${Math.max(0, Math.round(daysLeft * 24))} h`
+    : daysLeft >= 99 ? "99+ days"
+    : `${daysLeft.toFixed(1)} days`;
+
+  // Subtitle + secondary KPI dispatch on cap_mode so each plan flavour
+  // gets the projection that actually matches its constraint.
+  let sub;
+  let secondaryLabel = "hits zero";
+  let secondaryValue = br.projected_exhaustion_date || "—";
+  if (br.cap_mode === "weekly_tokens") {
+    const used = br.weekly_used_tokens;
+    const cap = br.weekly_cap_tokens;
+    sub = `${fmtTokensShort(used)} / ${fmtTokensShort(cap)} sonnet-eq tokens this week`;
+    secondaryLabel = "cap reached";
+  } else if (br.cap_mode === "weekly_reset") {
+    sub = `subscription plan · counting down to weekly window reset`;
+    secondaryLabel = "window resets";
+  } else if (br.cap_mode === "usd_monthly") {
+    sub = `${fmtCost(br.mtd_cost_usd || 0)} of ${fmtCost(br.monthly_budget_usd)} this month`;
+  } else {
+    sub = br.plan === "api"
+      ? "set a monthly budget in Settings to enable projection"
+      : "weekly window idle · projection unavailable";
+  }
+
+  return (
+    <div className="a-card a-burn-rate-compact">
+      <div className="a-card-head">
+        <h2>Burn rate</h2>
+        <span className="a-card-meta">7-day average · {sub} · trend overlaid on Today</span>
+      </div>
+      <div className="a-kpi-row">
+        <KPI label="avg / day" value={fmtCost(br.avg_daily_cost_usd || 0)} />
+        <KPI label="days left" value={<span className={tone}>{fmtDaysLeft}</span>} />
+        <KPI label={secondaryLabel} value={secondaryValue} />
+      </div>
+    </div>
+  );
+};
+
 const ChartAxis = ({ data, ticks = 7, insetLeft = 0, insetRight = 0 }) => {
   if (!data || data.length === 0) return null;
   const n = data.length;
@@ -433,35 +515,52 @@ const LimitsCard = ({ limits, enabled }) => {
   );
 };
 
-const TopStrip = ({ totals, burn }) => (
-  <section className="a-strip">
-    <div className="a-strip-left">
-      <div className="a-label">today · live</div>
-      <div className="a-strip-num">{fmtCost(totals.today)}</div>
-      <div className="a-strip-sub">
-        {fmtTokens(totals.todayTokens)} tok · vs {fmtCost(totals.yesterday)} yesterday · {totals.rangeSessions || 0} sessions·{totals.rangeKey || "30d"}
-      </div>
-    </div>
-    <div className="a-strip-mid">
-      <StripSpark data={D.hourly} accent="var(--accent)" height={38} />
-      <div className="a-strip-axis">
-        <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>now</span>
-      </div>
-    </div>
-    <div className="a-strip-right">
-      <div className="a-label">burn rate</div>
-      <div className="a-strip-num">${burn.rate.toFixed(2)}<span className="a-strip-unit">/hr</span></div>
-      <div className="a-gauge">
-        <div className="a-gauge-track">
-          <div className="a-gauge-fill" style={{ width: `${Math.min(burn.multiple / 6, 1) * 100}%` }} />
-          <div className="a-gauge-marker" style={{ left: `${(1 / 6) * 100}%` }} title="weekly avg" />
+const TopStrip = ({ totals, burn }) => {
+  const burnSeries = (D.burnRate && Array.isArray(D.burnRate.daily_series))
+    ? D.burnRate.daily_series.map((d) => d.cost_usd || 0)
+    : null;
+  return (
+    <section className="a-strip">
+      <div className="a-strip-left">
+        <div className="a-label">today · live</div>
+        <div className="a-strip-num">{fmtCost(totals.today)}</div>
+        <div className="a-strip-sub">
+          {fmtTokens(totals.todayTokens)} tok · vs {fmtCost(totals.yesterday)} yesterday · {totals.rangeSessions || 0} sessions·{totals.rangeKey || "30d"}
         </div>
-        <div className="a-gauge-axis"><span>0×</span><span>1× avg</span><span>6×</span></div>
       </div>
-      <div className="a-strip-sub tone-good">▲ {burn.multiple.toFixed(1)}× weekly avg</div>
-    </div>
-  </section>
-);
+      <div className="a-strip-mid">
+        <StripSpark
+          data={D.hourly}
+          overlayData={burnSeries}
+          overlayAccent="var(--warn)"
+          accent="var(--accent)"
+          height={38}
+        />
+        <div className="a-strip-axis">
+          <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>now</span>
+        </div>
+        {burnSeries && (
+          <div className="a-strip-legend">
+            <span className="a-strip-legend-item"><span className="a-strip-legend-sw" style={{ background: "var(--accent)" }} /> today · hourly</span>
+            <span className="a-strip-legend-item"><span className="a-strip-legend-sw a-strip-legend-sw-dashed" style={{ borderColor: "var(--warn)" }} /> burn · 7d daily</span>
+          </div>
+        )}
+      </div>
+      <div className="a-strip-right">
+        <div className="a-label">burn rate</div>
+        <div className="a-strip-num">${burn.rate.toFixed(2)}<span className="a-strip-unit">/hr</span></div>
+        <div className="a-gauge">
+          <div className="a-gauge-track">
+            <div className="a-gauge-fill" style={{ width: `${Math.min(burn.multiple / 6, 1) * 100}%` }} />
+            <div className="a-gauge-marker" style={{ left: `${(1 / 6) * 100}%` }} title="weekly avg" />
+          </div>
+          <div className="a-gauge-axis"><span>0×</span><span>1× avg</span><span>6×</span></div>
+        </div>
+        <div className="a-strip-sub tone-good">▲ {burn.multiple.toFixed(1)}× weekly avg</div>
+      </div>
+    </section>
+  );
+};
 
 const DailyCharts = ({ totals }) => {
   const rangeDays = rangeDaysFromKey(totals.rangeKey);
@@ -535,6 +634,111 @@ const ProjectsTable = ({ totals }) => {
   );
 };
 
+/**
+ * Custom mini-chart for the Cache mix card. Hit series rendered as a
+ * filled area + line (green), churn series as a dashed line (orange).
+ * Y-axis ticks at 0% / 50% / 100% on the left. Trailing dot on the hit
+ * line for the "where you are now" cue.
+ */
+const CacheMixChart = ({ hit, churn }) => {
+  const W = 600;
+  const H = 110;
+  const PAD_L = 38;
+  const PAD_R = 16;
+  const PAD_T = 6;
+  const PAD_B = 18;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+  if (!hit || hit.length === 0) {
+    return <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="a-cache-mix-chart" />;
+  }
+  const n = hit.length;
+  const step = n > 1 ? innerW / (n - 1) : innerW;
+  const yOf = (v) => PAD_T + innerH - Math.max(0, Math.min(1, v)) * innerH;
+  const xOf = (i) => PAD_L + i * step;
+  const lineFor = (series) =>
+    series.map((v, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(2)},${yOf(v).toFixed(2)}`).join(" ");
+  const areaFor = (series) =>
+    `M${xOf(0).toFixed(2)},${(PAD_T + innerH).toFixed(2)} ` +
+    series.map((v, i) => `L${xOf(i).toFixed(2)},${yOf(v).toFixed(2)}`).join(" ") +
+    ` L${xOf(n - 1).toFixed(2)},${(PAD_T + innerH).toFixed(2)} Z`;
+  const ticks = [0, 0.5, 1];
+  const last = hit[n - 1];
+  const gid = `a-cache-mix-${Math.random().toString(36).slice(2, 7)}`;
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="a-cache-mix-chart">
+      <defs>
+        <linearGradient id={gid} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.30" />
+          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {ticks.map((t) => (
+        <g key={t}>
+          <line
+            x1={PAD_L}
+            x2={W - PAD_R}
+            y1={yOf(t)}
+            y2={yOf(t)}
+            stroke="var(--iron-border)"
+            strokeWidth="0.5"
+            opacity="0.5"
+          />
+          <text x={PAD_L - 6} y={yOf(t) + 3} textAnchor="end" fill="var(--gull)" fontSize="10">
+            {Math.round(t * 100)}%
+          </text>
+        </g>
+      ))}
+      <path d={areaFor(hit)} fill={`url(#${gid})`} />
+      <path d={lineFor(hit)} fill="none" stroke="var(--accent)" strokeWidth="1.2" />
+      {churn && churn.length > 0 && (
+        <path
+          d={lineFor(churn)}
+          fill="none"
+          stroke="var(--warn)"
+          strokeWidth="1"
+          strokeDasharray="3 2"
+          opacity="0.9"
+        />
+      )}
+      <circle cx={xOf(n - 1)} cy={yOf(last)} r="2.4" fill="var(--accent)" />
+    </svg>
+  );
+};
+
+const CacheTrendCard = () => {
+  const cs = D.cacheStats || { days: [], avg_7d: 0, avg_30d: 0, churn_7d: 0, churn_30d: 0 };
+  const hitSeries = (cs.days || []).map((d) => d.hit_rate);
+  const churnSeries = (cs.days || []).map((d) => d.churn_rate);
+  const lastHit = hitSeries.length ? hitSeries[hitSeries.length - 1] : 0;
+  const lastChurn = churnSeries.length ? churnSeries[churnSeries.length - 1] : 0;
+  return (
+    <div className="a-card a-cache-mix-compact">
+      <div className="a-card-head">
+        <h2>Cache mix</h2>
+        <span className="a-card-meta">30d · hit = reuse · churn = new entries</span>
+      </div>
+      <div className="a-kpi-row">
+        <KPI label="hit 7d" value={fmtPct(cs.avg_7d)} />
+        <KPI label="hit 30d" value={fmtPct(cs.avg_30d)} />
+        <KPI label="hit today" value={fmtPct(lastHit)} />
+        <KPI label="churn 7d" value={fmtPct(cs.churn_7d || 0)} />
+        <KPI label="churn 30d" value={fmtPct(cs.churn_30d || 0)} />
+        <KPI label="churn today" value={fmtPct(lastChurn)} />
+      </div>
+      <CacheMixChart hit={hitSeries} churn={churnSeries} />
+      <div className="a-strip-legend">
+        <span className="a-strip-legend-item">
+          <span className="a-strip-legend-sw" style={{ background: "var(--accent)" }} /> hit
+        </span>
+        <span className="a-strip-legend-item">
+          <span className="a-strip-legend-sw a-strip-legend-sw-dashed" style={{ borderColor: "var(--warn)" }} /> churn
+        </span>
+      </div>
+    </div>
+  );
+};
+
 const ModelsCard = () => (
   <div className="a-card">
     <div className="a-card-head"><h2>By model</h2></div>
@@ -558,36 +762,128 @@ const ModelsCard = () => (
 );
 
 const TopToolsCard = () => {
-  const rows = (D.tools || []).slice(0, 5);
-  const { sorted, sortState, requestSort } = useSortable(rows, "calls", "desc", {
+  // Map cost lookup: { tool_name: attributed_cost_usd }. Combines the
+  // existing /api/tools (call counts + result tokens) with /api/tool-costs
+  // (attributed cost) so a single sortable row carries everything.
+  const costMap = (D.toolCosts && D.toolCosts.tools)
+    ? Object.fromEntries(D.toolCosts.tools.map((t) => [t.tool_name, t.attributed_cost_usd]))
+    : {};
+  const errorMap = (D.toolCosts && D.toolCosts.tools)
+    ? Object.fromEntries(D.toolCosts.tools.map((t) => [t.tool_name, t.errors]))
+    : {};
+  const rows = (D.tools || []).slice(0, 8).map((r) => ({
+    ...r,
+    cost: costMap[r.name] || 0,
+    errors: errorMap[r.name] || 0,
+  }));
+  const { sorted, sortState, requestSort } = useSortable(rows, "cost", "desc", {
     name: (r) => r.name,
     calls: (r) => r.calls || 0,
     tokens: (r) => r.tokens || 0,
+    cost: (r) => r.cost || 0,
   });
   const headProps = { state: sortState, requestSort };
   return (
     <div className="a-card">
       <div className="a-card-head">
         <h2>Top tools</h2>
-        <span className="a-card-meta">most-used tools by call count</span>
+        <span className="a-card-meta">cost attributed via parent-message split · 30d</span>
       </div>
       <table className="a-table">
         <thead><tr>
           <SortHeader sortKey="name" {...headProps}>tool</SortHeader>
           <SortHeader sortKey="calls" className="num" {...headProps}>calls</SortHeader>
           <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
+          <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
         </tr></thead>
         <tbody>
           {sorted.map((tool) => (
             <tr key={tool.name}>
-              <td className="mono">{tool.name}</td>
+              <td className="mono" title={tool.errors > 0 ? `${tool.errors} errors` : ""}>
+                {tool.name}
+                {tool.errors > 0 && <span className="a-error-dot" />}
+              </td>
               <td className="num">{fmtNum(tool.calls)}</td>
               <td className="num">{fmtTokens(tool.tokens)}</td>
+              <td className="num">{fmtCost(tool.cost || 0)}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+};
+
+const McpServersCard = () => {
+  const servers = (D.toolCosts && D.toolCosts.mcp_servers) || [];
+  if (servers.length === 0) return null;
+  const total = (D.toolCosts && D.toolCosts.total_cost_usd) || 0;
+  return (
+    <div className="a-card a-mcp-card">
+      <div className="a-card-head">
+        <h2>MCP servers</h2>
+        <span className="a-card-meta">{fmtCost(total)} total tool cost · 30d</span>
+      </div>
+      <div className="a-table-scroll">
+        <table className="a-table">
+          <thead><tr>
+            <th>server</th>
+            <th className="num">calls</th>
+            <th className="num">cost</th>
+          </tr></thead>
+          <tbody>
+            {servers.map((s) => (
+              <tr key={s.server}>
+                <td className="mono">{s.server}</td>
+                <td className="num">{fmtNum(s.calls)}</td>
+                <td className="num tone-good">{fmtCost(s.attributed_cost_usd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const AnomalyCard = () => {
+  const rows = D.anomalies || [];
+  if (rows.length === 0) return null;
+  return (
+    <section className="a-card">
+      <div className="a-card-head">
+        <h2>Anomalous sessions · 30d (≥3σ)</h2>
+        <span className="a-card-meta">cost outliers vs project baseline</span>
+      </div>
+      <table className="a-table">
+        <thead>
+          <tr>
+            <th>session</th>
+            <th>project</th>
+            <th className="num">cost</th>
+            <th className="num">z-score</th>
+            <th className="num">baseline mean</th>
+            <th>first seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((a) => (
+            <tr
+              key={a.session_id}
+              className="clickable"
+              onClick={() => { window.location.hash = `/sessions/${encodeURIComponent(a.session_id)}`; }}
+            >
+              <td className="mono">{a.session_id.slice(0, 8)}</td>
+              <td className="mono">{a.project_slug}</td>
+              <td className="num tone-bad">{fmtCost(a.cost_usd)}</td>
+              <td className="num">{a.z_score.toFixed(1)}σ</td>
+              <td className="num">{fmtCost(a.baseline_mean)}</td>
+              <td>{(a.first_seen || "").slice(0, 10)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 };
 
@@ -651,8 +947,10 @@ export const Overview = () => {
   return (
     <div className="a-route">
       <TopStrip totals={totals} burn={burn} />
+      <BudgetAlertBanner />
       <BudgetBanner budget={D.budget} />
       <LimitsCard limits={D.limits} enabled={!!(D.prefs && D.prefs.limits_enabled)} />
+      <BurnRateCard />
       <KpiRow totals={totals} />
       <DailyCharts totals={totals} />
       <section className="a-card-row">
@@ -663,6 +961,9 @@ export const Overview = () => {
         <PhaseSplitCard phase={D.phase} />
         <TopToolsCard />
       </section>
+      {/* Cache mix + MCP servers cards moved to their dedicated tabs
+          (Cache top-level + Sink → mcp) so Overview stays focused. */}
+      <AnomalyCard />
       <RecentSessions />
     </div>
   );

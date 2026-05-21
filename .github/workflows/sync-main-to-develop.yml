@@ -1,0 +1,87 @@
+name: Sync main into develop
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Why this exists: PRs into main are squash-merged, so develop's commits
+# never become ancestors of main. After every release, the next version
+# bump on develop edits the same Cargo.toml line that main edited via
+# squash — guaranteeing a conflict on the next develop->main PR.
+#
+# This job opens a PR from a sync branch (off main) into develop after
+# every push to main, fast-forwarding develop's view of main and
+# eliminating the recurring version-bump conflict.
+
+concurrency:
+  group: sync-main-to-develop
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Short-circuit if develop already contains main
+        id: check
+        run: |
+          git fetch origin develop main
+          if git merge-base --is-ancestor origin/main origin/develop; then
+            echo "develop already contains main — nothing to sync"
+            echo "needs_sync=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_sync=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create sync branch from main
+        if: steps.check.outputs.needs_sync == 'true'
+        id: branch
+        run: |
+          short=$(git rev-parse --short origin/main)
+          branch="sync/main-to-develop-${short}"
+          git checkout -B "$branch" origin/main
+          git push -f origin "$branch"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update sync PR
+        if: steps.check.outputs.needs_sync == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+        run: |
+          set -e
+          existing=$(gh pr list --head "$BRANCH" --base develop --state open --json number --jq '.[0].number' || true)
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already open — leaving alone"
+            exit 0
+          fi
+          gh pr create \
+            --base develop \
+            --head "$BRANCH" \
+            --title "chore(sync): main -> develop" \
+            --body "Automated sync after release. Merging keeps develop's history aligned with main and prevents recurring Cargo.toml version-bump conflicts on the next release PR."
+
+      - name: Enable auto-merge
+        if: steps.check.outputs.needs_sync == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+        continue-on-error: true
+        run: |
+          num=$(gh pr list --head "$BRANCH" --base develop --state open --json number --jq '.[0].number')
+          if [ -n "$num" ]; then
+            gh pr merge "$num" --auto --merge || true
+          fi

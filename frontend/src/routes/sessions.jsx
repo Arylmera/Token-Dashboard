@@ -197,7 +197,45 @@ const TagChips = ({ tags, onRemove }) => (
   </span>
 );
 
-const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSelectedId, allTags, tagFilter, setTagFilter, onExport, onMutateTags }) => {
+const useStuckLoops = () => {
+  const [byId, setById] = useState(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/loops?days=30")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => {
+        if (cancelled) return;
+        const m = new Map();
+        for (const r of rows || []) {
+          const list = m.get(r.session_id) || [];
+          list.push(r);
+          m.set(r.session_id, list);
+        }
+        setById(m);
+      })
+      .catch(() => { if (!cancelled) setById(new Map()); });
+    return () => { cancelled = true; };
+  }, []);
+  return byId;
+};
+
+const LoopChip = ({ runs }) => {
+  if (!runs || !runs.length) return null;
+  const top = runs[0];
+  const tip = `${top.tool_name} × ${top.count}${top.target ? ` on ${top.target}` : ""}`
+    + (runs.length > 1 ? ` (+${runs.length - 1} more)` : "");
+  return (
+    <span
+      className="a-tag-chip"
+      title={tip}
+      style={{ background: "var(--bad, #b33)", color: "var(--bone)" }}
+    >
+      🔁 {runs.length}
+    </span>
+  );
+};
+
+const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSelectedId, allTags, tagFilter, setTagFilter, onExport, onMutateTags, loopsById }) => {
   const exportHref = `/api/export.csv${tagFilter ? `?tag=${encodeURIComponent(tagFilter)}` : ""}`;
   const { sorted, sortState, requestSort } = useSortable(filtered, null, "desc", {
     id: (r) => r.id,
@@ -262,7 +300,10 @@ const SessionsList = ({ sessions, filtered, query, setQuery, selectedId, setSele
               <td className="num">{s.turns}</td>
               <td className="num">{fmtTokens(s.tokens)}</td>
               <td className="num tone-good">{fmtCost(s.cost)}</td>
-              <td><TagChips tags={s.tags} onRemove={(tag) => onMutateTags(s, { remove: [tag] })} /></td>
+              <td>
+                <TagChips tags={s.tags} onRemove={(tag) => onMutateTags(s, { remove: [tag] })} />
+                <LoopChip runs={loopsById && loopsById.get(s.fullId || s.id)} />
+              </td>
               <td className="muted" style={{ paddingLeft: 16, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.firstPrompt || ""}>
                 {s.firstPrompt || "—"}
               </td>
@@ -427,10 +468,24 @@ export const Sessions = () => {
     return sessions[0] ? sessions[0].id : null;
   });
   const [query, setQuery] = useState("");
-  const [tagFilter, setTagFilter] = useState(null);
+  const [tagFilter, setTagFilter] = useState(() => {
+    // The Tags page stashes a tag here before navigating to /sessions
+    // (hash routing eats query strings). Read-once-then-clear so a manual
+    // tab-switch later doesn't keep re-applying the same filter.
+    try {
+      const k = "td:sessions:tagIntent";
+      const v = window.sessionStorage.getItem(k);
+      if (v) {
+        window.sessionStorage.removeItem(k);
+        return v;
+      }
+    } catch { /* ignore */ }
+    return null;
+  });
   const selected = sessions.find((s) => s.id === selectedId) || sessions[0];
   const filtered = useFilteredSessions(sessions, query, tagFilter);
   const turns = useSessionTurns(selected);
+  const loopsById = useStuckLoops();
   const onMutateTags = async (session, body) => {
     const resp = await mutateTags(session, body);
     if (resp && Array.isArray(resp.tags)) {
@@ -471,6 +526,7 @@ export const Sessions = () => {
         tagFilter={tagFilter}
         setTagFilter={setTagFilter}
         onMutateTags={onMutateTags}
+        loopsById={loopsById}
       />
       <SessionDetail selected={selected} turns={turns} onMutateTags={onMutateTags} />
     </div>

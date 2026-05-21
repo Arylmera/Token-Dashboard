@@ -1264,6 +1264,268 @@ html[data-fresh] .a-prompt-fresh:not(.is-stale) { opacity: 1; color: var(--accen
   font: 600 16px "JetBrains Mono";
 }
 
+.dir-a-root .a-banner {
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  border-radius: 0 4px 4px 0;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.dir-a-root .a-banner.tone-warn {
+  border-left-color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 10%, transparent);
+}
+.dir-a-root .a-banner.tone-bad {
+  border-left-color: var(--bad);
+  background: color-mix(in oklab, var(--bad) 12%, transparent);
+}
+.dir-a-root .a-banner.tone-good {
+  border-left-color: var(--good);
+  background: color-mix(in oklab, var(--good) 10%, transparent);
+}
+.dir-a-root .a-banner-detail { color: var(--gull); }
+
+/* Compact burn-rate card on Overview (graph migrated to TopStrip overlay).
+   Strip the outer .a-kpi-row border so it doesn't stack with the .a-card
+   border and the per-cell .a-kpi borders — three nested 1px lines look
+   like a double frame at this size. */
+.dir-a-root .a-burn-rate-compact { padding-bottom: 8px; }
+.dir-a-root .a-burn-rate-compact .a-kpi-row {
+  padding: 0;
+  margin: 4px 0 0;
+  border: none;
+}
+
+/* TopStrip overlay legend */
+.dir-a-root .a-strip-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--gull);
+}
+.dir-a-root .a-strip-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.dir-a-root .a-strip-legend-sw { width: 10px; height: 2px; display: inline-block; background: var(--accent); }
+.dir-a-root .a-strip-legend-sw-dashed {
+  background: transparent;
+  border-top: 1px dashed var(--warn);
+  height: 0;
+}
+
+/* Budget tab layout */
+.dir-a-root .a-budget-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+.dir-a-root .a-budget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.dir-a-root .a-budget-field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dir-a-root .a-budget-field-stack input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--iron-border);
+  color: var(--bone);
+  border-radius: 3px;
+  font: inherit;
+}
+.dir-a-root .a-threshold-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.dir-a-root .a-threshold-row .a-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--iron-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  background: var(--panel-2);
+}
+.dir-a-root .a-threshold-row .a-chip.is-on {
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border-color: var(--accent-2);
+}
+.dir-a-root .a-threshold-row .a-chip.is-muted { opacity: 0.55; }
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--iron-border-2);
+  border-radius: 2px;
+  background: var(--panel);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms, border-color 120ms;
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:checked::after {
+  content: "";
+  width: 4px;
+  height: 7px;
+  border-right: 1.5px solid var(--bg, #0a0a0a);
+  border-bottom: 1.5px solid var(--bg, #0a0a0a);
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+.dir-a-root .a-threshold-row .a-chip input[type="checkbox"]:focus-visible {
+  outline: 1px solid var(--accent-2, var(--accent));
+  outline-offset: 1px;
+}
+.dir-a-root .a-threshold-row .a-chip button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--gull);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.dir-a-root .a-threshold-row .a-chip button:hover { border-color: var(--iron-border-2); color: var(--bone); }
+.dir-a-root .a-hint { color: var(--gull); font-size: 12px; }
+
+/* Per-project allocation bar + link-button */
+.dir-a-root .a-stacked-bar {
+  width: 140px;
+  height: 8px;
+  background: var(--panel-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.dir-a-root .a-stacked-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms ease-out;
+}
+.dir-a-root .a-stacked-bar-fill.tone-warn { background: var(--warn); }
+.dir-a-root .a-stacked-bar-fill.tone-bad { background: var(--bad); }
+.dir-a-root .a-stacked-bar-fill.tone-good { background: var(--good); }
+.dir-a-root .a-link-button {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.dir-a-root .a-link-button:hover { color: var(--accent-2); }
+
+/* Window switcher (used by BurnRatePanel + BudgetHistoryTable) */
+.dir-a-root .a-window-switcher { display: inline-flex; gap: 4px; }
+.dir-a-root .a-window-switcher button {
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--iron-border);
+  color: var(--gull);
+  cursor: pointer;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 12px;
+}
+.dir-a-root .a-window-switcher button:hover { color: var(--bone); }
+.dir-a-root .a-window-switcher button.active {
+  color: var(--bone);
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+/* (legacy burn-chart classes removed — BurnRatePanel now reuses AreaChart) */
+
+/* Compact Cache mix card — smaller fonts + slimmer sparkline so it sits
+   nicely side-by-side with McpServersCard on the same row. The area
+   fill in the StripSpark visually drowned out the second (overlay) line,
+   so we hide it and rely on the two coloured strokes instead. */
+.dir-a-root .a-cache-mix-compact .a-kpi { padding: 10px 12px 8px; }
+.dir-a-root .a-cache-mix-compact .a-kpi .a-label { font-size: 10px; }
+.dir-a-root .a-cache-mix-compact .a-kpi .a-metric { font-size: clamp(18px, 2vw, 22px); }
+.dir-a-root .a-cache-mix-compact .a-strip-spark { padding: 6px 12px 4px; }
+.dir-a-root .a-cache-mix-compact .a-strip-legend { padding: 0 12px 8px; }
+.dir-a-root .a-cache-mix-chart { display: block; padding: 4px 12px 0; max-height: 110px; }
+
+/* MCP servers card (table form) */
+.dir-a-root .a-mcp-card .a-table { font-size: 12px; }
+.dir-a-root .a-mcp-card .a-table td { padding: 4px 8px; }
+
+/* Table pagination footer */
+.dir-a-root .a-page-nav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--gull);
+  border-top: 1px solid var(--iron-border);
+}
+.dir-a-root .a-page-status { font-variant-numeric: tabular-nums; }
+.dir-a-root .a-page-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--iron-border);
+  color: var(--bone);
+  cursor: pointer;
+  border-radius: 3px;
+  font: inherit;
+}
+.dir-a-root .a-page-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.dir-a-root .a-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Remote sources add form */
+.dir-a-root .a-remote-add {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr auto;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+.dir-a-root .a-remote-add input {
+  padding: 6px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--iron-border);
+  color: var(--bone);
+  border-radius: 3px;
+  font: inherit;
+  font-size: 12px;
+}
+.dir-a-root .a-error-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bad);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 /* Calibration cells (Settings → Limits) */
 .dir-a-root .a-cal-grid {
   display: grid;

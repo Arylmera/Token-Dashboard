@@ -127,6 +127,10 @@ const REG = [
   { key: "topSessionsRaw", trigger: "sessions", url: () => withProvider(`/api/sessions?order=cost&limit=50`), fallback: () => [] },
   { key: "skills",        trigger: "any",   url: ({ rangeSince, rangeUntil }) => withProvider(`/api/skills${rangeQuery(rangeSince, rangeUntil)}`) },
   { key: "byModel",       trigger: "models", url: ({ rangeSince, rangeUntil }) => withProvider(`/api/by-model${rangeQuery(rangeSince, rangeUntil)}`) },
+  { key: "toolCosts",     trigger: "any",   url: () => "/api/tool-costs?days=30", fallback: () => ({ tools: [], mcp_servers: [], total_cost_usd: 0, days: 30 }) },
+  { key: "cacheStats",    trigger: "days",  url: () => "/api/cache-stats?days=30", fallback: () => ({ days: [], avg_7d: 0, avg_30d: 0 }) },
+  { key: "burnRate",      trigger: "days",  url: () => "/api/burn-rate?window_days=7", fallback: () => null },
+  { key: "anomalies",     trigger: "sessions", url: () => "/api/anomalies?days=30&k=3", fallback: () => [] },
   { key: "prompts",       trigger: "sessions", url: ({ rangeSince, rangeUntil, promptQuery }) => {
       const parts = [];
       if (rangeSince) parts.push(`since=${encodeURIComponent(rangeSince)}`);
@@ -144,6 +148,7 @@ const REG = [
   { key: "planResp",      trigger: "static", url: () => "/api/plan",   fallback: () => ({ plan: "max" }) },
   { key: "limitsResp",    trigger: "static", url: () => "/api/limits", fallback: () => null },
   { key: "budgetResp",    trigger: "static", url: () => "/api/budget", fallback: () => null },
+  { key: "budgetAlerts",  trigger: "any",    url: () => "/api/budget-alerts", fallback: () => null },
   { key: "phaseResp",     trigger: "any",   url: ({ rangeSince, rangeUntil }) => withProvider(`/api/phase-split${rangeQuery(rangeSince, rangeUntil)}`), fallback: () => null },
   { key: "tagsResp",      trigger: "static", url: () => "/api/tags", fallback: () => [] },
   { key: "prefsResp",     trigger: "static", url: () => "/api/preferences", fallback: () => null },
@@ -217,6 +222,11 @@ function _rebuildMockData(range) {
     wow:           buildDeltaPair(c.overview7 || {}, c.prevWeekOv || {}),
     mom:           buildDeltaPair(c.overview30 || {}, c.prevMonthOv || {}),
     peakHour:      buildPeakHour(c.hourlyRaw || []),
+    cacheStats:    c.cacheStats || { days: [], avg_7d: 0, avg_30d: 0 },
+    burnRate:      c.burnRate || null,
+    budgetAlerts:  c.budgetAlerts || null,
+    toolCosts:     c.toolCosts || { tools: [], mcp_servers: [], total_cost_usd: 0, days: 30 },
+    anomalies:     Array.isArray(c.anomalies) ? c.anomalies : [],
   };
   // Notify subscribers that MOCK_DATA was mutated. React components read
   // through a Proxy so they need an external nudge to re-render after
@@ -563,6 +573,27 @@ window.SET_PROMPT_QUERY = setPromptQuery;
 // just before RELOAD_DATA on every provider change.
 window.SET_PROVIDER = (p) => { currentProvider = p || "all"; };
 
+// Auto-refresh on local midnight rollover. All `since=isoDaysAgo(0)` URLs
+// are anchored to local midnight, so a session that spans the boundary
+// (e.g. opened at 23:55 and still up at 00:01) keeps showing yesterday's
+// counters until the user manually reloads — including "prompts today",
+// "today · live", and the widget's today tile. Scheduling a loadAll() at
+// the next local midnight resets every today-anchored value at once.
+//
+// Reschedules itself recursively so the timer survives across days. A
+// small +500ms slack avoids tripping at 23:59:59.999 and reading the
+// previous day on slow clocks.
+const _scheduleMidnightRefresh = () => {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(24, 0, 0, 500);
+  const delay = Math.max(1000, next.getTime() - now.getTime());
+  setTimeout(() => {
+    loadAll().catch(() => {}).finally(_scheduleMidnightRefresh);
+  }, delay);
+};
+_scheduleMidnightRefresh();
+
 // /api/stream consumer.
 //
 // In the 3.x Electron build the main process held the SSE connection
@@ -611,7 +642,11 @@ function _onPayload(payload) {
     case "scan_complete":
       // Fresh transcripts → everything in the dashboard view may have moved.
       _markFresh();
-      loadDelta({ scan: true }).catch((e) => console.warn("loadDelta scan", e));
+      // Pass the full payload (sessions/projects/days/models hints) so
+      // pickEntries can route the refetch to the right registry slots —
+      // notably the "days"-triggered overviewToday/overviewYday/daily/
+      // hourlyRaw set, which would otherwise never refresh after init.
+      loadDelta(payload).catch((e) => console.warn("loadDelta scan", e));
       break;
     case "preferences":
     case "plan":
