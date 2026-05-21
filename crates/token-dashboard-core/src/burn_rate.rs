@@ -152,7 +152,9 @@ fn subscription_days_remaining(
     conn: &Connection,
     weekly: &LimitWindow,
 ) -> (Option<f64>, Option<String>) {
-    let Some(cap) = weekly.cap else { return (None, None) };
+    let Some(cap) = weekly.cap else {
+        return (None, None);
+    };
     if cap <= 0 || weekly.used <= 0 {
         return (None, None);
     }
