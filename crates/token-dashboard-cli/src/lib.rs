@@ -220,6 +220,23 @@ async fn tool_costs_handler(
     blocking(move || token_dashboard_core::tool_costs::report(path.as_ref(), days)).await
 }
 
+#[derive(Deserialize, Default)]
+struct VerbosityQuery {
+    min_chars: Option<u32>,
+    top: Option<u32>,
+}
+
+async fn verbosity_handler(
+    State(s): State<AppState>,
+    Query(q): Query<VerbosityQuery>,
+) -> Result<Json<Vec<token_dashboard_core::verbosity::WastedPrompt>>, ApiError> {
+    let min_chars = q.min_chars.unwrap_or(200).clamp(1, 1_000_000);
+    let top = q.top.unwrap_or(50).clamp(1, 500);
+    let path = s.db_path.clone();
+    blocking(move || token_dashboard_core::verbosity::worst_at_path(path.as_ref(), min_chars, top))
+        .await
+}
+
 async fn daily(
     State(s): State<AppState>,
     Query(q): Query<RangeQs>,
@@ -2838,6 +2855,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/projects", get(projects))
         .route("/api/tools", get(tools))
         .route("/api/tool-costs", get(tool_costs_handler))
+        .route("/api/verbosity", get(verbosity_handler))
         .route("/api/sync/snapshot", get(sync_snapshot_handler))
         .route(
             "/api/remote-sources",

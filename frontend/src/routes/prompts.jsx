@@ -4,6 +4,78 @@ import { fmtCost, fmtTokens } from "../format.js";
 import { Label, ModelBadge } from "../components/atoms.jsx";
 import { SortHeader, useSortable } from "../components/sortable.jsx";
 
+// /api/verbosity returns prompts where input chars vastly exceed output tokens
+// — the long-prompt-tiny-reply pattern. Mixed units (chars vs tokens) is the
+// price of not shipping a tokenizer in the frontend; ranking stays stable.
+const VerbosityList = () => {
+  const [rows, setRows] = useState([]);
+  const [minChars, setMinChars] = useState(200);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    fetch(`/api/verbosity?min_chars=${minChars}&top=50`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data) => { if (!cancelled) { setRows(Array.isArray(data) ? data : []); setLoading(false); } })
+      .catch((e) => { if (!cancelled) { setErr(String(e)); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [minChars]);
+  return (
+    <section className="a-card">
+      <div className="a-card-head">
+        <h2>Wasted prompts</h2>
+        <span className="a-card-meta">long prompt, tiny reply · ratio = chars in / tokens out</span>
+        <label style={{ marginLeft: "auto", color: "var(--gull)" }}>
+          min chars{" "}
+          <input
+            type="number"
+            min="1"
+            max="100000"
+            value={minChars}
+            onChange={(e) => setMinChars(Math.max(1, +e.target.value || 1))}
+            style={{ width: 90 }}
+          />
+        </label>
+      </div>
+      {loading && <div style={{ padding: 12, color: "var(--gull)" }}>loading…</div>}
+      {err && <div style={{ padding: 12, color: "var(--bad)" }}>error: {err}</div>}
+      {!loading && !err && rows.length === 0 && (
+        <div style={{ padding: 12, color: "var(--gull)" }}>nothing above this threshold</div>
+      )}
+      {!loading && !err && rows.length > 0 && (
+        <table className="a-table">
+          <thead>
+            <tr>
+              <th>when</th>
+              <th className="num">chars in</th>
+              <th className="num">tokens out</th>
+              <th className="num">ratio</th>
+              <th>model</th>
+              <th>preview</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={`${r.session_id}-${i}`}>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>
+                  {(r.timestamp || "").slice(0, 16).replace("T", " ")}
+                </td>
+                <td className="num">{fmtTokens(r.prompt_chars)}</td>
+                <td className="num">{fmtTokens(r.output_tokens)}</td>
+                <td className="num tone-warn">{r.ratio.toFixed(1)}</td>
+                <td><ModelBadge model={r.model} /></td>
+                <td style={{ maxWidth: 420, color: "var(--bone)" }}>{r.preview}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+};
+
 // FTS5 query: 250ms debounce so each keystroke doesn't refetch.
 const usePromptSearch = () => {
   const [query, setQuery] = useState("");
@@ -26,6 +98,7 @@ const usePromptSearch = () => {
 
 export const Prompts = () => {
   const [openId, setOpenId] = useState(null);
+  const [tab, setTab] = useState("expensive");
   const [query, setQuery] = usePromptSearch();
   const { sorted, sortState, requestSort } = useSortable(D.prompts || [], "tokens", "desc", {
     preview: (r) => r.preview,
@@ -39,6 +112,26 @@ export const Prompts = () => {
   const headProps = { state: sortState, requestSort };
   return (
     <div className="a-route">
+      <div className="a-tabs" role="tablist" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button
+          role="tab"
+          aria-selected={tab === "expensive"}
+          className={tab === "expensive" ? "a-tab is-active" : "a-tab"}
+          onClick={() => setTab("expensive")}
+        >
+          Expensive
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === "wasted"}
+          className={tab === "wasted" ? "a-tab is-active" : "a-tab"}
+          onClick={() => setTab("wasted")}
+        >
+          Wasted
+        </button>
+      </div>
+      {tab === "wasted" && <VerbosityList />}
+      {tab === "expensive" && (
       <section className="a-card">
         <div className="a-card-head">
           <h2>Most expensive prompts</h2>
@@ -94,6 +187,7 @@ export const Prompts = () => {
           </tbody>
         </table>
       </section>
+      )}
     </div>
   );
 };
