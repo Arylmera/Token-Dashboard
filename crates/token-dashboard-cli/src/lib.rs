@@ -250,6 +250,23 @@ async fn cache_stats_handler(
     blocking(move || token_dashboard_core::cache_stats::cache_trend(path.as_ref(), days)).await
 }
 
+#[derive(Deserialize)]
+struct CacheSessionsQuery {
+    date: String,
+}
+
+async fn cache_sessions_handler(
+    State(s): State<AppState>,
+    Query(q): Query<CacheSessionsQuery>,
+) -> Result<Json<Vec<token_dashboard_core::cache_stats::SessionCacheRow>>, ApiError> {
+    if q.date.len() != 10 {
+        return Err(ApiError::bad_request("date must be YYYY-MM-DD"));
+    }
+    let path = s.db_path.clone();
+    let date = q.date;
+    blocking(move || token_dashboard_core::cache_stats::sessions_for_day(path.as_ref(), &date)).await
+}
+
 #[derive(Deserialize, Default)]
 struct BurnRateQuery {
     window_days: Option<u32>,
@@ -2538,6 +2555,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/tool-costs", get(tool_costs_handler))
         .route("/api/daily", get(daily))
         .route("/api/cache-stats", get(cache_stats_handler))
+        .route("/api/cache-stats/sessions", get(cache_sessions_handler))
         .route("/api/burn-rate", get(burn_rate_handler))
         .route("/api/by-model", get(by_model))
         .route("/api/tags", get(tags))

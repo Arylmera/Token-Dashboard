@@ -135,6 +135,85 @@ pub fn cache_trend<P: AsRef<Path>>(db: P, days: u32) -> rusqlite::Result<CacheTr
     })
 }
 
+/// Per-session cache breakdown for a specific YYYY-MM-DD date. Sorted by
+/// descending cache-write tokens so the worst churn offenders surface
+/// first — exactly the rows you want to find when the daily hit-rate
+/// drops.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SessionCacheRow {
+    pub session_id: String,
+    pub project_slug: String,
+    pub model: Option<String>,
+    pub turns: i64,
+    pub input: i64,
+    pub cache_read: i64,
+    pub cache_create_5m: i64,
+    pub cache_create_1h: i64,
+    pub hit_rate: f64,
+    pub churn_rate: f64,
+}
+
+pub fn sessions_for_day<P: AsRef<Path>>(
+    db: P,
+    date: &str,
+) -> rusqlite::Result<Vec<SessionCacheRow>> {
+    let conn = open_ro(db)?;
+    let mut stmt = conn.prepare(
+        "SELECT session_id, COALESCE(project_slug, '(none)'), model, \
+                COUNT(*) AS turns, \
+                COALESCE(SUM(input_tokens), 0), \
+                COALESCE(SUM(cache_read_tokens), 0), \
+                COALESCE(SUM(cache_create_5m_tokens), 0), \
+                COALESCE(SUM(cache_create_1h_tokens), 0) \
+         FROM messages \
+         WHERE type = 'assistant' \
+           AND substr(timestamp, 1, 10) = ?1 \
+         GROUP BY session_id, project_slug, model \
+         ORDER BY (COALESCE(SUM(cache_create_5m_tokens), 0) \
+                 + COALESCE(SUM(cache_create_1h_tokens), 0)) DESC, turns DESC",
+    )?;
+    let rows = stmt.query_map(params![date], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, i64>(3)?,
+            r.get::<_, i64>(4)?,
+            r.get::<_, i64>(5)?,
+            r.get::<_, i64>(6)?,
+            r.get::<_, i64>(7)?,
+        ))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (session_id, project_slug, model, turns, input, cache_read, c5, c1) = row?;
+        let denom = input + cache_read + c5 + c1;
+        let hit_rate = if denom > 0 {
+            cache_read as f64 / denom as f64
+        } else {
+            0.0
+        };
+        let churn_rate = if denom > 0 {
+            (c5 + c1) as f64 / denom as f64
+        } else {
+            0.0
+        };
+        out.push(SessionCacheRow {
+            session_id,
+            project_slug,
+            model,
+            turns,
+            input,
+            cache_read,
+            cache_create_5m: c5,
+            cache_create_1h: c1,
+            hit_rate,
+            churn_rate,
+        });
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
