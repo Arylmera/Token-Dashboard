@@ -72,6 +72,31 @@ pub struct TagRow {
     pub sessions: i64,
 }
 
+/// Per-(tag, model) aggregation row used by `/api/tags-summary`. The CLI
+/// layer composes cost from these via `pricing::cost_for` so this stays a
+/// pure SQL aggregation with no pricing dep — same split used by
+/// `model_breakdown`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagAggregateRow {
+    pub tag: String,
+    pub model: Option<String>,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_create_5m_tokens: i64,
+    pub cache_create_1h_tokens: i64,
+    pub first_seen: Option<String>,
+    pub last_seen: Option<String>,
+}
+
+/// Per-tag distinct-session count, returned alongside [`TagAggregateRow`]
+/// so callers don't double-count sessions that span multiple models.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagSessionCount {
+    pub tag: String,
+    pub sessions: i64,
+}
+
 /// Build a `WHERE timestamp` clause + parameter list from optional
 /// since/until ISO strings. Mirrors python `_range_clause`.
 fn range_clause(since: Option<&str>, until: Option<&str>, col: &str) -> (String, Vec<String>) {
@@ -940,6 +965,62 @@ pub fn all_tags<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<TagRow>> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok(TagRow {
+            tag: r.get(0)?,
+            sessions: r.get(1)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Per-(tag, model) token aggregation across every assistant message in a
+/// tagged session. The caller pairs these with [`tag_session_counts`] to
+/// avoid double-counting sessions, and folds in pricing to compute cost.
+pub fn tag_aggregates<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<TagAggregateRow>> {
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(
+        "SELECT st.tag, m.model, \
+                COALESCE(SUM(m.input_tokens), 0)            AS input_tokens, \
+                COALESCE(SUM(m.output_tokens), 0)           AS output_tokens, \
+                COALESCE(SUM(m.cache_read_tokens), 0)       AS cache_read_tokens, \
+                COALESCE(SUM(m.cache_create_5m_tokens), 0)  AS cache_create_5m_tokens, \
+                COALESCE(SUM(m.cache_create_1h_tokens), 0)  AS cache_create_1h_tokens, \
+                MIN(m.timestamp)                            AS first_seen, \
+                MAX(m.timestamp)                            AS last_seen \
+         FROM session_tags st \
+         JOIN messages m ON m.session_id = st.session_id \
+         WHERE m.type = 'assistant' \
+         GROUP BY st.tag, m.model \
+         ORDER BY st.tag ASC",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(TagAggregateRow {
+            tag: r.get(0)?,
+            model: r.get(1)?,
+            input_tokens: r.get(2)?,
+            output_tokens: r.get(3)?,
+            cache_read_tokens: r.get(4)?,
+            cache_create_5m_tokens: r.get(5)?,
+            cache_create_1h_tokens: r.get(6)?,
+            first_seen: r.get(7)?,
+            last_seen: r.get(8)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Distinct sessions per tag. Separate from [`tag_aggregates`] because
+/// `COUNT(DISTINCT session_id)` inside a `GROUP BY (tag, model)` would
+/// count each session per-model, inflating totals for sessions that used
+/// more than one model.
+pub fn tag_session_counts<P: AsRef<Path>>(db: P) -> rusqlite::Result<Vec<TagSessionCount>> {
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(
+        "SELECT tag, COUNT(DISTINCT session_id) AS sessions \
+         FROM session_tags \
+         GROUP BY tag",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(TagSessionCount {
             tag: r.get(0)?,
             sessions: r.get(1)?,
         })
