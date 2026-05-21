@@ -10,13 +10,23 @@ human-curated highlights.
 
 ## [Unreleased]
 
+## [4.1.2] - 2026-05-21
+
 ### Changed
 - Workspace lint policy centralised in root `Cargo.toml` (`[workspace.lints]`)
   and inherited by all crates; `rustfmt.toml` + `clippy.toml` checked in.
 - `frontend/package-lock.json` is now tracked for reproducible installs.
+- `crates/token-dashboard-cli/src/lib.rs` split into focused modules
+  (2960 → 19 lines) for readability and quicker rebuilds.
+
+### Fixed
+- Long git project names are trimmed across all project columns (Overview,
+  Token Sink, Budget) so wide repo paths no longer break table layout.
 
 ### Security
 - `cargo-deny` + `cargo-audit` wired into the Rust CI workflow.
+  `deny.toml` ignores the rust-unic / gtk-rs / proc-macro-error advisories
+  pulled in transitively by tauri 2.x (no upstream fix yet).
 - Tauri webview now ships a concrete Content Security Policy (replaces
   `"csp": null`).
 
@@ -66,7 +76,8 @@ human-curated highlights.
 The 3.x line (Python + Electron) and earlier are no longer maintained; their
 release notes are preserved on GitHub.
 
-[Unreleased]: https://github.com/Arylmera/Token-Dashboard/compare/v4.1.1...HEAD
+[Unreleased]: https://github.com/Arylmera/Token-Dashboard/compare/v4.1.2...HEAD
+[4.1.2]: https://github.com/Arylmera/Token-Dashboard/releases/tag/v4.1.2
 [4.1.1]: https://github.com/Arylmera/Token-Dashboard/releases/tag/v4.1.1
 [4.1.0]: https://github.com/Arylmera/Token-Dashboard/releases/tag/v4.1.0
 [4.0.12]: https://github.com/Arylmera/Token-Dashboard/releases/tag/v4.0.12
