@@ -10,6 +10,21 @@ human-curated highlights.
 
 ## [Unreleased]
 
+## [4.1.3] - 2026-05-23
+
+### Added
+- Model-efficiency leaderboard (`/api/model_efficiency` + Overview card)
+  ranking models by cost-per-token.
+- Subscription-aware budget threshold alerts with remote-sync auto-pull.
+- Multi-machine sync groundwork (`remote_sync`, `sync_snapshot`).
+
+### Fixed
+- Homebrew cask is now architecture-aware: the release pipeline hashes both
+  the `aarch64` and `x64` DMGs and emits a per-arch `sha256`, so
+  `brew install`/`brew upgrade` no longer fails with a checksum mismatch on
+  Intel Macs (the cask URL served the x64 DMG while only the arm64 hash was
+  published).
+
 ## [4.1.2] - 2026-05-21
 
 ### Changed
