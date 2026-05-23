@@ -1,8 +1,11 @@
 cask "token-dashboard" do
-  version "0.0.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  arch arm: "aarch64", intel: "x64"
 
-  url "https://github.com/Arylmera/Token-Dashboard/releases/download/v#{version}/Token.Dashboard_#{version}_x64.dmg"
+  version "0.0.0"
+  sha256 arm:   "0000000000000000000000000000000000000000000000000000000000000000",
+         intel: "0000000000000000000000000000000000000000000000000000000000000000"
+
+  url "https://github.com/Arylmera/Token-Dashboard/releases/download/v#{version}/Token.Dashboard_#{version}_#{arch}.dmg"
   name "Token Dashboard"
   desc "Local dashboard for tracking Claude Code token usage and costs"
   homepage "https://github.com/Arylmera/Token-Dashboard"

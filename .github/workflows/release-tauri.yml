@@ -266,7 +266,6 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: token-dashboard-macos-arm64
           path: dist
 
       - name: Update Homebrew tap
@@ -280,15 +279,21 @@ jobs:
             echo "HOMEBREW_TAP_TOKEN secret not set — skipping tap update."
             exit 0
           fi
-          dmg=$(find dist -type f -name '*.dmg' | head -1 || true)
-          if [ -z "$dmg" ] || [ ! -f "$dmg" ]; then
-            echo "No DMG found in downloaded artifact — skipping tap update." >&2
-            find dist -maxdepth 3 -print || true
+          # The cask is arch-aware: the URL resolves to the aarch64 DMG on
+          # Apple Silicon and the x64 DMG on Intel, so each arch needs its
+          # own sha256. Hashing only one arch (the old bug) guaranteed a
+          # checksum mismatch for the other half of macOS users.
+          dmg_arm=$(find dist -type f -name '*aarch64*.dmg' | head -1 || true)
+          dmg_intel=$(find dist -type f \( -name '*x64*.dmg' -o -name '*x86_64*.dmg' \) | head -1 || true)
+          if [ -z "$dmg_arm" ] || [ ! -f "$dmg_arm" ] || [ -z "$dmg_intel" ] || [ ! -f "$dmg_intel" ]; then
+            echo "Missing one or both macOS DMGs — skipping tap update." >&2
+            find dist -maxdepth 3 -name '*.dmg' -print || true
             exit 0
           fi
-          sha=$(sha256sum "$dmg" | awk '{print $1}')
-          echo "DMG: $dmg"
-          echo "sha256: $sha"
+          sha_arm=$(sha256sum "$dmg_arm" | awk '{print $1}')
+          sha_intel=$(sha256sum "$dmg_intel" | awk '{print $1}')
+          echo "arm64 DMG: $dmg_arm  sha256: $sha_arm"
+          echo "x64   DMG: $dmg_intel  sha256: $sha_intel"
 
           tmp=$(mktemp -d)
           git clone --depth=1 \
@@ -298,7 +303,8 @@ jobs:
           cp Casks/token-dashboard.rb "$tmp/tap/Casks/token-dashboard.rb"
           sed -i.bak -E \
             -e "s/^  version \".*\"$/  version \"${VERSION}\"/" \
-            -e "s/^  sha256 \".*\"$/  sha256 \"${sha}\"/" \
+            -e "s/^  sha256 arm: +\".*\",$/  sha256 arm:   \"${sha_arm}\",/" \
+            -e "s/^         intel: +\".*\"$/         intel: \"${sha_intel}\"/" \
             "$tmp/tap/Casks/token-dashboard.rb"
           rm -f "$tmp/tap/Casks/token-dashboard.rb.bak"
 
