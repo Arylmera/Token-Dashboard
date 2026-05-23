@@ -28,7 +28,7 @@ Security: a per-source `bearer_token`, mandatory; HTTP listen address binds to `
 **Files:**
 - Modify: `crates/token-dashboard-cli/src/lib.rs`
 
-- [ ] **Step 1: Snapshot payload struct**
+- [x] **Step 1: Snapshot payload struct**
 
 In a new module file `crates/token-dashboard-cli/src/snapshot.rs`:
 
@@ -120,7 +120,7 @@ pub fn build(conn: &rusqlite::Connection, since: Option<&str>) -> rusqlite::Resu
 
 Add `gethostname = "0.5"` to `crates/token-dashboard-cli/Cargo.toml`.
 
-- [ ] **Step 2: Auth middleware + route**
+- [x] **Step 2: Auth middleware + route**
 
 ```rust
 async fn snapshot_handler(
@@ -148,7 +148,7 @@ struct SnapshotQuery { since: Option<String> }
 
 Register `.route("/api/sync/snapshot", axum::routing::get(snapshot_handler))`.
 
-- [ ] **Step 3: Smoke test**
+- [x] **Step 3: Smoke test**
 
 ```bash
 TOKEN_DASHBOARD_SYNC_TOKEN=secret cargo run -p token-dashboard-cli
@@ -157,7 +157,7 @@ curl -H 'authorization: Bearer secret' http://127.0.0.1:8080/api/sync/snapshot |
 
 Expected: JSON with `host_id`, `messages`, `tool_calls`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add crates/token-dashboard-cli/{src/lib.rs,src/snapshot.rs,Cargo.toml}
@@ -173,7 +173,7 @@ git commit -m "feat(sync): host-side snapshot endpoint"
 - Create: `crates/token-dashboard-core/src/remote_sync.rs`
 - Modify: `crates/token-dashboard-core/src/lib.rs`
 
-- [ ] **Step 1: Extend Sources**
+- [x] **Step 1: Extend Sources**
 
 In `sources.rs`, find the `Source` enum (or struct). Add fields:
 
@@ -188,7 +188,7 @@ pub struct Source {
 
 (Adapt to existing shape.)
 
-- [ ] **Step 2: Pull + merge**
+- [x] **Step 2: Pull + merge**
 
 In `remote_sync.rs`:
 
@@ -263,7 +263,7 @@ fn merge(conn: &Connection, body: &serde_json::Value) -> anyhow::Result<MergeSta
 
 The `INSERT OR IGNORE` requires that the `messages` table has a UNIQUE constraint over `(session_id, message_id)`. Check the existing schema and add this constraint via a new migration if absent.
 
-- [ ] **Step 3: Failing test**
+- [x] **Step 3: Failing test**
 
 ```rust
 #[cfg(test)]
@@ -293,7 +293,7 @@ mod tests {
 
 Run: `cargo test -p token-dashboard-core remote_sync` → expect PASS after migration is in place.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add crates/token-dashboard-core/src/{lib,remote_sync,sources,db}.rs
@@ -308,7 +308,7 @@ git commit -m "feat(sync): viewer-side pull + merge"
 - Modify: `frontend/src/routes/settings/sources-card.jsx`
 - Modify: `crates/token-dashboard-tauri/src/main.rs`
 
-- [ ] **Step 1: UI form**
+- [x] **Step 1: UI form**
 
 Inside `sources-card.jsx`, add fields for remote sources:
 
@@ -328,15 +328,15 @@ function AddRemote({ onAdd }) {
 
 Hook into the existing `/api/sources/add` route (extend its payload to accept `kind: "remote"`).
 
-- [ ] **Step 2: Schedule sync**
+- [x] **Step 2: Schedule sync**
 
 In the Tauri shell's post-scan hook, iterate enabled remote sources and call `remote_sync::pull_and_merge`. Use `tokio::spawn` so the UI does not block.
 
-- [ ] **Step 3: Manual test**
+- [x] **Step 3: Manual test**
 
 Run two instances on the same machine on different ports, configure one as a remote source of the other, confirm rows appear after a scan.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add frontend/src/routes/settings/sources-card.jsx crates/token-dashboard-tauri/src/main.rs

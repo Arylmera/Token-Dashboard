@@ -1,5 +1,7 @@
 # User-set 5h and weekly limit reset times — Implementation Plan
 
+> **Status (2026-05-21): SHIPPED — but not via this plan.** The feature was implemented in the Rust + Tauri rewrite (v4.0+), not in the Python codebase this plan targets. See `crates/token-dashboard-core/src/preferences.rs`, `crates/token-dashboard-core/src/limits.rs`, and the `/api/limits/sync` route in `crates/token-dashboard-cli/src/routes.rs`. The Python-specific tasks below (`token_dashboard/preferences.py`, `urllib.request`, `unittest`) are obsolete and retained only for historical reference. Do not execute.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add manual datetime-picker overrides for the 5h and weekly limit reset times, plus an opt-in "Sync from Anthropic" path that reads `anthropic-ratelimit-unified-{5h,7d}-reset` headers from a single throwaway `messages` request.

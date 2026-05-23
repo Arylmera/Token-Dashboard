@@ -96,14 +96,7 @@ jobs:
         with:
           command: check advisories licenses sources bans
 
-  audit:
-    name: cargo-audit
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      # Cargo.lock is gitignored in this repo; generate one so audit can run.
-      - run: cargo generate-lockfile
-      - uses: rustsec/audit-check@v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+  # cargo-audit job removed: cargo-deny above already runs `check advisories`
+  # against the same RustSec database and honors deny.toml's ignore list for
+  # unmaintained transitive deps (tauri's gtk-rs and unic-* families,
+  # proc-macro-error). Keeping both forced us to maintain two ignore lists.

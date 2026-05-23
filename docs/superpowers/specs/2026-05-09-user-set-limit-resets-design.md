@@ -1,7 +1,7 @@
 # User-set 5h and weekly limit reset times (hybrid: manual + sync)
 
 **Date:** 2026-05-09
-**Status:** Design approved, awaiting plan
+**Status:** SHIPPED in v4.0+ via the Rust + Tauri rewrite (`crates/token-dashboard-core/src/{preferences,limits}.rs`, `/api/limits/sync` in `crates/token-dashboard-cli/src/routes.rs`). This spec describes the Python implementation that was superseded by the Rust port. Retained for historical reference; references to `db/queries.py`, stdlib `urllib.request`, etc. no longer reflect the code.
 **Scope:** Settings UI + backend preferences + `/api/limits` override + opt-in sync from Anthropic API
 
 ## Problem

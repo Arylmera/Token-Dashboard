@@ -196,7 +196,8 @@ export const RemoteSourcesCard = () => {
       <div className="a-hint" style={{ padding: "0 16px 8px" }}>
         Host side: another Token Dashboard install must export{" "}
         <code>TOKEN_DASHBOARD_SYNC_TOKEN</code> before launching; that's the
-        bearer the viewer machines must send back.
+        bearer the viewer machines must send back. This machine auto-pulls
+        every 5 minutes — use <em>Sync now</em> below for an immediate refresh.
       </div>
       <form onSubmit={add} className="a-remote-add">
         <input

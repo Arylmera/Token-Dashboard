@@ -1,8 +1,10 @@
-# Code Quality Audit — Token Dashboard v4.1.1
+# Code Quality Audit — Token Dashboard v4.1.2
 
 Date: 2026-05-21
 Scope: full stack (Rust workspace, frontend, build/CI/docs).
 Status: audit only — no edits applied yet.
+
+> **Update 2026-05-21 (v4.1.2):** C1 below is **RESOLVED**. `crates/token-dashboard-cli/src/lib.rs` is now 16 lines; the prior god object was split into `routes.rs` (~2,247 lines), `oauth.rs`, `scan.rs`, `sse.rs`, `state.rs`, `util.rs`, `errors.rs`. `routes.rs` is still large and a candidate for further per-domain splitting, but the critical concern is gone. H-tier finding on `crates/token-dashboard-tauri/src/main.rs` is partly addressed (now ~845 lines, down from 894); other findings unverified against v4.1.2.
 
 ## Headline
 

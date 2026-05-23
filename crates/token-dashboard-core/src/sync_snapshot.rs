@@ -286,4 +286,76 @@ mod tests {
         let second = merge(f_b.path(), &snap).unwrap();
         assert_eq!(second.messages_inserted, 0, "second merge must dedup");
     }
+
+    /// Two hosts contribute to the same `session_id` (the user worked
+    /// on the same Claude Code session on both machines — implausible
+    /// in practice, but the dedup key must still hold). Only rows
+    /// whose `uuid` is new should land; existing uuids are skipped.
+    #[test]
+    fn merge_overlapping_session_dedups_by_uuid() {
+        let f_view = fresh();
+        // Existing row already in the viewer DB.
+        {
+            let c = Connection::open(f_view.path()).unwrap();
+            insert_msg(&c, "shared-1", "2026-05-22T10:00:00Z");
+        }
+
+        // Build a snapshot from a sibling host that has *both* the
+        // overlapping uuid AND a new uuid in the same session.
+        let f_host = fresh();
+        {
+            let c = Connection::open(f_host.path()).unwrap();
+            insert_msg(&c, "shared-1", "2026-05-22T10:00:00Z");
+            insert_msg(&c, "host-only-1", "2026-05-22T11:00:00Z");
+        }
+        let snap = build(f_host.path(), None).unwrap();
+        assert_eq!(snap.messages.len(), 2);
+
+        let stats = merge(f_view.path(), &snap).unwrap();
+        assert_eq!(
+            stats.messages_inserted, 1,
+            "overlapping uuid must dedup, only host-only-1 lands"
+        );
+
+        // Viewer ends up with both rows.
+        let c = Connection::open(f_view.path()).unwrap();
+        let count: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE session_id = 's'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    /// Tool-calls dedup on the composite (message_uuid, tool_name,
+    /// target, use_id, timestamp) rather than a synthetic key — re-
+    /// pulling a snapshot with the same tool-call rows must not double.
+    #[test]
+    fn merge_tool_calls_dedup_composite() {
+        let f_view = fresh();
+        let f_host = fresh();
+        {
+            let c = Connection::open(f_host.path()).unwrap();
+            insert_msg(&c, "u1", "2026-05-22T10:00:00Z");
+            c.execute(
+                "INSERT INTO tool_calls (message_uuid, session_id, project_slug, tool_name, target, \
+                  use_id, result_tokens, is_error, timestamp) VALUES \
+                  ('u1', 's', 'p', 'Read', '/tmp/x.txt', 'use-1', 50, 0, '2026-05-22T10:00:01Z')",
+                [],
+            )
+            .unwrap();
+        }
+        let snap = build(f_host.path(), None).unwrap();
+        assert_eq!(snap.tool_calls.len(), 1);
+
+        let s1 = merge(f_view.path(), &snap).unwrap();
+        assert_eq!(s1.tool_calls_inserted, 1);
+        let s2 = merge(f_view.path(), &snap).unwrap();
+        assert_eq!(
+            s2.tool_calls_inserted, 0,
+            "tool-call dedup must hold on re-merge"
+        );
+    }
 }

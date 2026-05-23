@@ -27,12 +27,17 @@ use tauri::{
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 use token_dashboard_cli::{
-    app as build_router, spawn_scan_loop, spawn_startup_oauth_sync, AppState,
+    app as build_router, spawn_remote_sync_loop, spawn_scan_loop, spawn_startup_oauth_sync,
+    AppState,
 };
 use token_dashboard_core::{default_db_path, Pricing};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const SCAN_INTERVAL: Duration = Duration::from_secs(10);
+/// Cadence for the read-only multi-machine sync fan-out — see
+/// `docs/todo/11-multi-machine-sync.md`. Strictly machine-to-machine
+/// (user-owned); the manual "Sync now" button covers immediate refresh.
+const REMOTE_SYNC_INTERVAL: Duration = Duration::from_secs(300);
 
 fn projects_dir_default() -> PathBuf {
     let mut p = default_db_path();
@@ -358,17 +363,41 @@ fn handle_budget_alert(app: &AppHandle, v: &serde_json::Value) {
         .and_then(|c| c.as_array())
         .cloned()
         .unwrap_or_default();
-    let mtd = v
-        .get("mtd_cost_usd")
-        .and_then(|x| x.as_f64())
-        .unwrap_or(0.0);
-    let budget = v.get("monthly_budget_usd").and_then(|x| x.as_f64());
+    let window = v
+        .get("window")
+        .and_then(|w| w.as_str())
+        .unwrap_or("monthly");
     for t in crossed {
         let Some(pct) = t.as_u64() else { continue };
-        let title = format!("Token Dashboard — {pct}% of budget");
-        let body = match budget {
-            Some(b) => format!("${mtd:.2} of ${b:.2} this month"),
-            None => format!("${mtd:.2} spent this month"),
+        let (title, body) = match window {
+            "weekly" => {
+                let used = v.get("percent").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                let body = match v.get("resets_at").and_then(|x| x.as_str()) {
+                    Some(r) => format!("{used:.0}% of weekly limit used · resets {r}"),
+                    None => format!("{used:.0}% of weekly limit used"),
+                };
+                (format!("Token Dashboard — {pct}% of weekly limit"), body)
+            }
+            "five_hour" => {
+                let used = v.get("percent").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                let body = match v.get("resets_at").and_then(|x| x.as_str()) {
+                    Some(r) => format!("{used:.0}% of 5h window used · resets {r}"),
+                    None => format!("{used:.0}% of 5h window used"),
+                };
+                (format!("Token Dashboard — {pct}% of 5h window"), body)
+            }
+            _ => {
+                let mtd = v
+                    .get("mtd_cost_usd")
+                    .and_then(|x| x.as_f64())
+                    .unwrap_or(0.0);
+                let budget = v.get("monthly_budget_usd").and_then(|x| x.as_f64());
+                let body = match budget {
+                    Some(b) => format!("${mtd:.2} of ${b:.2} this month"),
+                    None => format!("${mtd:.2} spent this month"),
+                };
+                (format!("Token Dashboard — {pct}% of budget"), body)
+            }
         };
         let _ = app.notification().builder().title(title).body(body).show();
     }
@@ -790,6 +819,7 @@ async fn main() {
     let state = AppState::new(db_path, Pricing::embedded(), projects_dir);
     spawn_scan_loop(state.clone(), SCAN_INTERVAL);
     spawn_startup_oauth_sync(state.clone());
+    spawn_remote_sync_loop(state.clone(), REMOTE_SYNC_INTERVAL);
     let router = build_router(state);
 
     let server = tokio::spawn(async move {

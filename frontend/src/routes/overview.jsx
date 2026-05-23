@@ -114,20 +114,43 @@ const KpiRow = ({ totals }) => {
 
 const BudgetAlertBanner = () => {
   const a = D.budgetAlerts;
-  if (!a || !a.newly_crossed || a.newly_crossed.length === 0) return null;
-  const max = Math.max(...a.newly_crossed);
-  const tone = max >= 100 ? "tone-bad" : max >= 80 ? "tone-warn" : "tone-good";
-  const label = max >= 100 ? "Monthly budget reached"
-    : max >= 80 ? `${max}% of monthly budget consumed`
-    : `${max}% of monthly budget consumed`;
-  const detail = a.monthly_budget_usd != null
-    ? `${fmtCost(a.mtd_cost_usd || 0)} of ${fmtCost(a.monthly_budget_usd)} (${(a.percent || 0).toFixed(0)}%)`
-    : "";
+  if (!a) return null;
+  const toneFor = (max) => max >= 100 ? "tone-bad" : max >= 80 ? "tone-warn" : "tone-good";
+  const fmtReset = (iso) => iso ? iso.slice(0, 16).replace("T", " ") : "";
+  const banners = [];
+  if (a.subscription_mode) {
+    if (a.newly_crossed_weekly && a.newly_crossed_weekly.length) {
+      const max = Math.max(...a.newly_crossed_weekly);
+      const label = max >= 100 ? "Weekly limit reached" : `${max}% of weekly limit consumed`;
+      const used = a.weekly_percent != null ? `${a.weekly_percent.toFixed(0)}% used` : "";
+      const resets = a.weekly_resets_at ? ` · resets ${fmtReset(a.weekly_resets_at)}` : "";
+      banners.push({ key: "weekly", tone: toneFor(max), label, detail: used + resets });
+    }
+    if (a.newly_crossed_5h && a.newly_crossed_5h.length) {
+      const max = Math.max(...a.newly_crossed_5h);
+      const label = max >= 100 ? "5h window reached" : `${max}% of 5h window consumed`;
+      const used = a.five_hour_percent != null ? `${a.five_hour_percent.toFixed(0)}% used` : "";
+      const resets = a.five_hour_resets_at ? ` · resets ${fmtReset(a.five_hour_resets_at)}` : "";
+      banners.push({ key: "five_hour", tone: toneFor(max), label, detail: used + resets });
+    }
+  } else if (a.newly_crossed && a.newly_crossed.length) {
+    const max = Math.max(...a.newly_crossed);
+    const label = max >= 100 ? "Monthly budget reached" : `${max}% of monthly budget consumed`;
+    const detail = a.monthly_budget_usd != null
+      ? `${fmtCost(a.mtd_cost_usd || 0)} of ${fmtCost(a.monthly_budget_usd)} (${(a.percent || 0).toFixed(0)}%)`
+      : "";
+    banners.push({ key: "monthly", tone: toneFor(max), label, detail });
+  }
+  if (banners.length === 0) return null;
   return (
-    <div className={`a-banner ${tone}`}>
-      <strong>{label}</strong>
-      {detail && <span className="a-banner-detail"> · {detail}</span>}
-    </div>
+    <>
+      {banners.map((b) => (
+        <div key={b.key} className={`a-banner ${b.tone}`}>
+          <strong>{b.label}</strong>
+          {b.detail && <span className="a-banner-detail"> · {b.detail}</span>}
+        </div>
+      ))}
+    </>
   );
 };
 
@@ -741,6 +764,54 @@ const CacheTrendCard = () => {
   );
 };
 
+// Cost-per-accepted-edit leaderboard, sibling of `ModelsCard`. Data comes
+// from `/api/model_efficiency?days=30` and is rendered cheapest-first so
+// the top row is the actionable "use this model for edits" recommendation.
+const ModelLeaderboard = () => {
+  const rows = D.modelEfficiency || [];
+  if (rows.length === 0) {
+    return (
+      <div className="a-card">
+        <div className="a-card-head">
+          <h2>Model efficiency</h2>
+          <span className="a-card-meta">cost per accepted edit · 30d</span>
+        </div>
+        <div className="a-empty">No accepted edits in the last 30 days.</div>
+      </div>
+    );
+  }
+  return (
+    <div className="a-card">
+      <div className="a-card-head">
+        <h2>Model efficiency</h2>
+        <span className="a-card-meta">cost per accepted edit · 30d</span>
+      </div>
+      <table className="a-table">
+        <thead>
+          <tr>
+            <th>model</th>
+            <th className="num">cost</th>
+            <th className="num">edits</th>
+            <th className="num">$/edit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.model || "(unknown)"}>
+              <td><ModelBadge model={r.model || "unknown"} /></td>
+              <td className="num">{fmtCost(r.cost_usd || 0)}</td>
+              <td className="num">{r.edits || 0}</td>
+              <td className="num tone-good">
+                {r.cost_per_edit_usd != null ? fmtCost(r.cost_per_edit_usd) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 const ModelsCard = () => (
   <div className="a-card">
     <div className="a-card-head"><h2>By model</h2></div>
@@ -958,6 +1029,7 @@ export const Overview = () => {
       <section className="a-card-row">
         <ProjectsTable totals={totals} />
         <ModelsCard />
+        <ModelLeaderboard />
       </section>
       <section className="a-card-row">
         <PhaseSplitCard phase={D.phase} />

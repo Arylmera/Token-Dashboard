@@ -21,6 +21,7 @@ pub mod credentials;
 pub mod db;
 pub mod limits;
 pub mod loop_detector;
+pub mod model_efficiency;
 pub mod preferences;
 pub mod pricing;
 pub mod providers;
