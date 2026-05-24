@@ -10,6 +10,15 @@ human-curated highlights.
 
 ## [Unreleased]
 
+## [4.1.5] - 2026-05-24
+
+### Added
+- Three new special themes: Terminal, Cockpit, and Grimdark.
+- Dismiss button on tip cards.
+
+### Fixed
+- Activity heatmap now aggregates server-side over the full selected window.
+
 ## [4.1.4] - 2026-05-24
 
 ### Fixed
