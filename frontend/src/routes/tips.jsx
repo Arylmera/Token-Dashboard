@@ -64,14 +64,21 @@ const tipToneVar = (type) =>
     : type === "good" ? "var(--good)"
     : "var(--gull)";
 
-const TipCard = ({ t, projectKey }) => {
+const TipCard = ({ t, projectKey, onDismiss }) => {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
   const prompt = buildTipPrompt(t, projectKey);
   const onCopy = async () => {
     const ok = await copyToClipboard(prompt);
     setCopied(ok);
     setTimeout(() => setCopied(false), 1500);
+  };
+  const onDismissClick = async () => {
+    setDismissing(true);
+    await onDismiss(t);
+    // On failure the card is restored by the parent; reset so it stays clickable.
+    setDismissing(false);
   };
   return (
     <div className={`a-tip a-tip-${t.type}`}>
@@ -89,6 +96,7 @@ const TipCard = ({ t, projectKey }) => {
         <div className="a-tip-actions">
           <button className="a-tip-btn" onClick={() => setOpen(!open)}>{open ? "hide prompt" : "show prompt"}</button>
           <button className="a-tip-btn" onClick={onCopy}>{copied ? "copied" : "copy prompt"}</button>
+          <button className="a-tip-btn" onClick={onDismissClick} disabled={dismissing}>{dismissing ? "dismissing…" : "dismiss"}</button>
         </div>
         {open && <pre className="a-tip-prompt">{prompt}</pre>}
       </div>
@@ -106,6 +114,7 @@ const mergeRightSize = (list, slug) => {
   const savings = sum("savings") / 100;
   return {
     _merged: true,
+    _keys: list.map((t) => t.key).filter(Boolean),
     type: list[0].type || "info",
     category: "right-size",
     title: `${count} short Opus turns across ${list.length} worktrees in ${slug} might fit on Sonnet`,
@@ -136,6 +145,7 @@ const mergeTipsByCategory = (tips, projectKey) => {
     list.sort((a, b) => (b.count || 0) - (a.count || 0));
     out.push({
       _merged: true,
+      _keys: list.map((t) => t.key).filter(Boolean),
       type: list[0].type || "info",
       category: cat,
       title: cat === "repeat-file"
@@ -151,7 +161,7 @@ const mergeTipsByCategory = (tips, projectKey) => {
   return out;
 };
 
-const TipsGroup = ({ groupKey, tips, defaultOpen }) => {
+const TipsGroup = ({ groupKey, tips, defaultOpen, onDismiss }) => {
   const storageKey = `tips.open.${groupKey}`;
   const [open, setOpen] = useState(() => {
     const v = localStorage.getItem(storageKey);
@@ -174,7 +184,7 @@ const TipsGroup = ({ groupKey, tips, defaultOpen }) => {
       </button>
       {open && (
         <div className="a-tips">
-          {merged.map((t, i) => <TipCard key={i} t={t} projectKey={groupKey} />)}
+          {merged.map((t, i) => <TipCard key={i} t={t} projectKey={groupKey} onDismiss={onDismiss} />)}
         </div>
       )}
     </div>
@@ -216,13 +226,44 @@ const sortedGroupKeys = (groups) =>
     return a.localeCompare(b);
   });
 
+const postDismiss = async (key) => {
+  const r = await fetch("/api/tips/dismiss", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
+  });
+  if (!r.ok) throw new Error("dismiss failed");
+};
+
 export const Tips = () => {
-  const groups = groupTipsByProject(D.tips || []);
+  const [dismissed, setDismissed] = useState(() => new Set());
+  const dismissTip = async (t) => {
+    const keys = t._keys || (t.key ? [t.key] : []);
+    if (keys.length === 0) return;
+    setDismissed((prev) => {
+      const n = new Set(prev);
+      keys.forEach((k) => n.add(k));
+      return n;
+    });
+    try {
+      await Promise.all(keys.map(postDismiss));
+      if (window.RELOAD_DATA) window.RELOAD_DATA();
+    } catch (_) {
+      // Restore the card so the dismissal isn't lost silently.
+      setDismissed((prev) => {
+        const n = new Set(prev);
+        keys.forEach((k) => n.delete(k));
+        return n;
+      });
+    }
+  };
+  const visible = (D.tips || []).filter((t) => !dismissed.has(t.key));
+  const groups = groupTipsByProject(visible);
   const keys = sortedGroupKeys(groups);
   return (
     <div className="a-route">
       <section className="a-card">
-        <div className="a-card-head"><h2>Tips</h2><span className="a-card-meta">rule-based suggestions · no telemetry</span></div>
+        <div className="a-card-head"><h2>Tips</h2><span className="a-card-meta">rule-based suggestions · no telemetry · dismissed tips return after 14 days if the pattern persists</span></div>
         {keys.length === 0 && (
           <div className="muted" style={{ padding: "12px 16px" }}>
             No tips yet — the rule engine hasn't flagged anything in the current window.
@@ -231,7 +272,7 @@ export const Tips = () => {
           </div>
         )}
         {keys.map((k, idx) => (
-          <TipsGroup key={k} groupKey={k} tips={groups[k]} defaultOpen={idx === 0} />
+          <TipsGroup key={k} groupKey={k} tips={groups[k]} defaultOpen={idx === 0} onDismiss={dismissTip} />
         ))}
       </section>
     </div>

@@ -1,5 +1,7 @@
 import React from "react";
 import { THEMES } from "../../theme.js";
+import { useCalmFx } from "../../fx-pref.js";
+import { SettingRow } from "./atoms.jsx";
 
 const ThemeSwatch = ({ theme, active, onPick }) => {
   const sw = theme.swatch || {};
@@ -25,8 +27,10 @@ const ThemeSwatch = ({ theme, active, onPick }) => {
 };
 
 export const ThemeCard = ({ themeIdx, onPickTheme }) => {
-  const dark  = THEMES.map((t, i) => [t, i]).filter(([t]) => t.mode === "dark");
-  const light = THEMES.map((t, i) => [t, i]).filter(([t]) => t.mode === "light");
+  const dark    = THEMES.map((t, i) => [t, i]).filter(([t]) => t.mode === "dark");
+  const light   = THEMES.map((t, i) => [t, i]).filter(([t]) => t.mode === "light");
+  const special = THEMES.map((t, i) => [t, i]).filter(([t]) => t.mode === "special");
+  const [calmFx, setCalmFx] = useCalmFx();
   return (
     <section className="a-card">
       <div className="a-card-head"><h2>Theme</h2><span className="a-card-meta">appearance</span></div>
@@ -45,6 +49,22 @@ export const ThemeCard = ({ themeIdx, onPickTheme }) => {
             <ThemeSwatch key={t.id} theme={t} active={themeIdx === i} onPick={() => onPickTheme(i)} />
           ))}
         </div>
+      </div>
+      <div className="a-theme-mode-row">
+        <span className="a-label">Special</span>
+        <div className="a-theme-swatch-grid">
+          {special.map(([t, i]) => (
+            <ThemeSwatch key={t.id} theme={t} active={themeIdx === i} onPick={() => onPickTheme(i)} />
+          ))}
+        </div>
+      </div>
+      <div className="a-theme-motion-row">
+        <SettingRow
+          title="Reduce motion (special themes)"
+          description="Freeze the animated background and banner on the terminal, cockpit, and grimdark themes."
+          checked={calmFx}
+          onChange={setCalmFx}
+        />
       </div>
     </section>
   );

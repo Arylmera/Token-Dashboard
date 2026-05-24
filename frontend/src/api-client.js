@@ -141,6 +141,7 @@ const REG = [
       return withProvider(`/api/prompts?${parts.join("&")}`);
     } },
   { key: "hourlyRaw",     trigger: "days",  windowSince: () => isoDaysAgo(1), url: () => withProvider("/api/hourly?hours=24"), fallback: () => [] },
+  { key: "activityRaw",   trigger: "any",   url: () => withProvider("/api/activity?days=7"), fallback: () => [] },
   { key: "recentPromptsRaw", trigger: "sessions", url: () => withProvider("/api/prompts?sort=recent&limit=5"), fallback: () => [] },
   { key: "prevWeekOv",    trigger: "days",  windowSince: () => isoDaysAgo(14), url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(14))}&until=${encodeURIComponent(isoDaysAgo(7))}`), fallback: () => ({}) },
   { key: "prevMonthOv",   trigger: "days",  windowSince: () => isoDaysAgo(60), url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(60))}&until=${encodeURIComponent(isoDaysAgo(30))}`), fallback: () => ({}) },
@@ -207,7 +208,7 @@ function _rebuildMockData(range) {
     tips:     buildTips(c.tips || []),
     hourly,
     hourlyDetail: buildHourlyDetail(c.hourlyRaw || []),
-    heatmap:  buildHeatmap(c.sessionsRaw || []),
+    heatmap:  buildHeatmap(c.activityRaw || []),
     burn:     buildBurn(hourly, totals.week),
     today:    buildToday(c.overviewToday || {}),
     plan:     c.planResp || { plan: "max" },
@@ -421,17 +422,17 @@ const buildHourlyDetail = (hourlyRaw) => {
 };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const WEEK_MS = 86400 * 7 * 1000;
 
-const buildHeatmap = (sessionsRaw) => {
+// activityRaw is server-aggregated turn counts: [{ dow, hour, turns }],
+// where dow follows strftime('%w') (0=Sun…6=Sat) in the user's local
+// timezone. Map onto the Mon-first WEEKDAYS grid.
+const buildHeatmap = (activityRaw) => {
   const heatmap = WEEKDAYS.map((day) => ({ day, cells: Array.from({ length: 24 }, () => 0) }));
-  sessionsRaw.forEach((s) => {
-    if (!s.started) return;
-    const d = new Date(s.started);
-    const ageMs = Date.now() - d.getTime();
-    if (ageMs < 0 || ageMs > WEEK_MS) return;
-    const dayIdx = (d.getDay() + 6) % 7;
-    heatmap[dayIdx].cells[d.getHours()] += s.turns || 0;
+  (Array.isArray(activityRaw) ? activityRaw : []).forEach((cell) => {
+    const dayIdx = ((cell.dow ?? 0) + 6) % 7;
+    const hour = cell.hour ?? 0;
+    if (hour < 0 || hour > 23) return;
+    heatmap[dayIdx].cells[hour] += cell.turns || 0;
   });
   return heatmap;
 };

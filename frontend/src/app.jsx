@@ -11,12 +11,17 @@ import { Tips } from "./routes/tips.jsx";
 import { Work } from "./routes/work.jsx";
 import { ApiRoute } from "./routes/api.jsx";
 import {
+  THEMES,
+  SPECIAL_THEME_IDS,
   applyThemeClass,
   persistThemeBackend,
   persistThemeIndex,
   themeIndexFromId,
   themeIndexFromStorage,
 } from "./theme.js";
+import { AmbientLayer } from "./components/ambient-canvas.jsx";
+import { ThemeBanner, CockpitHud, useCockpitBrackets } from "./components/special-chrome.jsx";
+import { useCalmFx } from "./fx-pref.js";
 import { useAdvancedMode } from "./use-advanced-mode.js";
 
 const ADVANCED_TABS = new Set(["api"]);
@@ -186,14 +191,28 @@ export const DirectionA = ({ initialTab, lockTab = false }) => {
   }, [advancedLoaded, advancedMode, tab, lockTab, setTab]);
   const effectiveTab = !advancedMode && ADVANCED_TABS.has(tab) ? "overview" : tab;
   const Route = ROUTES[effectiveTab] || Overview;
+  const themeId = THEMES[themeIdx]?.id;
+  const themeCls = THEMES[themeIdx]?.cls || "";
+  const isSpecial = SPECIAL_THEME_IDS.has(themeId);
+  const [calmFx] = useCalmFx();
+  useCockpitBrackets(themeId === "cockpit");
+  // Toggle the calm-motion class on the wrapper so banner/scanline/blip CSS
+  // animations can be paused alongside the (JS) ambient canvas.
+  useEffect(() => {
+    const root = document.querySelector(".dir-a-root");
+    if (root) root.classList.toggle("is-calm-fx", isSpecial && calmFx);
+  }, [isSpecial, calmFx]);
   return (
     <>
-      <Topbar tab={effectiveTab} setTab={setTab} range={range} setRange={setRange} provider={provider} setProvider={multiProviderEnabled ? setProvider : null} advancedMode={advancedMode} />
+      <AmbientLayer themeCls={isSpecial && !calmFx ? themeCls : ""} />
+      <Topbar tab={effectiveTab} setTab={setTab} range={range} setRange={setRange} provider={provider} setProvider={multiProviderEnabled ? setProvider : null} advancedMode={advancedMode} themeId={themeId} />
+      <ThemeBanner themeId={themeId} />
       <main className="a-main-area">
         <div key={effectiveTab} className="a-page-enter">
-          <Route themeIdx={themeIdx} onPickTheme={setThemeIdx} advancedMode={advancedMode} />
+          <Route themeIdx={themeIdx} themeId={themeId} onPickTheme={setThemeIdx} advancedMode={advancedMode} />
         </div>
       </main>
+      {themeId === "cockpit" && <CockpitHud />}
     </>
   );
 };

@@ -97,6 +97,15 @@
           "cache_create_1h_tokens": { "type": "integer", "format": "int64" }
         }
       },
+      "HeatmapCell": {
+        "type": "object",
+        "description": "One activity bucket. dow follows strftime('%w') (0=Sun..6=Sat) in the machine's local timezone; hour is 0-23. Only non-empty buckets are returned.",
+        "properties": {
+          "dow": { "type": "integer", "format": "int64" },
+          "hour": { "type": "integer", "format": "int64" },
+          "turns": { "type": "integer", "format": "int64" }
+        }
+      },
       "PhaseSplit": {
         "type": "object",
         "properties": {
@@ -387,6 +396,16 @@
           { "name": "hours", "in": "query", "schema": { "type": "integer", "default": 24, "minimum": 1 } }
         ],
         "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/HourlySlot" } } } } } }
+      }
+    },
+    "/api/activity": {
+      "get": {
+        "tags": ["read"],
+        "summary": "Turn counts bucketed by local weekday + hour (activity heatmap)",
+        "parameters": [
+          { "name": "days", "in": "query", "schema": { "type": "integer", "default": 7, "minimum": 1 } }
+        ],
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/HeatmapCell" } } } } } }
       }
     },
     "/api/phase-split": {
