@@ -214,17 +214,19 @@ export const StripSpark = ({
 }) => {
   if (!data || data.length === 0) return <div className="a-strip-spark" />;
   const w = 100;
-  // When an overlay series is present, share the y-axis so both curves stay
-  // visually comparable — pick max across both.
+  // The primary series ("today · hourly") and the overlay ("burn · 7d
+  // daily") live on different magnitudes — a daily total dwarfs any single
+  // hour — so a shared axis flattens today into a baseline sliver. Scale
+  // each series to its own max instead: today fills the chart height and
+  // its shape reads clearly, and the overlay keeps its own trend.
   const overlay = Array.isArray(overlayData) && overlayData.length > 0 ? overlayData : null;
-  const max =
-    Math.max(...data, ...(overlay || []), 0.0001) || 1;
-  const range = max || 1;
+  const dataMax = Math.max(...data, 0.0001) || 1;
+  const overlayMax = overlay ? Math.max(...overlay, 0.0001) || 1 : dataMax;
   const denom = Math.max(1, data.length - 1);
-  const pts = data.map((v, i) => ({ x: (i / denom) * w, y: height - (v / range) * (height - 8) - 4 }));
+  const pts = data.map((v, i) => ({ x: (i / denom) * w, y: height - (v / dataMax) * (height - 8) - 4 }));
   const line = smoothPath(pts);
   const area = `M0,${height - 4} L${line.slice(1)} L${w},${height - 4} Z`;
-  const cursorY = height - (data[data.length - 1] / range) * (height - 8) - 4;
+  const cursorY = height - (data[data.length - 1] / dataMax) * (height - 8) - 4;
   const dotTopPct = (cursorY / height) * 100;
   const gid = randId("a-strip-grad");
 
@@ -233,7 +235,7 @@ export const StripSpark = ({
     const odenom = Math.max(1, overlay.length - 1);
     const opts = overlay.map((v, i) => ({
       x: (i / odenom) * w,
-      y: height - (v / range) * (height - 8) - 4,
+      y: height - (v / overlayMax) * (height - 8) - 4,
     }));
     overlayLine = smoothPath(opts);
   }
