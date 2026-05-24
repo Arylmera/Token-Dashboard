@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { DateInput } from "./date-input.jsx";
+import { getThemedCopy } from "../themed-copy.js";
 
 const TABS = ["overview", "budget", "cache", "prompts", "sessions", "tags", "token sink", "tips", "api", "settings"];
 const TAB_LABELS = { "token sink": "sink" };
@@ -107,9 +108,10 @@ const WindowControls = () => {
   );
 };
 
-export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProvider, advancedMode = false }) => {
+export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProvider, advancedMode = false, themeId }) => {
   const version = useVersion();
   const lastRefresh = useLastRefresh();
+  const tc = getThemedCopy(themeId);
   const visibleTabs = TABS.filter((t) => advancedMode || !ADVANCED_TABS.has(t));
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
@@ -127,9 +129,9 @@ export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProv
   <header className="a-topbar" data-tauri-drag-region>
     <div className="a-brand a-prompt" data-tauri-drag-region>
       <span className="a-brand-dot" />
-      <span className="a-prompt-path">~/code/dashboard</span>
-      <span className="a-prompt-ps1">$</span>
-      <span className="a-prompt-cmd">td</span>
+      <span className="a-prompt-path">{tc?.brand?.path ?? "~/code/dashboard"}</span>
+      <span className="a-prompt-ps1">{tc?.brand?.ps1 ?? "$"}</span>
+      <span className="a-prompt-cmd">{tc?.brand?.cmd ?? "td"}</span>
       <span className="a-prompt-cursor" aria-hidden="true">▍</span>
       <span
         className={`a-prompt-fresh${lastRefresh.stale ? " is-stale" : ""}`}
@@ -150,12 +152,12 @@ export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProv
           className={`a-navlink ${tab === t ? "is-active" : ""}`}
           onClick={() => setTab(t)}
         >
-          {TAB_LABELS[t] || t}
+          {tc?.nav?.[t] ?? TAB_LABELS[t] ?? t}
         </button>
       ))}
     </nav>
     <div className="a-topbar-actions" data-tauri-drag-region="false">
-      {version && <span className="a-brand-sub">v{version}</span>}
+      {version && <span className="a-brand-sub">{tc?.versionMeta ? tc.versionMeta(version) : `v${version}`}</span>}
       <div className="a-range">
         {RANGES.map((r) => (
           <button

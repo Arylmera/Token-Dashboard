@@ -2369,3 +2369,341 @@ html:has(body.td-widget-body)::-webkit-scrollbar { width: 0; height: 0; display:
   .dir-a-root .a-skel { animation: none !important; }
 }
 
+/* ============================================================
+   Special Themes (Terminal / Cockpit / Grimdark)
+   Add-on theme block. These themes layer extra ornament (ambient
+   canvas, banner strip, themed type) on top of the base token
+   contract (--bg / --panel / --bone / --accent / etc.), which is
+   preserved so existing components keep working.
+   Display fonts vendored in vendor/fonts.css (no CDN).
+   ============================================================ */
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME · TERMINAL — phosphor CRT
+   ════════════════════════════════════════════════════════════════════════════ */
+.dir-a-root.theme-terminal {
+  --bg:            #020806;
+  --panel-solid:   #04140d;
+  --panel:         var(--panel-solid);
+  --panel-2:       #062418;
+  --iron-border:   #0a3a26;
+  --iron-border-2: #0f5239;
+  --bone:          #b7ffce;
+  --gull:          #4ddc7d;
+  --gull-2:        #2e8a4f;
+  --accent:        #36ff7a;
+  --accent-2:      #4ddc7d;
+  --good:          #4ddc7d;
+  --pos:           #36ff7a;
+  --bad:           #ff4d4d;
+  --grid-dot:      rgba(54,255,122,0.03);
+
+  /* font swap — VT323 reads small, so a base font-size bump comes with this theme */
+  --font-mono:    "VT323", "JetBrains Mono", monospace;
+
+  background: #020806;
+  text-shadow: 0 0 1px rgba(183,255,206,0.45);
+}
+.dir-a-root.theme-terminal,
+.dir-a-root.theme-terminal * { font-family: var(--font-mono); }
+.dir-a-root.theme-terminal { font-size: 16px; }
+
+/* size bumps to compensate for VT323's pixel grid */
+.dir-a-root.theme-terminal .a-kpi-value,
+.dir-a-root.theme-terminal .a-metric          { font-size: 56px; letter-spacing: 0; }
+.dir-a-root.theme-terminal .a-prompt          { font-size: 18px; }
+.dir-a-root.theme-terminal .a-card-head h2       { font-size: 16px; letter-spacing: 0.18em; }
+.dir-a-root.theme-terminal .a-kpi-label,
+.dir-a-root.theme-terminal .a-label          { font-size: 14px; letter-spacing: 0.18em; }
+.dir-a-root.theme-terminal .a-navlink            { font-size: 15px; letter-spacing: 0.18em; }
+.dir-a-root.theme-terminal .a-range button       { font-size: 14px; }
+.dir-a-root.theme-terminal table.a-table th      { font-size: 14px; letter-spacing: 0.18em; }
+.dir-a-root.theme-terminal table.a-table td      { font-size: 16px; }
+
+/* CRT corner vignette + scanlines applied to the ambient canvas container */
+.dir-a-root.theme-terminal .a-ambient::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%),
+    radial-gradient(ellipse at 50% 40%, rgba(54,255,122,0.06) 0%, transparent 60%);
+}
+.dir-a-root.theme-terminal .a-ambient::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+    rgba(0,0,0,0.22) 3px, rgba(0,0,0,0.22) 3.5px
+  );
+  mix-blend-mode: multiply;
+  animation: terminal-scanlines 8s linear infinite;
+}
+@keyframes terminal-scanlines { from { background-position: 0 0; } to { background-position: 0 60px; } }
+
+/* ASCII "+" marks on card corners */
+.dir-a-root.theme-terminal .a-card { position: relative; }
+.dir-a-root.theme-terminal .a-card::before,
+.dir-a-root.theme-terminal .a-card::after {
+  content: "+"; position: absolute; top: -1px;
+  color: var(--accent); font: 14px var(--font-mono);
+  padding: 1px 3px 0 3px; background: var(--bg); line-height: 1;
+}
+.dir-a-root.theme-terminal .a-card::before { left: -1px; }
+.dir-a-root.theme-terminal .a-card::after  { right: -1px; }
+
+/* Boot-log marquee strip under topbar — populated by JS / template */
+.dir-a-root.theme-terminal .a-banner-terminal {
+  font: 14px var(--font-mono); color: var(--gull);
+  letter-spacing: 0.06em;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--iron-border);
+  overflow: hidden;
+  background: rgba(6,36,24,0.45);
+  position: relative;
+}
+.dir-a-root.theme-terminal .a-banner-terminal .track {
+  display: inline-flex; gap: 28px;
+  white-space: nowrap;
+  padding-left: 22px;
+  animation: terminal-marquee 38s linear infinite;
+}
+.dir-a-root.theme-terminal .a-banner-terminal .ok { color: var(--accent); }
+@keyframes terminal-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME · COCKPIT — bridge HUD
+   ════════════════════════════════════════════════════════════════════════════ */
+.dir-a-root.theme-cockpit {
+  --bg:            #04080f;
+  --panel-solid:   rgba(10, 26, 44, 0.82);
+  --panel:         var(--panel-solid);
+  --panel-2:       rgba(14, 36, 60, 0.85);
+  --iron-border:   #0e3a5c;
+  --iron-border-2: #1a5688;
+  --bone:          #d3ebff;
+  --gull:          #6b9cc4;
+  --gull-2:        #466884;
+  --accent:        #00d4ff;
+  --accent-2:      #ffaa00;
+  --good:          #6b9cc4;
+  --pos:           #00d4ff;
+  --bad:           #ff4a6b;
+  --grid-dot:      rgba(0,212,255,0.025);
+
+  --font-mono:    "Share Tech Mono", "JetBrains Mono", monospace;
+  --font-display: "Orbitron", "Share Tech Mono", monospace;
+
+  background: radial-gradient(ellipse at top, #07182b 0%, #04080f 60%, #02060c 100%);
+}
+.dir-a-root.theme-cockpit,
+.dir-a-root.theme-cockpit * { font-family: var(--font-mono); }
+.dir-a-root.theme-cockpit .a-card-head h2,
+.dir-a-root.theme-cockpit .a-kpi-label,
+.dir-a-root.theme-cockpit .a-label,
+.dir-a-root.theme-cockpit .a-navlink,
+.dir-a-root.theme-cockpit .a-kpi-value,
+.dir-a-root.theme-cockpit .a-metric { font-family: var(--font-display); }
+.dir-a-root.theme-cockpit .a-card-head h2 { letter-spacing: 0.22em; }
+.dir-a-root.theme-cockpit .a-navlink      { letter-spacing: 0.22em; }
+
+/* card translucency */
+.dir-a-root.theme-cockpit .a-card {
+  position: relative;
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  box-shadow: inset 0 0 0 1px rgba(0,212,255,0.05);
+}
+
+/* Corner brackets on cards — <span class="br tl/tr/bl/br"> injected per card */
+.dir-a-root.theme-cockpit .a-card > .br {
+  position: absolute; width: 12px; height: 12px;
+  border: 1px solid var(--accent); pointer-events: none;
+}
+.dir-a-root.theme-cockpit .a-card > .br.tl { top: -1px; left: -1px;  border-right: 0; border-bottom: 0; }
+.dir-a-root.theme-cockpit .a-card > .br.tr { top: -1px; right: -1px; border-left: 0;  border-bottom: 0; }
+.dir-a-root.theme-cockpit .a-card > .br.bl { bottom: -1px; left: -1px;  border-right: 0; border-top: 0; }
+.dir-a-root.theme-cockpit .a-card > .br.br { bottom: -1px; right: -1px; border-left: 0;  border-top: 0; }
+
+/* Calm bottom radial in the ambient layer */
+.dir-a-root.theme-cockpit .a-ambient::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 120%, rgba(0,40,80,0.35) 0%, transparent 55%);
+}
+
+/* Telemetry banner strip under topbar */
+.dir-a-root.theme-cockpit .a-banner-cockpit {
+  display: flex; justify-content: center; align-items: center; gap: 18px;
+  padding: 7px 22px;
+  font: 600 10px var(--font-mono);
+  color: var(--gull); letter-spacing: 0.22em; text-transform: uppercase;
+  border-bottom: 1px solid var(--iron-border);
+  background: linear-gradient(180deg, rgba(0,212,255,0.06), transparent);
+  text-shadow: 0 0 6px rgba(0,212,255,0.35);
+}
+.dir-a-root.theme-cockpit .a-banner-cockpit b { color: var(--accent); font-weight: 700; }
+.dir-a-root.theme-cockpit .a-banner-cockpit .amber { color: var(--accent-2); }
+.dir-a-root.theme-cockpit .a-banner-cockpit .sep {
+  display: inline-block; width: 6px; height: 6px;
+  border: 1px solid var(--accent); transform: rotate(45deg);
+}
+.dir-a-root.theme-cockpit .a-banner-cockpit .blip {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 8px var(--accent);
+  animation: cockpit-blip 1.4s ease-in-out infinite;
+}
+@keyframes cockpit-blip {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.35; transform: scale(0.7); }
+}
+
+/* HUD readout floating bottom-right */
+.dir-a-root.theme-cockpit .a-hud {
+  position: fixed; bottom: 22px; right: 22px; z-index: 5;
+  font: 500 10px var(--font-mono);
+  color: var(--gull); letter-spacing: 0.18em;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  text-shadow: 0 0 6px rgba(0,212,255,0.4);
+  padding: 10px 12px;
+  background: rgba(4,10,18,0.55);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  border: 1px solid var(--iron-border);
+}
+.dir-a-root.theme-cockpit .a-hud .val { color: var(--accent); font-weight: 600; }
+.dir-a-root.theme-cockpit .a-hud .amb { color: var(--accent-2); }
+.dir-a-root.theme-cockpit .a-hud-tape {
+  margin-top: 6px; display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border: 1px solid var(--iron-border);
+  background: rgba(4,10,18,0.6);
+}
+.dir-a-root.theme-cockpit .a-hud-tape b { color: var(--accent); }
+
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME · GRIMDARK — gothic-industrial sci-fi (original; no GW IP)
+   ════════════════════════════════════════════════════════════════════════════ */
+.dir-a-root.theme-grimdark {
+  --bg:            #0a0807;
+  --panel-solid:   #181311;
+  --panel:         var(--panel-solid);
+  --panel-2:       #221814;
+  --iron-border:   #3a261c;
+  --iron-border-2: #5a3a26;
+  --bone:          #e8d5b0;
+  --gull:          #a08566;
+  --gull-2:        #6e5640;
+  --accent:        #c8a24a;          /* tarnished gold */
+  --accent-2:      #b8231a;          /* deep crimson  */
+  --good:          #a08566;
+  --pos:           #c8a24a;
+  --bad:           #b8231a;
+  --grid-dot:      rgba(232,213,176,0.022);
+
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Cinzel", serif;
+  --font-brand:   "Cormorant Garamond", "Cinzel", serif;
+
+  background: radial-gradient(ellipse at top, #1a0f0a 0%, #0a0807 70%);
+}
+.dir-a-root.theme-grimdark .a-card-head h2,
+.dir-a-root.theme-grimdark .a-kpi-label,
+.dir-a-root.theme-grimdark .a-label,
+.dir-a-root.theme-grimdark .a-navlink,
+.dir-a-root.theme-grimdark .a-kpi-value,
+.dir-a-root.theme-grimdark .a-metric { font-family: var(--font-display); }
+.dir-a-root.theme-grimdark .a-prompt { font-family: var(--font-brand); font-size: 17px; font-style: italic; font-weight: 600; }
+.dir-a-root.theme-grimdark .a-prompt .a-prompt-ps1,
+.dir-a-root.theme-grimdark .a-prompt .a-prompt-cmd { font-family: var(--font-display); font-style: normal; letter-spacing: 0.1em; }
+.dir-a-root.theme-grimdark .a-card-head h2 { letter-spacing: 0.2em; }
+.dir-a-root.theme-grimdark .a-navlink      { letter-spacing: 0.22em; }
+.dir-a-root.theme-grimdark .a-kpi-value,
+.dir-a-root.theme-grimdark .a-metric    { letter-spacing: 0; font-weight: 500; }
+
+/* hammered iron card edge + ✠ sigil at top-left */
+.dir-a-root.theme-grimdark .a-card {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(58,38,28,0.16), transparent 30%),
+    var(--panel);
+  box-shadow: inset 0 0 0 1px rgba(200,162,74,0.06);
+}
+/* ✠ sigil replaces the accent dash before each card title — sits inside the
+   card so the tall cross never clips against the top border. */
+.dir-a-root.theme-grimdark .a-card-head h2::before {
+  content: "✠";
+  width: auto; height: auto; background: none;
+  color: var(--accent);
+  font: 15px/1 var(--font-display);
+}
+
+/* ember-glow ambient */
+.dir-a-root.theme-grimdark .a-ambient::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse at top, rgba(184,35,26,0.10) 0%, transparent 50%),
+    radial-gradient(ellipse at bottom, rgba(0,0,0,0.6) 0%, transparent 60%);
+}
+
+/* Decorative oath banner */
+.dir-a-root.theme-grimdark .a-banner-grimdark {
+  display: flex; justify-content: center; align-items: center; gap: 18px;
+  padding: 8px 22px;
+  font: italic 500 13px/1 var(--font-brand);
+  color: var(--gull); letter-spacing: 0.18em; text-transform: uppercase;
+  border-bottom: 1px solid var(--iron-border);
+  background: linear-gradient(180deg, rgba(184,35,26,0.05), transparent);
+}
+.dir-a-root.theme-grimdark .a-banner-grimdark b { color: var(--accent); font-family: var(--font-display); font-style: normal; font-weight: 600; }
+.dir-a-root.theme-grimdark .a-banner-grimdark i.sep {
+  width: 6px; height: 6px; background: var(--accent-2); transform: rotate(45deg);
+  display: inline-block;
+}
+
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SHARED AMBIENT-CANVAS CONTAINER
+   ════════════════════════════════════════════════════════════════════════════ */
+.a-ambient {
+  position: fixed; inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.a-ambient canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* Chrome must sit above the ambient layer */
+.dir-a-root > .a-topbar,
+.dir-a-root > .a-main-area,
+.dir-a-root > .a-banner-terminal,
+.dir-a-root > .a-banner-cockpit,
+.dir-a-root > .a-banner-grimdark { position: relative; z-index: 2; }
+
+/* Special-theme decorative motion respects reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .dir-a-root.theme-terminal .a-ambient::before,
+  .dir-a-root.theme-terminal .a-banner-terminal .track,
+  .dir-a-root.theme-cockpit .a-banner-cockpit .blip {
+    animation: none !important;
+  }
+}
+
+/* Spacing/divider so the reduce-motion toggle isn't flush against the
+   special-theme swatch grid. */
+.dir-a-root .a-theme-motion-row {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--iron-border);
+}
+
+/* "Reduce motion" toggle (Settings → Theme). The ambient canvas is idled in
+   JS; this freezes the remaining CSS-driven motion (scanlines, marquee, the
+   cockpit blips) while leaving the static styling intact. */
+.dir-a-root.is-calm-fx .a-ambient::before,
+.dir-a-root.is-calm-fx .a-banner-terminal .track,
+.dir-a-root.is-calm-fx .a-banner-cockpit .blip,
+.dir-a-root.is-calm-fx .a-hud .blip {
+  animation: none !important;
+}
+
