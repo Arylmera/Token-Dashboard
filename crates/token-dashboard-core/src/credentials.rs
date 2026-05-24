@@ -17,9 +17,11 @@
 //! We never persist the token in our DB; each sync re-reads it so
 //! token rotation by Claude Code is picked up automatically.
 //!
-//! Token refresh is not handled here. An expired access token surfaces
-//! as a 401 from the Anthropic call; the user is asked to re-run
-//! `claude` so Claude Code itself refreshes.
+//! When the stored access token is expired we refresh it via the OAuth
+//! refresh token and write the rotated tokens back to the credential
+//! file (Linux/Windows), so subsequent syncs — and Claude Code itself —
+//! keep working without a manual `claude` re-login. See
+//! `persist_refreshed_tokens`.
 
 use serde::Deserialize;
 
@@ -89,16 +91,17 @@ const OAUTH_REFRESH_TIMEOUT_S: u64 = 15;
 /// is expired. Logs nothing — callers must avoid logging the return
 /// value.
 ///
-/// The refresh runs entirely in-memory: the freshly-minted access
-/// token is returned but never written back to the OS credential
-/// store, so we don't have to ask the user for keychain *write*
-/// permission and we don't race with Claude Code refreshing on its
-/// own schedule. The caveat is that if Anthropic rotates the refresh
-/// token on each use (the standard OAuth pattern), Claude Code's
-/// next attempt may fail because we silently consumed the prior one.
-/// In practice the rotation behavior of Claude Code's flow hasn't
-/// caused trouble; if it does, we'd switch to writing back to the
-/// keychain at refresh time.
+/// Anthropic rotates the refresh token on every use (standard OAuth),
+/// so a refresh both mints a new access token and invalidates the old
+/// refresh token server-side. On Linux/Windows we therefore write the
+/// rotated `accessToken`/`refreshToken`/`expiresAt` back to
+/// `~/.claude/.credentials.json`, keeping both this tool and Claude
+/// Code working off valid tokens. Without the write-back the next
+/// sync would send the now-dead refresh token, fail, and force the
+/// user to run `claude` to re-mint credentials — the very loop this
+/// avoids. On macOS we skip the write-back: a Keychain *write* would
+/// pop a permission prompt, so the refreshed token only services the
+/// current call there.
 pub fn read_oauth_token() -> Result<String, CredentialError> {
     let blob = read_credentials_blob()?;
     let now_ms = std::time::SystemTime::now()
@@ -192,6 +195,11 @@ const DEFAULT_OAUTH_SCOPES: &[&str] = &[
 #[derive(Deserialize)]
 struct RefreshResponse {
     access_token: Option<String>,
+    /// Rotated refresh token. Anthropic issues a fresh one on every
+    /// refresh and invalidates the prior one — we must persist this.
+    refresh_token: Option<String>,
+    /// Lifetime of the new access token, in seconds.
+    expires_in: Option<i64>,
 }
 
 #[cfg(feature = "http")]
@@ -226,11 +234,71 @@ fn refresh_oauth_token(
     let parsed: RefreshResponse = resp
         .into_json()
         .map_err(|e| CredentialError::ParseFailed(format!("refresh response: {e}")))?;
-    parsed
+    let access = parsed
         .access_token
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| CredentialError::ParseFailed("refresh response missing access_token".into()))
+        .ok_or_else(|| {
+            CredentialError::ParseFailed("refresh response missing access_token".into())
+        })?;
+    // Persist the rotated tokens so the next sync (and Claude Code) keeps
+    // working. Best-effort: a write failure must not fail this sync — the
+    // returned `access` still services the current call.
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let new_expires_at_ms = parsed.expires_in.map(|secs| now_ms + secs * 1000);
+    persist_refreshed_tokens(&access, parsed.refresh_token.as_deref(), new_expires_at_ms);
+    Ok(access)
 }
+
+/// Write the freshly-minted tokens back to `~/.claude/.credentials.json`,
+/// preserving every other field in the blob. Best-effort and silent: any
+/// failure leaves the file untouched and the caller's in-memory token is
+/// still valid for the current request.
+#[cfg(all(feature = "http", not(target_os = "macos")))]
+fn persist_refreshed_tokens(access: &str, refresh: Option<&str>, expires_at_ms: Option<i64>) {
+    let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) else {
+        return;
+    };
+    let path = std::path::PathBuf::from(home)
+        .join(".claude")
+        .join(".credentials.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let Ok(mut root) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
+        return;
+    };
+    let Some(oauth) = root
+        .get_mut("claudeAiOauth")
+        .and_then(|v| v.as_object_mut())
+    else {
+        return;
+    };
+    oauth.insert(
+        "accessToken".into(),
+        serde_json::Value::String(access.to_string()),
+    );
+    if let Some(r) = refresh {
+        oauth.insert(
+            "refreshToken".into(),
+            serde_json::Value::String(r.to_string()),
+        );
+    }
+    if let Some(e) = expires_at_ms {
+        oauth.insert("expiresAt".into(), serde_json::Value::Number(e.into()));
+    }
+    if let Ok(serialized) = serde_json::to_string_pretty(&root) {
+        let _ = std::fs::write(&path, serialized);
+    }
+}
+
+/// macOS keeps credentials in the Keychain; a write-back would trigger a
+/// permission prompt and can race Claude Code's own refresh, so we skip
+/// it. The in-memory token still services the current sync.
+#[cfg(all(feature = "http", target_os = "macos"))]
+fn persist_refreshed_tokens(_access: &str, _refresh: Option<&str>, _expires_at_ms: Option<i64>) {}
 
 #[cfg(not(feature = "http"))]
 fn refresh_oauth_token(
@@ -402,5 +470,47 @@ mod tests {
             access_token_if_fresh(&block, NOW_MS),
             Err(CredentialError::Expired { hours_ago: 1 })
         ));
+    }
+
+    #[cfg(all(feature = "http", not(target_os = "macos")))]
+    #[test]
+    fn persist_rewrites_tokens_and_keeps_other_fields() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let claude = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        let cred = claude.join(".credentials.json");
+        let mut f = std::fs::File::create(&cred).unwrap();
+        f.write_all(
+            br#"{"claudeAiOauth":{"accessToken":"old-access","refreshToken":"old-refresh","expiresAt":1,"subscriptionType":"max"}}"#,
+        )
+        .unwrap();
+        drop(f);
+
+        // persist_refreshed_tokens resolves the file via HOME/USERPROFILE.
+        let prev_home = std::env::var_os("HOME");
+        let prev_profile = std::env::var_os("USERPROFILE");
+        std::env::set_var("HOME", dir.path());
+        std::env::set_var("USERPROFILE", dir.path());
+
+        persist_refreshed_tokens("new-access", Some("new-refresh"), Some(999));
+
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+        match prev_profile {
+            Some(v) => std::env::set_var("USERPROFILE", v),
+            None => std::env::remove_var("USERPROFILE"),
+        }
+
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&cred).unwrap()).unwrap();
+        let o = &written["claudeAiOauth"];
+        assert_eq!(o["accessToken"], "new-access");
+        assert_eq!(o["refreshToken"], "new-refresh");
+        assert_eq!(o["expiresAt"], 999);
+        // Unrelated fields survive the rewrite.
+        assert_eq!(o["subscriptionType"], "max");
     }
 }
