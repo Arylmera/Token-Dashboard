@@ -6,13 +6,24 @@ on:
   workflow_dispatch:
 
 # Why this exists: PRs into main are squash-merged, so develop's commits
-# never become ancestors of main. After every release, the next version
-# bump on develop edits the same Cargo.toml line that main edited via
-# squash — guaranteeing a conflict on the next develop->main PR.
+# never become ancestors of main. Without a sync, main's release commit
+# (version bump + CHANGELOG) drifts away from develop and the next
+# develop->main release PR collides on the same Cargo.toml / CHANGELOG
+# lines.
 #
-# This job opens a PR from a sync branch (off main) into develop after
-# every push to main, fast-forwarding develop's view of main and
-# eliminating the recurring version-bump conflict.
+# Strategy: after every push to main, build a sync branch FROM develop and
+# merge main into it with `-X ours`. develop is always a content-superset
+# of main (enforce-main-source.yml makes develop the only PR source into
+# main), so the only thing main carries that develop lacks is the release
+# commit's identity — `-X ours` keeps develop's content on the recurring
+# CHANGELOG / version conflict, and the merge commit makes main an ancestor
+# of develop. Once that PR merges (with a MERGE commit, never squash), the
+# is-ancestor short-circuit below stops future runs from churning.
+#
+# Prerequisite: repo setting "Allow GitHub Actions to create and approve
+# pull requests" must be ON (Settings -> Actions -> General -> Workflow
+# permissions). Without it, `gh pr create` fails with a GraphQL permission
+# error and develop silently drifts.
 
 concurrency:
   group: sync-main-to-develop
@@ -46,17 +57,24 @@ jobs:
             echo "needs_sync=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create sync branch from main
+      - name: Build conflict-free sync branch
         if: steps.check.outputs.needs_sync == 'true'
         id: branch
         run: |
           short=$(git rev-parse --short origin/main)
           branch="sync/main-to-develop-${short}"
-          git checkout -B "$branch" origin/main
+          # Start from develop and merge main with -X ours. develop is a
+          # content-superset of main, so on the recurring CHANGELOG /
+          # Cargo.toml version conflict we keep develop's (newer) side. The
+          # resulting merge commit makes main an ancestor of develop, which
+          # is what the is-ancestor check above keys off of.
+          git checkout -B "$branch" origin/develop
+          git merge --no-ff -X ours origin/main \
+            -m "chore(sync): merge main into develop after release"
           git push -f origin "$branch"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
 
-      - name: Open or update sync PR
+      - name: Open sync PR
         if: steps.check.outputs.needs_sync == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,16 +90,20 @@ jobs:
             --base develop \
             --head "$BRANCH" \
             --title "chore(sync): main -> develop" \
-            --body "Automated sync after release. Merging keeps develop's history aligned with main and prevents recurring Cargo.toml version-bump conflicts on the next release PR."
+            --body "Automated sync after release. develop already holds this content; the merge commit just re-establishes main as an ancestor of develop so the next release PR doesn't collide on the version/CHANGELOG lines. Merge with a MERGE commit (not squash) to preserve ancestry."
 
-      - name: Enable auto-merge
+      - name: Merge sync PR
         if: steps.check.outputs.needs_sync == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ steps.branch.outputs.branch }}
-        continue-on-error: true
         run: |
           num=$(gh pr list --head "$BRANCH" --base develop --state open --json number --jq '.[0].number')
           if [ -n "$num" ]; then
-            gh pr merge "$num" --auto --merge || true
+            # --merge (never --squash): a squash would drop the merge
+            # commit's second parent, so main would never become an
+            # ancestor of develop and this job would re-fire forever.
+            # Try auto-merge first (waits on required checks if any), then
+            # fall back to an immediate merge.
+            gh pr merge "$num" --merge --auto || gh pr merge "$num" --merge || true
           fi
