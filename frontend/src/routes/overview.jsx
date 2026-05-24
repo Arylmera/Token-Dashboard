@@ -6,6 +6,7 @@ import { AreaChart, Donut, DualAreaChart, StripSpark } from "../components/chart
 import { SortHeader, useSortable } from "../components/sortable.jsx";
 import { CountUp } from "../components/count-up.jsx";
 import { displayProject } from "../project-name.js";
+import { getThemedCopy } from "../themed-copy.js";
 
 const rangeDaysFromKey = (key) => {
   const k = String(key || "").toLowerCase();
@@ -42,7 +43,7 @@ const cacheHitOf = (d) => {
   return total > 0 ? reads / total : 0;
 };
 
-const KpiRow = ({ totals }) => {
+const KpiRow = ({ totals, tc }) => {
   const t = totals;
   const daily = D.daily || [];
   const rangeDays = rangeDaysFromKey(t.rangeKey);
@@ -103,7 +104,7 @@ const KpiRow = ({ totals }) => {
         spark={<KpiSpark daily={ioSeries} days={ioDays} pick={(d) => Number(d.output) || 0} />}
       />
       <KPI
-        label="cache hit"
+        label={tc?.kpi?.["cache hit"] ?? "cache hit"}
         value={<CountUp to={t.cacheHitRate || 0} format={fmtPct} />}
         sub={`last ${t.rangeLabel || "range"}`}
         spark={<KpiSpark daily={ioSeries} days={ioDays} pick={cacheHitOf} />}
@@ -812,9 +813,9 @@ const ModelLeaderboard = () => {
   );
 };
 
-const ModelsCard = () => (
+const ModelsCard = ({ tc }) => (
   <div className="a-card">
-    <div className="a-card-head"><h2>By model</h2></div>
+    <div className="a-card-head"><h2>{tc?.card?.["By model"] ?? "By model"}</h2></div>
     <div className="a-model-block">
       <Donut size={130} thickness={14} segments={(D.models || []).slice(0, 3).map((m, i) => ({
         value: m.share,
@@ -960,7 +961,7 @@ const AnomalyCard = () => {
   );
 };
 
-const RecentSessions = () => {
+const RecentSessions = ({ tc }) => {
   const sessions = D.sessions || [];
   const scroll = sessions.length > 20;
   const { sorted, sortState, requestSort } = useSortable(sessions, null, "desc", {
@@ -977,10 +978,10 @@ const RecentSessions = () => {
     <table className="a-table a-sticky-head">
       <thead>
         <tr>
-          <SortHeader sortKey="id" {...headProps}>session</SortHeader>
+          <SortHeader sortKey="id" {...headProps}>{tc?.col?.session ?? "session"}</SortHeader>
           <SortHeader sortKey="project" {...headProps}>project</SortHeader>
           <SortHeader sortKey="started" {...headProps}>started</SortHeader>
-          <SortHeader sortKey="model" {...headProps}>model</SortHeader>
+          <SortHeader sortKey="model" {...headProps}>{tc?.col?.model ?? "model"}</SortHeader>
           <SortHeader sortKey="turns" className="num" {...headProps}>turns</SortHeader>
           <SortHeader sortKey="tokens" className="num" {...headProps}>tokens</SortHeader>
           <SortHeader sortKey="cost" className="num" {...headProps}>cost</SortHeader>
@@ -1004,7 +1005,7 @@ const RecentSessions = () => {
   return (
     <section className="a-card a-recent-sessions">
       <div className="a-card-head">
-        <h2>Recent sessions</h2>
+        <h2>{tc?.card?.["Recent sessions"] ?? "Recent sessions"}</h2>
         <span className="a-card-meta">
           {scroll ? `${sessions.length} sessions · scroll for more` : "click a row to drill in"}
         </span>
@@ -1014,9 +1015,10 @@ const RecentSessions = () => {
   );
 };
 
-export const Overview = () => {
+export const Overview = ({ themeId }) => {
   const totals = D.totals;
   const burn = D.burn;
+  const tc = getThemedCopy(themeId);
   return (
     <div className="a-route">
       <TopStrip totals={totals} burn={burn} />
@@ -1024,11 +1026,11 @@ export const Overview = () => {
       <BudgetBanner budget={D.budget} />
       <LimitsCard limits={D.limits} enabled={!!(D.prefs && D.prefs.limits_enabled)} />
       <BurnRateCard />
-      <KpiRow totals={totals} />
+      <KpiRow totals={totals} tc={tc} />
       <DailyCharts totals={totals} />
       <section className="a-card-row">
         <ProjectsTable totals={totals} />
-        <ModelsCard />
+        <ModelsCard tc={tc} />
         <ModelLeaderboard />
       </section>
       <section className="a-card-row">
@@ -1038,7 +1040,7 @@ export const Overview = () => {
       {/* Cache mix + MCP servers cards moved to their dedicated tabs
           (Cache top-level + Sink → mcp) so Overview stays focused. */}
       <AnomalyCard />
-      <RecentSessions />
+      <RecentSessions tc={tc} />
     </div>
   );
 };

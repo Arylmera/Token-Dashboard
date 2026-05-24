@@ -31,7 +31,18 @@ export const THEMES = [
     swatch: { bg: "#F4EFC8", panel: "#FAF7DD", accent: "#1B5530", fg: "#12140F" } },
   { id: "cyber-light", label: "cyberpunk",   cls: "theme-cyber-light", mode: "light",
     swatch: { bg: "#F2EAE5", panel: "#FBF5F2", accent: "#CB1DCD", fg: "#272932" } },
+  { id: "terminal",   label: "terminal",    cls: "theme-terminal",   mode: "special",
+    swatch: { bg: "#020806", panel: "#0a3a26", accent: "#36ff7a", fg: "#b7ffce" } },
+  { id: "cockpit",    label: "cockpit",     cls: "theme-cockpit",    mode: "special",
+    swatch: { bg: "#04080f", panel: "#0e3a5c", accent: "#00d4ff", fg: "#ffaa00" } },
+  { id: "grimdark",   label: "grimdark",    cls: "theme-grimdark",   mode: "special",
+    swatch: { bg: "#0a0807", panel: "#3a261c", accent: "#c8a24a", fg: "#b8231a" } },
 ];
+
+// The three "special" themes layer fonts + an animated ambient canvas on top
+// of the token contract. The shell keys ambient/banner/HUD behaviour off this.
+export const SPECIAL_THEME_IDS = new Set(["terminal", "cockpit", "grimdark"]);
+export const themeClassFromIndex = (idx) => THEMES[idx]?.cls || "";
 
 const THEME_KEY = "td.theme.v2";
 
