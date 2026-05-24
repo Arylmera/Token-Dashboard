@@ -10,6 +10,21 @@ human-curated highlights.
 
 ## [Unreleased]
 
+## [4.1.4] - 2026-05-24
+
+### Fixed
+- OAuth limits sync no longer forces a manual `claude` re-login after the
+  access token expires. The refresh now persists the rotated
+  `accessToken`/`refreshToken`/`expiresAt` back to
+  `~/.claude/.credentials.json` (Linux/Windows), so both the dashboard and
+  Claude Code keep working off valid tokens. Refresh failures also log
+  their underlying reason (e.g. `invalid_grant`) instead of masking every
+  error as a generic "token expired" hint.
+- The "today · hourly" spark on the Overview strip is scaled independently
+  of the "burn · 7d daily" overlay. The two series live on different
+  magnitudes, so a shared y-axis flattened today into a baseline sliver;
+  each series now uses its own max.
+
 ## [4.1.3] - 2026-05-23
 
 ### Added
@@ -91,7 +106,9 @@ human-curated highlights.
 The 3.x line (Python + Electron) and earlier are no longer maintained; their
 release notes are preserved on GitHub.
 
-[Unreleased]: https://github.com/Arylmera/Token-Dashboard/compare/v4.1.2...HEAD
+[Unreleased]: https://github.com/Arylmera/Token-Dashboard/compare/v4.1.4...HEAD
+[4.1.4]: https://github.com/Arylmera/Token-Dashboard/releases/tag/v4.1.4
+[4.1.3]: https://github.com/Arylmera/Token-Dashboard/releases/tag/v4.1.3
 [4.1.2]: https://github.com/Arylmera/Token-Dashboard/releases/tag/v4.1.2
 [4.1.1]: https://github.com/Arylmera/Token-Dashboard/releases/tag/v4.1.1
 [4.1.0]: https://github.com/Arylmera/Token-Dashboard/releases/tag/v4.1.0
