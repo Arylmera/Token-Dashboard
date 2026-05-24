@@ -120,8 +120,13 @@ pub fn read_oauth_token() -> Result<String, CredentialError> {
                 .as_deref()
                 .filter(|s| !s.is_empty())
                 .ok_or(CredentialError::Expired { hours_ago })?;
-            refresh_oauth_token(refresh_token, block.scopes.as_deref())
-                .map_err(|_| CredentialError::Expired { hours_ago })
+            refresh_oauth_token(refresh_token, block.scopes.as_deref()).map_err(|e| {
+                // Log the underlying reason (never the token) so a failing
+                // refresh is diagnosable; the user still sees the gentle
+                // "run `claude`" hint via the returned Expired error.
+                eprintln!("oauth refresh failed: {}", e.user_message());
+                CredentialError::Expired { hours_ago }
+            })
         }
         Err(other) => Err(other),
     }
@@ -226,8 +231,12 @@ fn refresh_oauth_token(
         .set("content-type", "application/json")
         .send_json(body)
         .map_err(|e| match e {
-            ureq::Error::Status(code, _) => {
-                CredentialError::AccessDenied(format!("refresh http {code}"))
+            ureq::Error::Status(code, resp) => {
+                // Include the OAuth error body (e.g. `invalid_grant` vs
+                // `invalid_request`) so failures are diagnosable. The body
+                // is an error envelope — it carries no token material.
+                let body = resp.into_string().unwrap_or_default();
+                CredentialError::AccessDenied(format!("refresh http {code}: {body}"))
             }
             ureq::Error::Transport(t) => CredentialError::Io(t.to_string()),
         })?;
