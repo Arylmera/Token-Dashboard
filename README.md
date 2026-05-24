@@ -8,6 +8,12 @@
 [![License](https://img.shields.io/github/license/Arylmera/Token-Dashboard?style=for-the-badge)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Arylmera-40DCA5?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/Arylmera)
 
+![Rust](https://img.shields.io/badge/Rust-1.82-000000?logo=rust&logoColor=white)
+![Tauri](https://img.shields.io/badge/Tauri-2.0-24C8DB?logo=tauri&logoColor=white)
+![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react&logoColor=black)
+![esbuild](https://img.shields.io/badge/esbuild-0.24-FFCF00?logo=esbuild&logoColor=black)
+![License](https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white)
+
 ![Token Dashboard overview](docs/images/dashboard-wide.png)
 
 ## Install
