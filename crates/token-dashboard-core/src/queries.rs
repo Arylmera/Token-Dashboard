@@ -395,6 +395,51 @@ pub fn hourly_breakdown<P: AsRef<Path>>(
     rows.collect()
 }
 
+/// One (weekday, hour) bucket of the activity heatmap. `dow` follows
+/// SQLite's `strftime('%w')` convention (0 = Sunday … 6 = Saturday) and
+/// `hour` is 0–23. Both are computed in the machine's local timezone so
+/// the heatmap matches the user's wall clock.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeatmapCell {
+    pub dow: i64,
+    pub hour: i64,
+    pub turns: i64,
+}
+
+/// User-prompt ("turn") counts bucketed by local weekday and hour over the
+/// last `days` days. A turn is one `type='user'` message — the same unit
+/// `recent_sessions` reports. Aggregated entirely in SQL with no row cap so
+/// the heatmap reflects the whole window, not just the most recent sessions.
+pub fn activity_heatmap<P: AsRef<Path>>(
+    db: P,
+    days: i64,
+    provider: Option<&str>,
+) -> rusqlite::Result<Vec<HeatmapCell>> {
+    let c = open_ro(db)?;
+    let cutoff = format!("-{} days", days.max(1));
+    let (prov, prov_args) = provider_clause(provider);
+    let sql = format!(
+        "SELECT CAST(strftime('%w', timestamp, 'localtime') AS INTEGER) AS dow, \
+                CAST(strftime('%H', timestamp, 'localtime') AS INTEGER) AS hour, \
+                COUNT(*) AS turns \
+         FROM messages \
+         WHERE type='user' AND timestamp IS NOT NULL \
+           AND timestamp >= datetime('now', ?){prov} \
+         GROUP BY dow, hour"
+    );
+    let mut stmt = c.prepare(&sql)?;
+    let mut args: Vec<String> = vec![cutoff];
+    args.extend(prov_args);
+    let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
+        Ok(HeatmapCell {
+            dow: r.get(0)?,
+            hour: r.get(1)?,
+            turns: r.get(2)?,
+        })
+    })?;
+    rows.collect()
+}
+
 pub const PLAN_TOOLS: &[&str] = &[
     "Read",
     "Grep",

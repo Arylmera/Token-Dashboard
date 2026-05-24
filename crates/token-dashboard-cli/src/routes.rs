@@ -26,12 +26,13 @@ use token_dashboard_core::{
     limits::LimitsSnapshot,
     list_sources, preferences,
     queries::{
-        add_session_tag, all_tags, daily_token_breakdown, dismiss_tip, expensive_prompts,
-        first_prompts, get_plan, hourly_breakdown, model_breakdown, normalise_tag, overview_totals,
-        phase_split, project_summary, recent_sessions, remove_session_tag, session_model_usage,
-        session_tags, session_turns, set_plan, skill_breakdown, tag_aggregates, tag_session_counts,
-        tool_token_breakdown, DailyRow, ExpensivePromptRow, ModelRow, OverviewTotals, ProjectRow,
-        SessionRow, SessionTurn, SkillRow, TagRow, ToolRow,
+        activity_heatmap, add_session_tag, all_tags, daily_token_breakdown, dismiss_tip,
+        expensive_prompts, first_prompts, get_plan, hourly_breakdown, model_breakdown,
+        normalise_tag, overview_totals, phase_split, project_summary, recent_sessions,
+        remove_session_tag, session_model_usage, session_tags, session_turns, set_plan,
+        skill_breakdown, tag_aggregates, tag_session_counts, tool_token_breakdown, DailyRow,
+        ExpensivePromptRow, HeatmapCell, ModelRow, OverviewTotals, ProjectRow, SessionRow,
+        SessionTurn, SkillRow, TagRow, ToolRow,
     },
     scan_dir, Pricing, ScanStats, Source, Usage,
 };
@@ -539,6 +540,28 @@ pub(crate) async fn hourly(
         s.cost_usd = round6(s.cost_usd);
     }
     Ok(Json(slots))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ActivityQs {
+    pub(crate) days: Option<i64>,
+    pub(crate) provider: Option<String>,
+}
+
+/// Activity heatmap: turn counts bucketed by local weekday and hour over the
+/// last `days` days (default 7). Aggregated in SQL with no session-row cap,
+/// so it reflects the whole window rather than the most recent N sessions.
+pub(crate) async fn activity(
+    State(s): State<AppState>,
+    Query(q): Query<ActivityQs>,
+) -> Result<Json<Vec<HeatmapCell>>, ApiError> {
+    let path = s.db_path.clone();
+    let days = q.days.unwrap_or(7).max(1);
+    let provider = q.provider.clone();
+    let rows = blocking(move || activity_heatmap(path.as_ref(), days, provider.as_deref()))
+        .await?
+        .0;
+    Ok(Json(rows))
 }
 
 #[derive(Serialize, Default, Clone, Copy)]
@@ -2319,6 +2342,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/tags", get(tags))
         .route("/api/tags-summary", get(tags_summary))
         .route("/api/hourly", get(hourly))
+        .route("/api/activity", get(activity))
         .route("/api/phase-split", get(phase_split_endpoint))
         .route("/api/prompts", get(prompts))
         .route("/api/skills", get(skills))
