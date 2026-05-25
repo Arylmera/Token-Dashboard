@@ -18,6 +18,7 @@ pub mod budget_projects;
 pub mod burn_rate;
 pub mod cache_stats;
 pub mod credentials;
+pub mod day;
 pub mod db;
 pub mod limits;
 pub mod loop_detector;
