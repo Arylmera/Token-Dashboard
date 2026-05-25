@@ -1099,6 +1099,17 @@ async fn day_endpoint_returns_bundled_shape() {
     assert!(body["sessions"].is_array());
     assert!(body["by_project"].is_array());
     assert!(body["by_model"].is_array());
+    // Fixture seeds billable assistant messages, so cost folding must produce
+    // a positive value and at least one model row.
+    let cost = body["kpis"]["cost_usd"].as_f64().expect("cost_usd present");
+    assert!(cost > 0.0, "expected positive cost, got {cost}");
+    assert!(
+        !body["by_model"]
+            .as_array()
+            .expect("by_model array")
+            .is_empty(),
+        "expected non-empty by_model"
+    );
 }
 
 #[tokio::test]
@@ -1119,5 +1130,8 @@ async fn day_endpoint_empty_day_is_ok_and_zeroed() {
 async fn day_endpoint_rejects_bad_date() {
     let fx = setup_with_jsonl(&[]);
     let (status, _body) = get_json(&fx.state, "/api/day?date=nope").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // 10 chars but malformed (slashes, not dashes) must now be rejected too.
+    let (status, _body) = get_json(&fx.state, "/api/day?date=2026/05/25").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }

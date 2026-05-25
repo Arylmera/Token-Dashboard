@@ -331,15 +331,31 @@ pub(crate) struct DayQuery {
     pub(crate) date: String,
 }
 
-fn billable_tokens(i: i64, o: i64, c5: i64, c1: i64) -> i64 {
+// input + output + cache_create (cache_read deliberately excluded — matches
+// the day KPI "tokens" column and the frontend's billable-token notion).
+fn display_tokens(i: i64, o: i64, c5: i64, c1: i64) -> i64 {
     i + o + c5 + c1
+}
+
+fn is_ymd(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 10
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && b.iter().enumerate().all(|(i, c)| {
+            if i == 4 || i == 7 {
+                *c == b'-'
+            } else {
+                c.is_ascii_digit()
+            }
+        })
 }
 
 pub(crate) async fn day(
     State(s): State<AppState>,
     Query(q): Query<DayQuery>,
 ) -> Result<Json<DayResponse>, ApiError> {
-    if q.date.len() != 10 {
+    if !is_ymd(&q.date) {
         return Err(ApiError::bad_request("date must be YYYY-MM-DD"));
     }
     let date = q.date.clone();
@@ -381,7 +397,7 @@ pub(crate) async fn day(
             m.cache_create_1h_tokens,
         );
         let c = price(&m.model, &u);
-        let tok = billable_tokens(
+        let tok = display_tokens(
             m.input_tokens,
             m.output_tokens,
             m.cache_create_5m_tokens,
@@ -416,7 +432,7 @@ pub(crate) async fn day(
         );
         let e = proj_map.entry(p.project_slug.clone()).or_insert((0.0, 0));
         e.0 += price(&p.model, &u);
-        e.1 += billable_tokens(
+        e.1 += display_tokens(
             p.input_tokens,
             p.output_tokens,
             p.cache_create_5m_tokens,
@@ -457,7 +473,7 @@ pub(crate) async fn day(
         );
         let slot = &mut hourly[r.hour as usize];
         slot.cost += price(&r.model, &u);
-        slot.tokens += billable_tokens(
+        slot.tokens += display_tokens(
             r.input_tokens,
             r.output_tokens,
             r.cache_create_5m_tokens,
@@ -483,7 +499,7 @@ pub(crate) async fn day(
             r.cache_create_1h_tokens,
         );
         let c = price(&r.model, &u);
-        let tok = billable_tokens(
+        let tok = display_tokens(
             r.input_tokens,
             r.output_tokens,
             r.cache_create_5m_tokens,
