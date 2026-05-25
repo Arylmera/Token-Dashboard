@@ -10,6 +10,9 @@ human-curated highlights.
 
 ## [Unreleased]
 
+### Added
+- Calendar day-view tab.
+
 ## [4.1.5] - 2026-05-24
 
 ### Added
