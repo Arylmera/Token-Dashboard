@@ -1068,3 +1068,56 @@ fn days_to_ymd(mut days: i64) -> (i64, i64, i64) {
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
 }
+
+#[tokio::test]
+async fn daily_includes_cost_usd() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-05-25T00:00:00Z", "hi"),
+        assistant("a1", "2026-05-25T00:00:01Z", "claude-opus-4-7", 50),
+    ]);
+    let (status, body) = get_json(&fx.state, "/api/daily").await;
+    assert_eq!(status, StatusCode::OK);
+    let arr = body.as_array().expect("array");
+    assert!(!arr.is_empty());
+    let cost = arr[0]["cost_usd"].as_f64().expect("cost_usd present");
+    assert!(cost >= 0.0, "expected non-negative cost, got {cost}");
+}
+
+#[tokio::test]
+async fn day_endpoint_returns_bundled_shape() {
+    let fx = setup_with_jsonl(&[
+        user("u1", "2026-05-25T00:00:00Z", "hi"),
+        assistant("a1", "2026-05-25T08:00:01Z", "claude-opus-4-7", 50),
+        assistant("a2", "2026-05-25T09:00:02Z", "claude-sonnet-4-6", 30),
+    ]);
+    let (status, body) = get_json(&fx.state, "/api/day?date=2026-05-25").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["date"].as_str(), Some("2026-05-25"));
+    assert!(body["kpis"]["cost_usd"].as_f64().is_some());
+    assert!(body["kpis"]["sessions"].as_i64().is_some());
+    assert_eq!(body["hourly"].as_array().expect("hourly array").len(), 24);
+    assert!(body["sessions"].is_array());
+    assert!(body["by_project"].is_array());
+    assert!(body["by_model"].is_array());
+}
+
+#[tokio::test]
+async fn day_endpoint_empty_day_is_ok_and_zeroed() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, body) = get_json(&fx.state, "/api/day?date=2099-01-01").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["kpis"]["cost_usd"].as_f64(), Some(0.0));
+    assert_eq!(body["kpis"]["sessions"].as_i64(), Some(0));
+    assert_eq!(body["hourly"].as_array().expect("hourly array").len(), 24);
+    assert!(body["sessions"]
+        .as_array()
+        .expect("sessions array")
+        .is_empty());
+}
+
+#[tokio::test]
+async fn day_endpoint_rejects_bad_date() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, _body) = get_json(&fx.state, "/api/day?date=nope").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}

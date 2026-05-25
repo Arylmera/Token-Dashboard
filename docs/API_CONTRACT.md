@@ -83,7 +83,8 @@ Frontends should treat any event as "refetch all `/api/*` endpoints and re-rende
 | GET | `/api/tools?since&until` | tool-call rollup |
 | GET | `/api/sessions?limit&since&until` | recent sessions |
 | GET | `/api/sessions/<session_id>` | per-turn breakdown |
-| GET | `/api/daily?since&until` | daily token series |
+| GET | `/api/daily?since&until` | daily token series (rows include `cost_usd`) |
+| GET | `/api/day?date=YYYY-MM-DD` | bundled single-day detail |
 | GET | `/api/hourly?hours=N` | last N hours, oldest→newest, length N |
 | GET | `/api/skills?since&until` | skill invocation rollup |
 | GET | `/api/by-model?since&until` | per-model breakdown |
