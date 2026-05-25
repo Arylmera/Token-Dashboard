@@ -3,6 +3,8 @@ import { fmtCost, fmtTokens } from "../format.js";
 import { HBar, KPI, Label, ModelBadge } from "../components/atoms.jsx";
 import { SortHeader, useSortable } from "../components/sortable.jsx";
 import { displayProject } from "../project-name.js";
+import { StripSpark } from "../components/charts.jsx";
+import { CountUp } from "../components/count-up.jsx";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -191,6 +193,46 @@ const DaySessions = ({ sessions }) => {
   );
 };
 
+const niceDate = (ymdStr) => {
+  // "2026-05-25" → "Sun 25 May" (UTC, matching the rest of the view).
+  if (!ymdStr) return "—";
+  const [y, m, d] = ymdStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dt.getUTCDay()];
+  return `${dow} ${d} ${MONTHS[m - 1]}`;
+};
+
+const DayStrip = ({ date, data, prevCost }) => {
+  const k = (data && data.kpis) || {};
+  const hourly = (data && data.hourly) || [];
+  const costSeries = hourly.map((h) => h.cost || 0);
+  const activeHours = costSeries.filter((c) => c > 0).length;
+  const avgPerActive = activeHours > 0 ? (k.cost_usd || 0) / activeHours : 0;
+  const deltaTxt = prevCost > 0 ? `vs ${fmtCost(prevCost)} prior day` : "no prior-day data";
+  return (
+    <section className="a-strip">
+      <div className="a-strip-left">
+        <div className="a-label">{niceDate(date)}</div>
+        <div className="a-strip-num"><CountUp to={k.cost_usd || 0} format={fmtCost} /></div>
+        <div className="a-strip-sub">
+          {fmtTokens((k.input_tokens || 0) + (k.output_tokens || 0) + (k.cache_create_tokens || 0))} tok · {deltaTxt} · {k.sessions || 0} sessions
+        </div>
+      </div>
+      <div className="a-strip-mid">
+        <StripSpark data={costSeries} accent="var(--accent)" height={38} />
+        <div className="a-strip-axis">
+          <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span>
+        </div>
+      </div>
+      <div className="a-strip-right">
+        <div className="a-label">avg / active hour</div>
+        <div className="a-strip-num">$<CountUp to={avgPerActive} format={(v) => v.toFixed(2)} /><span className="a-strip-unit">/hr</span></div>
+        <div className="a-strip-sub">{activeHours} active hour{activeHours === 1 ? "" : "s"}</div>
+      </div>
+    </section>
+  );
+};
+
 const DayDetail = ({ date, data }) => {
   if (!data) return <section className="a-card"><div className="muted">No data for {date}.</div></section>;
   const k = data.kpis || {};
@@ -223,6 +265,14 @@ export const Calendar = () => {
   const [selected, setSelected] = useState(ymd(t0.y, t0.m, t0.d));
   const dayData = useDayDetail(selected);
 
+  const prevDateOf = (d) => {
+    const [y, m, day] = d.split("-").map(Number);
+    const p = new Date(Date.UTC(y, m - 1, day - 1));
+    return ymd(p.getUTCFullYear(), p.getUTCMonth(), p.getUTCDate());
+  };
+  const prevRow = byDate[prevDateOf(selected)];
+  const prevCost = prevRow ? (prevRow.cost_usd || 0) : 0;
+
   // When the month series lands, default-select the most recent day with data
   // (only if the current selection isn't in this month's data).
   useEffect(() => {
@@ -244,7 +294,7 @@ export const Calendar = () => {
         onNext={next}
         onPick={setSelected}
       />
-      {/* DayStrip added in Task 5 */}
+      <DayStrip key={`strip-${selected}`} date={selected} data={dayData} prevCost={prevCost} />
       <DayDetail key={selected} date={selected} data={dayData} />
     </div>
   );
