@@ -347,6 +347,50 @@ pub fn daily_token_breakdown<P: AsRef<Path>>(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyModelRow {
+    pub day: String,
+    pub model: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_create_5m_tokens: i64,
+    pub cache_create_1h_tokens: i64,
+}
+
+pub fn daily_model_breakdown<P: AsRef<Path>>(
+    db: P,
+    since: Option<&str>,
+    until: Option<&str>,
+    provider: Option<&str>,
+) -> rusqlite::Result<Vec<DailyModelRow>> {
+    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (prov, prov_args) = provider_clause(provider);
+    args.extend(prov_args);
+    let sql = format!(
+        "SELECT substr(timestamp, 1, 10) AS day, COALESCE(model, '(unknown)') AS model, \
+                COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), \
+                COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_create_5m_tokens),0), \
+                COALESCE(SUM(cache_create_1h_tokens),0) \
+         FROM messages WHERE type = 'assistant' AND timestamp IS NOT NULL {rng}{prov} \
+         GROUP BY day, model ORDER BY day ASC"
+    );
+    let c = open_ro(db)?;
+    let mut stmt = c.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
+        Ok(DailyModelRow {
+            day: r.get(0)?,
+            model: r.get(1)?,
+            input_tokens: r.get(2)?,
+            output_tokens: r.get(3)?,
+            cache_read_tokens: r.get(4)?,
+            cache_create_5m_tokens: r.get(5)?,
+            cache_create_1h_tokens: r.get(6)?,
+        })
+    })?;
+    rows.collect()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HourlyRow {
     pub hour_ago: i64,
     pub model: String,

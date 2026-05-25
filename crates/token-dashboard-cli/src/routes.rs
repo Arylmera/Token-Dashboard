@@ -19,6 +19,9 @@ use axum::{
 };
 use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
+use token_dashboard_core::day::{
+    day_by_hour, day_by_model, day_by_project, day_by_session, day_session_turns, day_totals,
+};
 use token_dashboard_core::sources as src;
 use token_dashboard_core::tips::{all_tips, Tip};
 use token_dashboard_core::{
@@ -26,8 +29,8 @@ use token_dashboard_core::{
     limits::LimitsSnapshot,
     list_sources, preferences,
     queries::{
-        activity_heatmap, add_session_tag, all_tags, daily_token_breakdown, dismiss_tip,
-        expensive_prompts, first_prompts, get_plan, hourly_breakdown, model_breakdown,
+        activity_heatmap, add_session_tag, all_tags, daily_model_breakdown, daily_token_breakdown,
+        dismiss_tip, expensive_prompts, first_prompts, get_plan, hourly_breakdown, model_breakdown,
         normalise_tag, overview_totals, phase_split, project_summary, recent_sessions,
         remove_session_tag, session_model_usage, session_tags, session_turns, set_plan,
         skill_breakdown, tag_aggregates, tag_session_counts, tool_token_breakdown, DailyRow,
@@ -206,12 +209,23 @@ pub(crate) async fn verbosity_handler(
         .await
 }
 
+#[derive(Serialize)]
+pub(crate) struct DailyRowWithCost {
+    pub(crate) day: String,
+    pub(crate) input_tokens: i64,
+    pub(crate) output_tokens: i64,
+    pub(crate) cache_read_tokens: i64,
+    pub(crate) cache_create_tokens: i64,
+    pub(crate) cost_usd: f64,
+}
+
 pub(crate) async fn daily(
     State(s): State<AppState>,
     Query(q): Query<RangeQs>,
-) -> Result<Json<Vec<DailyRow>>, ApiError> {
+) -> Result<Json<Vec<DailyRowWithCost>>, ApiError> {
     let path = s.db_path.clone();
-    blocking(move || {
+    let q2 = q.clone();
+    let token_rows = blocking(move || {
         daily_token_breakdown(
             path.as_ref(),
             q.since.as_deref(),
@@ -219,7 +233,320 @@ pub(crate) async fn daily(
             q.provider.as_deref(),
         )
     })
-    .await
+    .await?
+    .0;
+    let path2 = s.db_path.clone();
+    let priced = blocking(move || {
+        daily_model_breakdown(
+            path2.as_ref(),
+            q2.since.as_deref(),
+            q2.until.as_deref(),
+            q2.provider.as_deref(),
+        )
+    })
+    .await?
+    .0;
+    let pricing = s.pricing.clone();
+    let mut cost_by_day: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for r in priced {
+        let cr = cost_for(
+            &r.model,
+            &Usage {
+                input_tokens: r.input_tokens,
+                output_tokens: r.output_tokens,
+                cache_read_tokens: r.cache_read_tokens,
+                cache_create_5m_tokens: r.cache_create_5m_tokens,
+                cache_create_1h_tokens: r.cache_create_1h_tokens,
+            },
+            &pricing,
+        );
+        if let Some(usd) = cr.usd {
+            *cost_by_day.entry(r.day).or_insert(0.0) += usd;
+        }
+    }
+    let out = token_rows
+        .into_iter()
+        .map(|d| {
+            let cost = cost_by_day.get(&d.day).copied().unwrap_or(0.0);
+            DailyRowWithCost {
+                day: d.day,
+                input_tokens: d.input_tokens,
+                output_tokens: d.output_tokens,
+                cache_read_tokens: d.cache_read_tokens,
+                cache_create_tokens: d.cache_create_tokens,
+                cost_usd: round4(cost),
+            }
+        })
+        .collect();
+    Ok(Json(out))
+}
+
+#[derive(Serialize, Default)]
+pub(crate) struct DayKpis {
+    pub(crate) cost_usd: f64,
+    pub(crate) input_tokens: i64,
+    pub(crate) output_tokens: i64,
+    pub(crate) cache_read_tokens: i64,
+    pub(crate) cache_create_tokens: i64,
+    pub(crate) turns: i64,
+    pub(crate) sessions: i64,
+}
+
+#[derive(Serialize)]
+pub(crate) struct DayGroupCost {
+    pub(crate) key: String,
+    pub(crate) cost: f64,
+    pub(crate) tokens: i64,
+}
+
+#[derive(Serialize)]
+pub(crate) struct DayHourCost {
+    pub(crate) hour: i64,
+    pub(crate) cost: f64,
+    pub(crate) tokens: i64,
+}
+
+#[derive(Serialize)]
+pub(crate) struct DaySessionCost {
+    pub(crate) id: String,
+    pub(crate) project: String,
+    pub(crate) started: String,
+    pub(crate) turns: i64,
+    pub(crate) tokens: i64,
+    pub(crate) cost: f64,
+}
+
+#[derive(Serialize)]
+pub(crate) struct DayResponse {
+    pub(crate) date: String,
+    pub(crate) kpis: DayKpis,
+    pub(crate) sessions: Vec<DaySessionCost>,
+    pub(crate) by_project: Vec<DayGroupCost>,
+    pub(crate) by_model: Vec<DayGroupCost>,
+    pub(crate) hourly: Vec<DayHourCost>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DayQuery {
+    pub(crate) date: String,
+}
+
+// input + output + cache_create (cache_read deliberately excluded — matches
+// the day KPI "tokens" column and the frontend's billable-token notion).
+fn display_tokens(i: i64, o: i64, c5: i64, c1: i64) -> i64 {
+    i + o + c5 + c1
+}
+
+fn is_ymd(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 10
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && b.iter().enumerate().all(|(i, c)| {
+            if i == 4 || i == 7 {
+                *c == b'-'
+            } else {
+                c.is_ascii_digit()
+            }
+        })
+}
+
+pub(crate) async fn day(
+    State(s): State<AppState>,
+    Query(q): Query<DayQuery>,
+) -> Result<Json<DayResponse>, ApiError> {
+    if !is_ymd(&q.date) {
+        return Err(ApiError::bad_request("date must be YYYY-MM-DD"));
+    }
+    let date = q.date.clone();
+    let pricing = s.pricing.clone();
+    let path = s.db_path.clone();
+    let date_q = date.clone();
+    let (totals, model_rows, proj_rows, hour_rows, sess_rows, turn_rows) = blocking(move || {
+        let p = path.as_ref();
+        Ok::<_, rusqlite::Error>((
+            day_totals(p, &date_q)?,
+            day_by_model(p, &date_q)?,
+            day_by_project(p, &date_q)?,
+            day_by_hour(p, &date_q)?,
+            day_by_session(p, &date_q)?,
+            day_session_turns(p, &date_q)?,
+        ))
+    })
+    .await?
+    .0;
+
+    let usage = |i, o, cr, c5, c1| Usage {
+        input_tokens: i,
+        output_tokens: o,
+        cache_read_tokens: cr,
+        cache_create_5m_tokens: c5,
+        cache_create_1h_tokens: c1,
+    };
+    let price = |model: &str, u: &Usage| cost_for(model, u, &pricing).usd.unwrap_or(0.0);
+
+    let mut by_model: Vec<DayGroupCost> = Vec::new();
+    let mut total_cost = 0.0;
+    let (mut ti, mut to, mut tcr, mut tcc) = (0i64, 0i64, 0i64, 0i64);
+    for m in &model_rows {
+        let u = usage(
+            m.input_tokens,
+            m.output_tokens,
+            m.cache_read_tokens,
+            m.cache_create_5m_tokens,
+            m.cache_create_1h_tokens,
+        );
+        let c = price(&m.model, &u);
+        let tok = display_tokens(
+            m.input_tokens,
+            m.output_tokens,
+            m.cache_create_5m_tokens,
+            m.cache_create_1h_tokens,
+        );
+        total_cost += c;
+        ti += m.input_tokens;
+        to += m.output_tokens;
+        tcr += m.cache_read_tokens;
+        tcc += m.cache_create_5m_tokens + m.cache_create_1h_tokens;
+        by_model.push(DayGroupCost {
+            key: m.model.clone(),
+            cost: round6(c),
+            tokens: tok,
+        });
+    }
+    by_model.sort_by(|a, b| {
+        b.cost
+            .partial_cmp(&a.cost)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let mut proj_map: std::collections::HashMap<String, (f64, i64)> =
+        std::collections::HashMap::new();
+    for p in &proj_rows {
+        let u = usage(
+            p.input_tokens,
+            p.output_tokens,
+            p.cache_read_tokens,
+            p.cache_create_5m_tokens,
+            p.cache_create_1h_tokens,
+        );
+        let e = proj_map.entry(p.project_slug.clone()).or_insert((0.0, 0));
+        e.0 += price(&p.model, &u);
+        e.1 += display_tokens(
+            p.input_tokens,
+            p.output_tokens,
+            p.cache_create_5m_tokens,
+            p.cache_create_1h_tokens,
+        );
+    }
+    let mut by_project: Vec<DayGroupCost> = proj_map
+        .into_iter()
+        .map(|(k, (cost, tokens))| DayGroupCost {
+            key: k,
+            cost: round6(cost),
+            tokens,
+        })
+        .collect();
+    by_project.sort_by(|a, b| {
+        b.cost
+            .partial_cmp(&a.cost)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let mut hourly: Vec<DayHourCost> = (0..24)
+        .map(|h| DayHourCost {
+            hour: h,
+            cost: 0.0,
+            tokens: 0,
+        })
+        .collect();
+    for r in &hour_rows {
+        if !(0..24).contains(&r.hour) {
+            continue;
+        }
+        let u = usage(
+            r.input_tokens,
+            r.output_tokens,
+            r.cache_read_tokens,
+            r.cache_create_5m_tokens,
+            r.cache_create_1h_tokens,
+        );
+        let slot = &mut hourly[r.hour as usize];
+        slot.cost += price(&r.model, &u);
+        slot.tokens += display_tokens(
+            r.input_tokens,
+            r.output_tokens,
+            r.cache_create_5m_tokens,
+            r.cache_create_1h_tokens,
+        );
+    }
+    for sl in &mut hourly {
+        sl.cost = round6(sl.cost);
+    }
+
+    let turns_by_id: std::collections::HashMap<String, i64> = turn_rows
+        .into_iter()
+        .map(|t| (t.session_id, t.turns))
+        .collect();
+    let mut sess_map: std::collections::HashMap<String, DaySessionCost> =
+        std::collections::HashMap::new();
+    for r in &sess_rows {
+        let u = usage(
+            r.input_tokens,
+            r.output_tokens,
+            r.cache_read_tokens,
+            r.cache_create_5m_tokens,
+            r.cache_create_1h_tokens,
+        );
+        let c = price(&r.model, &u);
+        let tok = display_tokens(
+            r.input_tokens,
+            r.output_tokens,
+            r.cache_create_5m_tokens,
+            r.cache_create_1h_tokens,
+        );
+        let entry = sess_map
+            .entry(r.session_id.clone())
+            .or_insert_with(|| DaySessionCost {
+                id: r.session_id.clone(),
+                project: r.project_slug.clone(),
+                started: r.started.clone(),
+                turns: *turns_by_id.get(&r.session_id).unwrap_or(&0),
+                tokens: 0,
+                cost: 0.0,
+            });
+        entry.cost += c;
+        entry.tokens += tok;
+        if r.started < entry.started {
+            entry.started = r.started.clone();
+        }
+    }
+    let mut sessions: Vec<DaySessionCost> = sess_map.into_values().collect();
+    for se in &mut sessions {
+        se.cost = round6(se.cost);
+    }
+    sessions.sort_by(|a, b| {
+        b.cost
+            .partial_cmp(&a.cost)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    Ok(Json(DayResponse {
+        date,
+        kpis: DayKpis {
+            cost_usd: round4(total_cost),
+            input_tokens: ti,
+            output_tokens: to,
+            cache_read_tokens: tcr,
+            cache_create_tokens: tcc,
+            turns: totals.turns,
+            sessions: totals.sessions,
+        },
+        sessions,
+        by_project,
+        by_model,
+        hourly,
+    }))
 }
 
 #[derive(Deserialize, Default)]
@@ -2333,6 +2660,7 @@ pub fn app(state: AppState) -> Router {
         )
         .route("/api/remote-sources/:id/sync", post(remote_sources_sync))
         .route("/api/daily", get(daily))
+        .route("/api/day", get(day))
         .route("/api/cache-stats", get(cache_stats_handler))
         .route("/api/cache-stats/sessions", get(cache_sessions_handler))
         .route("/api/burn-rate", get(burn_rate_handler))
