@@ -2707,3 +2707,34 @@ html:has(body.td-widget-body)::-webkit-scrollbar { width: 0; height: 0; display:
   animation: none !important;
 }
 
+/* ---- Calendar view ---- */
+.dir-a-root .a-cal-card .a-cal-nav { display: flex; align-items: center; gap: 8px; }
+.dir-a-root .a-cal-month { min-width: 92px; text-align: center; color: var(--bone); }
+.dir-a-root .a-cal-dow {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+  margin: 8px 0 4px; font-size: 11px; color: var(--gull); text-transform: uppercase;
+}
+.dir-a-root .a-cal-dow span { text-align: center; }
+.dir-a-root .a-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.dir-a-root .a-cal-cell {
+  position: relative; aspect-ratio: 1 / 1; border: 1px solid var(--iron-border);
+  border-radius: 6px; background: var(--panel-2); cursor: pointer; padding: 4px;
+  display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start;
+  color: var(--bone); transition: border-color .12s, transform .12s;
+}
+.dir-a-root .a-cal-cell:hover { border-color: var(--accent); }
+.dir-a-root .a-cal-cell.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.dir-a-root .a-cal-cell.is-empty { background: transparent; border-color: transparent; cursor: default; }
+.dir-a-root .a-cal-daynum { font-size: 12px; opacity: .85; }
+.dir-a-root .a-cal-daycost { font-size: 10px; color: var(--bone); align-self: flex-end; }
+
+.dir-a-root .a-cal-hours { display: flex; align-items: flex-end; gap: 2px; height: 80px; margin-top: 6px; position: relative; }
+.dir-a-root .a-cal-hour { flex: 1; height: 100%; display: flex; align-items: flex-end; }
+.dir-a-root .a-cal-hour-bar { width: 100%; border-radius: 2px 2px 0 0; }
+.dir-a-root .a-cal-hours-axis {
+  position: absolute; bottom: -16px; left: 0; right: 0;
+  display: flex; justify-content: space-between; font-size: 10px; color: var(--gull);
+}
+.dir-a-root .a-cal-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+@media (max-width: 900px) { .dir-a-root .a-cal-split { grid-template-columns: 1fr; } }
+
