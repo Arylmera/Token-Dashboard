@@ -125,7 +125,8 @@ pub fn day_by_hour<P: AsRef<Path>>(db: P, date: &str) -> rusqlite::Result<Vec<Da
                 COALESCE(SUM(cache_create_1h_tokens), 0) \
          FROM messages \
          WHERE type = 'assistant' AND substr(timestamp, 1, 10) = ?1 \
-         GROUP BY hour, model",
+         GROUP BY hour, model \
+         ORDER BY hour, model",
     )?;
     let rows = stmt.query_map(params![date], |r| {
         Ok(DayHourRow {
