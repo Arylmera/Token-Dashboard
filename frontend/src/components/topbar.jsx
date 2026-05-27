@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { DateInput } from "./date-input.jsx";
 import { getThemedCopy } from "../themed-copy.js";
 import { tabVisible } from "../levels.js";
+import { getTauriWindow } from "../tauri-window.js";
 
 const TABS = ["overview", "budget", "cache", "prompts", "sessions", "calendar", "tags", "token sink", "tips", "api", "settings"];
 const TAB_LABELS = { "token sink": "sink" };
@@ -68,13 +69,6 @@ const useVersion = () => {
     return () => { cancelled = true; };
   }, []);
   return version;
-};
-
-const getTauriWindow = () => {
-  const t = typeof window !== "undefined" ? window.__TAURI__ : null;
-  if (!t || !t.window) return null;
-  try { return t.window.getCurrentWindow ? t.window.getCurrentWindow() : null; }
-  catch { return null; }
 };
 
 const WindowControls = () => {
