@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { DateInput } from "./date-input.jsx";
 import { getThemedCopy } from "../themed-copy.js";
-import { tabVisible } from "../levels.js";
+import { getTauriWindow } from "../tauri-window.js";
 
-const TABS = ["overview", "budget", "cache", "prompts", "sessions", "calendar", "tags", "token sink", "tips", "api", "settings"];
-const TAB_LABELS = { "token sink": "sink" };
 const RANGES = ["1d", "7d", "30d", "90d", "all", "custom"];
 const PROVIDERS = [
   { id: "all", label: "all" },
@@ -70,13 +68,6 @@ const useVersion = () => {
   return version;
 };
 
-const getTauriWindow = () => {
-  const t = typeof window !== "undefined" ? window.__TAURI__ : null;
-  if (!t || !t.window) return null;
-  try { return t.window.getCurrentWindow ? t.window.getCurrentWindow() : null; }
-  catch { return null; }
-};
-
 const WindowControls = () => {
   const win = getTauriWindow();
   const [maxed, setMaxed] = useState(false);
@@ -108,11 +99,24 @@ const WindowControls = () => {
   );
 };
 
-export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProvider, level = 1, themeId }) => {
+export const Topbar = ({ range, setRange, provider = "all", setProvider, themeId }) => {
   const version = useVersion();
   const lastRefresh = useLastRefresh();
   const tc = getThemedCopy(themeId);
-  const visibleTabs = TABS.filter((t) => tabVisible(level, t));
+  const win = getTauriWindow();
+  // Drag the undecorated window from anywhere on the bar except interactive
+  // controls. Uses the Tauri API directly rather than data-tauri-drag-region,
+  // which is unreliable under WebView2.
+  const startWindowDrag = (e) => {
+    if (e.button !== 0 || !win) return;
+    if (e.target.closest("button, input, a, select, [role='button'], .a-topbar-actions, .a-date-input, .a-range, .a-wincontrols")) return;
+    win.startDragging();
+  };
+  const maximizeToggle = (e) => {
+    if (!win) return;
+    if (e.target.closest("button, input, a, select, [role='button'], .a-topbar-actions, .a-date-input, .a-range, .a-wincontrols")) return;
+    win.toggleMaximize();
+  };
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
   // Push the custom dates to the data layer whenever either bound changes
@@ -126,7 +130,7 @@ export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProv
     if (since || until) window.SET_CUSTOM_RANGE(since, until);
   }, [range, customSince, customUntil]);
   return (
-  <header className="a-topbar" data-tauri-drag-region>
+  <header className="a-topbar" data-tauri-drag-region onMouseDown={startWindowDrag} onDoubleClick={maximizeToggle}>
     <div className="a-brand a-prompt" data-tauri-drag-region>
       <span className="a-brand-dot" />
       <span className="a-prompt-path">{tc?.brand?.path ?? "~/code/dashboard"}</span>
@@ -144,18 +148,6 @@ export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProv
         {lastRefresh.label}
       </span>
     </div>
-    <nav className="a-nav" data-tauri-drag-region="false">
-      {visibleTabs.map((t) => (
-        <button
-          key={t}
-          data-tab={t}
-          className={`a-navlink ${tab === t ? "is-active" : ""}`}
-          onClick={() => setTab(t)}
-        >
-          {tc?.nav?.[t] ?? TAB_LABELS[t] ?? t}
-        </button>
-      ))}
-    </nav>
     <div className="a-topbar-actions" data-tauri-drag-region="false">
       {version && <span className="a-brand-sub">{tc?.versionMeta ? tc.versionMeta(version) : `v${version}`}</span>}
       <div className="a-range">
