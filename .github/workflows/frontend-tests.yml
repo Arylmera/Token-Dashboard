@@ -18,6 +18,10 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install
+
       - name: Run frontend unit tests
         working-directory: frontend
         run: npm test
