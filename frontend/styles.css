@@ -2783,10 +2783,10 @@ html:has(body.td-widget-body)::-webkit-scrollbar { width: 0; height: 0; display:
 .dir-a-root .a-cal-dow span { text-align: center; }
 .dir-a-root .a-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
 .dir-a-root .a-cal-cell {
-  position: relative; aspect-ratio: 2.6 / 1; border: 1px solid var(--iron-border);
+  position: relative; aspect-ratio: 2.6 / 1; min-width: 0; border: 1px solid var(--iron-border);
   border-radius: 6px; background: var(--panel-2); cursor: pointer; padding: 4px;
   display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start;
-  color: var(--bone); transition: border-color .12s, transform .12s;
+  color: var(--bone); transition: border-color .12s, transform .12s; overflow: hidden;
 }
 .dir-a-root .a-cal-cell:hover { border-color: var(--accent); }
 .dir-a-root .a-cal-cell.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
