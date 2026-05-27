@@ -103,6 +103,20 @@ export const Topbar = ({ range, setRange, provider = "all", setProvider, themeId
   const version = useVersion();
   const lastRefresh = useLastRefresh();
   const tc = getThemedCopy(themeId);
+  const win = getTauriWindow();
+  // Drag the undecorated window from anywhere on the bar except interactive
+  // controls. Uses the Tauri API directly rather than data-tauri-drag-region,
+  // which is unreliable under WebView2.
+  const startWindowDrag = (e) => {
+    if (e.button !== 0 || !win) return;
+    if (e.target.closest("button, input, a, select, [role='button'], .a-topbar-actions, .a-date-input, .a-range, .a-wincontrols")) return;
+    win.startDragging();
+  };
+  const maximizeToggle = (e) => {
+    if (!win) return;
+    if (e.target.closest("button, input, a, select, [role='button'], .a-topbar-actions, .a-date-input, .a-range, .a-wincontrols")) return;
+    win.toggleMaximize();
+  };
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
   // Push the custom dates to the data layer whenever either bound changes
@@ -116,7 +130,7 @@ export const Topbar = ({ range, setRange, provider = "all", setProvider, themeId
     if (since || until) window.SET_CUSTOM_RANGE(since, until);
   }, [range, customSince, customUntil]);
   return (
-  <header className="a-topbar" data-tauri-drag-region>
+  <header className="a-topbar" data-tauri-drag-region onMouseDown={startWindowDrag} onDoubleClick={maximizeToggle}>
     <div className="a-brand a-prompt" data-tauri-drag-region>
       <span className="a-brand-dot" />
       <span className="a-prompt-path">{tc?.brand?.path ?? "~/code/dashboard"}</span>

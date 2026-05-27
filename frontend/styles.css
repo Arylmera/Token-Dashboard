@@ -215,15 +215,21 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
   -webkit-app-region: drag;
 }
 .a-rail.is-expanded .a-rail-head { justify-content: space-between; }
-.a-rail-dot { width: 7px; height: 7px; background: var(--accent); flex: 0 0 auto; display: none; }
-.a-rail.is-expanded .a-rail-dot { display: block; }
 .a-rail-pin {
   background: transparent; border: 0; color: var(--gull); cursor: pointer;
   padding: 4px; display: inline-flex; transition: color 120ms;
 }
 .a-rail-pin:hover { color: var(--bone); }
-.a-rail-pin.is-pinned { color: var(--accent); }
-.a-rail-nav { display: flex; flex-direction: column; padding: 8px 0; gap: 2px; overflow-y: auto; }
+.a-rail-modes { display: none; align-items: center; gap: 1px; padding: 1px; background: var(--panel-2); border: 1px solid var(--iron-border); }
+.a-rail.is-expanded .a-rail-modes { display: inline-flex; }
+.a-rail-modebtn {
+  background: transparent; border: 0; cursor: pointer; color: var(--gull);
+  padding: 3px 5px; display: inline-flex; align-items: center; transition: color 120ms, background 120ms;
+}
+.a-rail-modebtn:hover { color: var(--bone); }
+.a-rail-modebtn.is-active { color: var(--bone); background: var(--bg); }
+.a-rail-nav { display: flex; flex-direction: column; padding: 8px 0; gap: 2px; overflow-y: auto; scrollbar-width: none; }
+.a-rail-nav::-webkit-scrollbar { width: 0; height: 0; }
 .a-rail-link {
   display: flex; align-items: center; gap: 12px;
   background: transparent; border: 0; cursor: pointer; color: var(--gull);
@@ -249,14 +255,14 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
 .a-resize-s { bottom: 0; left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
 .a-resize-e { right: 0; top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
 .a-resize-w { left: 0; top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
-.a-resize-ne { top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
-.a-resize-nw { top: 0; left: 0; width: 10px; height: 10px; cursor: nwse-resize; }
-.a-resize-se { bottom: 0; right: 0; width: 10px; height: 10px; cursor: nwse-resize; }
-.a-resize-sw { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+.a-resize-ne { top: 0; right: 0; width: 16px; height: 16px; cursor: nesw-resize; }
+.a-resize-nw { top: 0; left: 0; width: 16px; height: 16px; cursor: nwse-resize; }
+.a-resize-se { bottom: 0; right: 0; width: 16px; height: 16px; cursor: nwse-resize; }
+.a-resize-sw { bottom: 0; left: 0; width: 16px; height: 16px; cursor: nesw-resize; }
 
 /* topbar */
 .a-topbar {
-  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px;
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 24px;
   padding: 12px 20px;
   /* Always reserve native-control real estate via CSS vars set on .dir-a-root.
      This survives responsive breakpoints because the var is read at every level. */
@@ -304,7 +310,12 @@ html[data-fresh] .a-brand-dot::before { animation: a-pulse 2s ease-in-out infini
   font: 500 12px "JetBrains Mono"; letter-spacing: 0;
   white-space: nowrap;
   padding-right: 8px;
+  justify-self: stretch;
 }
+/* Brand fills its grid cell and routes clicks to the drag region: the
+   decorative children don't capture the pointer, so the whole left/middle
+   of the topbar can grab-move the undecorated window. */
+.a-topbar .a-prompt > * { pointer-events: none; }
 .a-prompt .a-brand-dot { align-self: center; }
 .a-prompt-path { color: var(--gull-2); }
 .a-prompt-ps1  { color: var(--accent); margin: 0 4px 0 2px; font-weight: 600; }
@@ -568,7 +579,8 @@ body.td-setup-help-body #root { height: 100%; }
 
 .a-theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.a-main-area { padding: 20px; overflow-y: auto; flex: 1; min-width: 0; min-height: 0; box-sizing: border-box; width: 100%; }
+.a-main-area { padding: 20px; overflow-y: auto; flex: 1; min-width: 0; min-height: 0; box-sizing: border-box; width: 100%; scrollbar-width: none; }
+.a-main-area::-webkit-scrollbar { width: 0; height: 0; }
 
 /* atoms */
 .a-label {
@@ -2725,7 +2737,7 @@ html:has(body.td-widget-body)::-webkit-scrollbar { width: 0; height: 0; display:
 .dir-a-root .a-banner-cockpit,
 .dir-a-root .a-banner-grimdark { position: relative; z-index: 2; }
 .dir-a-root .a-rail { z-index: 6; }
-.dir-a-root .a-resize-layer { z-index: 30; }
+.dir-a-root .a-resize-layer { z-index: 1000; }
 .dir-a-root .a-rail-scrim { z-index: 40; }
 
 /* Special-theme decorative motion respects reduced-motion */
