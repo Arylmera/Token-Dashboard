@@ -109,6 +109,15 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
   const showDev = typeof window !== "undefined" && window.td && typeof window.td.toggleDevTools === "function";
   return (
     <div className="a-route a-settings">
+      <SettingsGroup title="Power level" description="how much of the dashboard is revealed">
+        <LevelCard
+          level={level}
+          onPick={onPickLevel}
+          loaded={levelLoaded}
+          saving={levelSaving}
+        />
+      </SettingsGroup>
+
       <SettingsGroup title="Appearance" description="theme and window styling">
         <ThemeCard themeIdx={themeIdx} onPickTheme={onPickTheme} />
         <DensityCard />
@@ -139,23 +148,19 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
         <RemoteSourcesCard />
       </SettingsGroup>
 
-      <SettingsGroup title="Advanced" description="reveal extra tabs and editable internals">
-        <LevelCard
-          level={level}
-          onPick={onPickLevel}
-          loaded={levelLoaded}
-          saving={levelSaving}
-        />
-        {level >= 3 && (
-          <MultiProviderCard
-            enabled={multiProviderEnabled}
-            onChange={onToggleMultiProvider}
-            loaded={multiProviderLoaded}
-            saving={multiProviderSaving}
-          />
-        )}
-        {showDev && <DeveloperCard />}
-      </SettingsGroup>
+      {(level >= 3 || showDev) && (
+        <SettingsGroup title="Advanced" description="editable internals and developer tools">
+          {level >= 3 && (
+            <MultiProviderCard
+              enabled={multiProviderEnabled}
+              onChange={onToggleMultiProvider}
+              loaded={multiProviderLoaded}
+              saving={multiProviderSaving}
+            />
+          )}
+          {showDev && <DeveloperCard />}
+        </SettingsGroup>
+      )}
 
       <SettingsGroup title="Reference">
         <Glossary />
