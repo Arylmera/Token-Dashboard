@@ -1,11 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { DateInput } from "./date-input.jsx";
 import { getThemedCopy } from "../themed-copy.js";
-import { tabVisible } from "../levels.js";
 import { getTauriWindow } from "../tauri-window.js";
 
-const TABS = ["overview", "budget", "cache", "prompts", "sessions", "calendar", "tags", "token sink", "tips", "api", "settings"];
-const TAB_LABELS = { "token sink": "sink" };
 const RANGES = ["1d", "7d", "30d", "90d", "all", "custom"];
 const PROVIDERS = [
   { id: "all", label: "all" },
@@ -102,11 +99,10 @@ const WindowControls = () => {
   );
 };
 
-export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProvider, level = 1, themeId }) => {
+export const Topbar = ({ range, setRange, provider = "all", setProvider, themeId }) => {
   const version = useVersion();
   const lastRefresh = useLastRefresh();
   const tc = getThemedCopy(themeId);
-  const visibleTabs = TABS.filter((t) => tabVisible(level, t));
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
   // Push the custom dates to the data layer whenever either bound changes
@@ -138,18 +134,6 @@ export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProv
         {lastRefresh.label}
       </span>
     </div>
-    <nav className="a-nav" data-tauri-drag-region="false">
-      {visibleTabs.map((t) => (
-        <button
-          key={t}
-          data-tab={t}
-          className={`a-navlink ${tab === t ? "is-active" : ""}`}
-          onClick={() => setTab(t)}
-        >
-          {tc?.nav?.[t] ?? TAB_LABELS[t] ?? t}
-        </button>
-      ))}
-    </nav>
     <div className="a-topbar-actions" data-tauri-drag-region="false">
       {version && <span className="a-brand-sub">{tc?.versionMeta ? tc.versionMeta(version) : `v${version}`}</span>}
       <div className="a-range">
