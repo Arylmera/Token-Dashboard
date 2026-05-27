@@ -63,13 +63,11 @@ export const NavRail = ({ tab, setTab, level = 1, themeId }) => {
         onMouseLeave={() => setHovering(false)}
       >
         <div className="a-rail-head" data-tauri-drag-region>
-          <span className="a-rail-dot" aria-hidden="true" />
           <button className={`a-rail-pin ${pinned ? "is-pinned" : ""}`} data-tauri-drag-region="false"
-                  aria-pressed={pinned} aria-label={pinned ? "Unpin sidebar" : "Pin sidebar"} onClick={onPin}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4">
-              <path d="M5 1h4l-.5 4 2 2v1H3.5V7l2-2L5 1zM7 8v5"/>
-            </svg>
+                  aria-pressed={pinned} aria-label={pinned ? "Collapse navigation" : "Expand navigation"} onClick={onPin}>
+            <svg width="16" height="16" viewBox="0 0 18 18"><path d="M2 5h14M2 9h14M2 13h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
           </button>
+          <span className="a-rail-dot" aria-hidden="true" />
         </div>
         <NavList inDrawer={false} />
       </aside>

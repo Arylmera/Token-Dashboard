@@ -210,18 +210,19 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
 }
 .a-rail.is-expanded { width: 190px; flex-basis: 190px; }
 .a-rail-head {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: center;
   height: 49px; padding: 0 14px; border-bottom: 1px solid var(--iron-border);
   -webkit-app-region: drag;
 }
-.a-rail-dot { width: 7px; height: 7px; background: var(--accent); flex: 0 0 auto; }
+.a-rail.is-expanded .a-rail-head { justify-content: space-between; }
+.a-rail-dot { width: 7px; height: 7px; background: var(--accent); flex: 0 0 auto; display: none; }
+.a-rail.is-expanded .a-rail-dot { display: block; }
 .a-rail-pin {
   background: transparent; border: 0; color: var(--gull); cursor: pointer;
-  padding: 4px; display: inline-flex; opacity: 0; transition: opacity 120ms, color 120ms;
+  padding: 4px; display: inline-flex; transition: color 120ms;
 }
-.a-rail.is-expanded .a-rail-pin { opacity: 1; }
 .a-rail-pin:hover { color: var(--bone); }
-.a-rail-pin.is-pinned { color: var(--accent); opacity: 1; }
+.a-rail-pin.is-pinned { color: var(--accent); }
 .a-rail-nav { display: flex; flex-direction: column; padding: 8px 0; gap: 2px; overflow-y: auto; }
 .a-rail-link {
   display: flex; align-items: center; gap: 12px;
@@ -1096,11 +1097,6 @@ body.td-setup-help-body #root { height: 100%; }
   }
   .dir-a-root .a-topbar-actions { flex-wrap: wrap; justify-content: flex-end; }
   .dir-a-root .a-split { grid-template-columns: 260px 1fr; }
-  /* icon-only rail, no hover-expand */
-  .dir-a-root .a-rail { width: 52px; flex-basis: 52px; }
-  .dir-a-root .a-rail.is-expanded { width: 52px; flex-basis: 52px; }
-  .dir-a-root .a-rail .a-rail-label,
-  .dir-a-root .a-rail .a-rail-pin { display: none; }
 }
 
 /* Mid (<=900px): stack the TODAY strip — three fixed sub-panes don't fit comfortably below this */
