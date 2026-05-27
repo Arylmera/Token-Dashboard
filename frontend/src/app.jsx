@@ -21,6 +21,8 @@ import {
   themeIndexFromStorage,
 } from "./theme.js";
 import { AmbientLayer } from "./components/ambient-canvas.jsx";
+import { NavRail } from "./components/nav-rail.jsx";
+import { WindowResizeHandles } from "./components/window-resize-handles.jsx";
 import { ThemeBanner, CockpitHud, useCockpitBrackets } from "./components/special-chrome.jsx";
 import { useCalmFx } from "./fx-pref.js";
 import { usePowerLevel } from "./use-power-level.js";
@@ -204,16 +206,20 @@ export const DirectionA = ({ initialTab, lockTab = false }) => {
     if (root) root.classList.toggle("is-calm-fx", isSpecial && calmFx);
   }, [isSpecial, calmFx]);
   return (
-    <>
+    <div className="a-shell">
       <AmbientLayer themeCls={isSpecial && !calmFx ? themeCls : ""} />
-      <Topbar tab={effectiveTab} setTab={setTab} range={range} setRange={setRange} provider={provider} setProvider={multiProviderEnabled ? setProvider : null} level={level} themeId={themeId} />
-      <ThemeBanner themeId={themeId} />
-      <main className="a-main-area">
-        <div key={effectiveTab} className="a-page-enter">
-          <Route themeIdx={themeIdx} themeId={themeId} onPickTheme={setThemeIdx} level={level} />
-        </div>
-      </main>
-      {themeId === "cockpit" && <CockpitHud />}
-    </>
+      <WindowResizeHandles />
+      <NavRail tab={effectiveTab} setTab={setTab} level={level} themeId={themeId} />
+      <div className="a-shell-main">
+        <Topbar range={range} setRange={setRange} provider={provider} setProvider={multiProviderEnabled ? setProvider : null} themeId={themeId} />
+        <ThemeBanner themeId={themeId} />
+        <main className="a-main-area">
+          <div key={effectiveTab} className="a-page-enter">
+            <Route themeIdx={themeIdx} themeId={themeId} onPickTheme={setThemeIdx} level={level} />
+          </div>
+        </main>
+        {themeId === "cockpit" && <CockpitHud />}
+      </div>
+    </div>
   );
 };
