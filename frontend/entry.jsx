@@ -37,7 +37,7 @@ const isSetupHelp = () => {
 };
 
 const Shell = () => (
-  <div className="dir-a-root" style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+  <div className="dir-a-root" style={{ height: "100vh" }}>
     <DirectionA />
   </div>
 );
