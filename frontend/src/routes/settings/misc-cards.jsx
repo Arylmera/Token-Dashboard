@@ -45,20 +45,6 @@ export const DensityCard = () => {
   );
 };
 
-export const AdvancedModeCard = ({ enabled, onChange, loaded, saving }) => (
-  <section className="a-card">
-    <div className="a-card-head">
-      <h2>Advanced mode</h2>
-      <span className="a-card-meta">{saving ? "saving…" : (loaded ? "extra tabs and editable internals" : "loading…")}</span>
-    </div>
-    <SettingRow
-      title="Show advanced settings and tabs"
-      description="Reveals the API tab, the editable pricing table, and the plan limit estimates. Leave off if you only want overview-level numbers."
-      checked={enabled}
-      onChange={onChange}
-    />
-  </section>
-);
 
 export const MultiProviderCard = ({ enabled, onChange, loaded, saving }) => (
   <section className="a-card">

@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { DateInput } from "./date-input.jsx";
 import { getThemedCopy } from "../themed-copy.js";
+import { tabVisible } from "../levels.js";
 
 const TABS = ["overview", "budget", "cache", "prompts", "sessions", "calendar", "tags", "token sink", "tips", "api", "settings"];
 const TAB_LABELS = { "token sink": "sink" };
-const ADVANCED_TABS = new Set(["api"]);
 const RANGES = ["1d", "7d", "30d", "90d", "all", "custom"];
 const PROVIDERS = [
   { id: "all", label: "all" },
@@ -108,11 +108,11 @@ const WindowControls = () => {
   );
 };
 
-export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProvider, advancedMode = false, themeId }) => {
+export const Topbar = ({ tab, setTab, range, setRange, provider = "all", setProvider, level = 1, themeId }) => {
   const version = useVersion();
   const lastRefresh = useLastRefresh();
   const tc = getThemedCopy(themeId);
-  const visibleTabs = TABS.filter((t) => advancedMode || !ADVANCED_TABS.has(t));
+  const visibleTabs = TABS.filter((t) => tabVisible(level, t));
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
   // Push the custom dates to the data layer whenever either bound changes
