@@ -1048,7 +1048,7 @@ pub(crate) struct PreferencesResponse {
     pub(crate) badge_dock_enabled: bool,
     pub(crate) badge_menubar_enabled: bool,
     pub(crate) limits_enabled: bool,
-    pub(crate) advanced_mode: bool,
+    pub(crate) power_level: i64,
     pub(crate) multi_provider_enabled: bool,
     pub(crate) theme: Option<String>,
     pub(crate) glass_enabled: bool,
@@ -1074,7 +1074,7 @@ pub(crate) async fn preferences_get(
             badge_dock_enabled: preferences::get_badge_dock_enabled(p)?,
             badge_menubar_enabled: preferences::get_badge_menubar_enabled(p)?,
             limits_enabled: preferences::get_limits_enabled(p)?,
-            advanced_mode: preferences::get_advanced_mode(p)?,
+            power_level: preferences::get_power_level(p)?,
             multi_provider_enabled: preferences::get_multi_provider_enabled(p)?,
             theme: preferences::get_theme(p)?,
             glass_enabled: preferences::get_glass_enabled(p)?,
@@ -1118,7 +1118,7 @@ pub(crate) struct PreferencesBody {
     #[serde(default)]
     pub(crate) limits_enabled: Option<bool>,
     #[serde(default)]
-    pub(crate) advanced_mode: Option<bool>,
+    pub(crate) power_level: Option<i64>,
     #[serde(default)]
     pub(crate) multi_provider_enabled: Option<bool>,
     #[serde(default)]
@@ -1197,11 +1197,10 @@ pub(crate) async fn preferences_post(
                 events.send(serde_json::json!({"type": "preferences", "limits_enabled": stored}));
             out.insert("limits_enabled".into(), serde_json::Value::Bool(stored));
         }
-        if let Some(v) = body.advanced_mode {
-            let stored = preferences::set_advanced_mode(p, v)?;
-            let _ =
-                events.send(serde_json::json!({"type": "preferences", "advanced_mode": stored}));
-            out.insert("advanced_mode".into(), serde_json::Value::Bool(stored));
+        if let Some(v) = body.power_level {
+            let stored = preferences::set_power_level(p, v)?;
+            let _ = events.send(serde_json::json!({"type": "preferences", "power_level": stored}));
+            out.insert("power_level".into(), serde_json::Value::from(stored));
         }
         if let Some(v) = body.multi_provider_enabled {
             let stored = preferences::set_multi_provider_enabled(p, v)?;

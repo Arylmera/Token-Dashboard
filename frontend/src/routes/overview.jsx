@@ -7,6 +7,7 @@ import { SortHeader, useSortable } from "../components/sortable.jsx";
 import { CountUp } from "../components/count-up.jsx";
 import { displayProject } from "../project-name.js";
 import { getThemedCopy } from "../themed-copy.js";
+import { cardVisible } from "../levels.js";
 
 const rangeDaysFromKey = (key) => {
   const k = String(key || "").toLowerCase();
@@ -1015,32 +1016,37 @@ const RecentSessions = ({ tc }) => {
   );
 };
 
-export const Overview = ({ themeId }) => {
+export const Overview = ({ themeId, level = 1 }) => {
   const totals = D.totals;
   const burn = D.burn;
   const tc = getThemedCopy(themeId);
+  const show = (k) => cardVisible(level, k);
+  const showProjectsRow = show("projectsTable") || show("modelsCard") || show("modelLeaderboard");
+  const showPhaseRow = show("phaseSplit") || show("topTools");
   return (
     <div className="a-route">
-      <TopStrip totals={totals} burn={burn} />
-      <BudgetAlertBanner />
-      <BudgetBanner budget={D.budget} />
-      <LimitsCard limits={D.limits} enabled={!!(D.prefs && D.prefs.limits_enabled)} />
-      <BurnRateCard />
-      <KpiRow totals={totals} tc={tc} />
-      <DailyCharts totals={totals} />
-      <section className="a-card-row">
-        <ProjectsTable totals={totals} />
-        <ModelsCard tc={tc} />
-        <ModelLeaderboard />
-      </section>
-      <section className="a-card-row">
-        <PhaseSplitCard phase={D.phase} />
-        <TopToolsCard />
-      </section>
-      {/* Cache mix + MCP servers cards moved to their dedicated tabs
-          (Cache top-level + Sink → mcp) so Overview stays focused. */}
-      <AnomalyCard />
-      <RecentSessions tc={tc} />
+      {show("topStrip") && <TopStrip totals={totals} burn={burn} />}
+      {show("budgetAlertBanner") && <BudgetAlertBanner />}
+      {show("budgetBanner") && <BudgetBanner budget={D.budget} />}
+      {show("limitsCard") && <LimitsCard limits={D.limits} enabled={!!(D.prefs && D.prefs.limits_enabled)} />}
+      {show("burnRateCard") && <BurnRateCard />}
+      {show("kpiRow") && <KpiRow totals={totals} tc={tc} />}
+      {show("dailyCharts") && <DailyCharts totals={totals} />}
+      {showProjectsRow && (
+        <section className="a-card-row">
+          {show("projectsTable") && <ProjectsTable totals={totals} />}
+          {show("modelsCard") && <ModelsCard tc={tc} />}
+          {show("modelLeaderboard") && <ModelLeaderboard />}
+        </section>
+      )}
+      {showPhaseRow && (
+        <section className="a-card-row">
+          {show("phaseSplit") && <PhaseSplitCard phase={D.phase} />}
+          {show("topTools") && <TopToolsCard />}
+        </section>
+      )}
+      {show("anomaly") && <AnomalyCard />}
+      {show("recentSessions") && <RecentSessions tc={tc} />}
     </div>
   );
 };

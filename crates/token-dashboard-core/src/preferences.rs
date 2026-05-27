@@ -164,11 +164,25 @@ pub fn set_limits_enabled<P: AsRef<Path>>(db: P, v: bool) -> rusqlite::Result<bo
     set_bool(db, "limits_enabled", v)
 }
 
-pub fn get_advanced_mode<P: AsRef<Path>>(db: P) -> rusqlite::Result<bool> {
-    get_bool(db, "advanced_mode", false)
+/// Power level (1=Basic .. 4=Expert). Controls how many tabs/cards the UI
+/// reveals. Replaces the old `advanced_mode` boolean. Defaults to Basic;
+/// the stored `advanced_mode` key (if any) is ignored — users re-pick in
+/// Settings.
+pub const POWER_LEVEL_MIN: i64 = 1;
+pub const POWER_LEVEL_MAX: i64 = 4;
+pub const DEFAULT_POWER_LEVEL: i64 = POWER_LEVEL_MIN;
+
+pub fn get_power_level<P: AsRef<Path>>(db: P) -> rusqlite::Result<i64> {
+    Ok(read_str(db, "power_level")?
+        .and_then(|s| s.parse::<i64>().ok())
+        .map(|n| n.clamp(POWER_LEVEL_MIN, POWER_LEVEL_MAX))
+        .unwrap_or(DEFAULT_POWER_LEVEL))
 }
-pub fn set_advanced_mode<P: AsRef<Path>>(db: P, v: bool) -> rusqlite::Result<bool> {
-    set_bool(db, "advanced_mode", v)
+
+pub fn set_power_level<P: AsRef<Path>>(db: P, v: i64) -> rusqlite::Result<i64> {
+    let n = v.clamp(POWER_LEVEL_MIN, POWER_LEVEL_MAX);
+    write_str(db, "power_level", &n.to_string())?;
+    Ok(n)
 }
 
 /// Hide the provider/model picker in the topbar by default. When off, the

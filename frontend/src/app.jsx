@@ -23,9 +23,8 @@ import {
 import { AmbientLayer } from "./components/ambient-canvas.jsx";
 import { ThemeBanner, CockpitHud, useCockpitBrackets } from "./components/special-chrome.jsx";
 import { useCalmFx } from "./fx-pref.js";
-import { useAdvancedMode } from "./use-advanced-mode.js";
-
-const ADVANCED_TABS = new Set(["api"]);
+import { usePowerLevel } from "./use-power-level.js";
+import { tabVisible } from "./levels.js";
 
 const ROUTES = {
   overview: Overview,
@@ -181,17 +180,17 @@ export const DirectionA = ({ initialTab, lockTab = false }) => {
   const [range, setRange] = useState("30d");
   const [provider, setProvider] = useState("all");
   const [themeIdx, setThemeIdx] = useTheme();
-  const [advancedMode, advancedLoaded] = useAdvancedMode();
+  const [level, levelLoaded] = usePowerLevel();
   const multiProviderEnabled = useMultiProviderPref();
   useGlassBootstrap();
   useRangeReload(range, provider, multiProviderEnabled);
-  // Bounce off an advanced-only tab as soon as we know the toggle is off,
-  // so users can't linger on hidden routes after disabling advanced mode.
+  // Bounce off any tab above the user's level once we know it, so users
+  // can't linger on hidden routes after lowering their level.
   useEffect(() => {
-    if (!advancedLoaded || lockTab) return;
-    if (!advancedMode && ADVANCED_TABS.has(tab)) setTab("overview");
-  }, [advancedLoaded, advancedMode, tab, lockTab, setTab]);
-  const effectiveTab = !advancedMode && ADVANCED_TABS.has(tab) ? "overview" : tab;
+    if (!levelLoaded || lockTab) return;
+    if (!tabVisible(level, tab)) setTab("overview");
+  }, [levelLoaded, level, tab, lockTab, setTab]);
+  const effectiveTab = (lockTab || !levelLoaded || tabVisible(level, tab)) ? tab : "overview";
   const Route = ROUTES[effectiveTab] || Overview;
   const themeId = THEMES[themeIdx]?.id;
   const themeCls = THEMES[themeIdx]?.cls || "";
@@ -207,11 +206,11 @@ export const DirectionA = ({ initialTab, lockTab = false }) => {
   return (
     <>
       <AmbientLayer themeCls={isSpecial && !calmFx ? themeCls : ""} />
-      <Topbar tab={effectiveTab} setTab={setTab} range={range} setRange={setRange} provider={provider} setProvider={multiProviderEnabled ? setProvider : null} advancedMode={advancedMode} themeId={themeId} />
+      <Topbar tab={effectiveTab} setTab={setTab} range={range} setRange={setRange} provider={provider} setProvider={multiProviderEnabled ? setProvider : null} level={level} themeId={themeId} />
       <ThemeBanner themeId={themeId} />
       <main className="a-main-area">
         <div key={effectiveTab} className="a-page-enter">
-          <Route themeIdx={themeIdx} themeId={themeId} onPickTheme={setThemeIdx} advancedMode={advancedMode} />
+          <Route themeIdx={themeIdx} themeId={themeId} onPickTheme={setThemeIdx} level={level} />
         </div>
       </main>
       {themeId === "cockpit" && <CockpitHud />}

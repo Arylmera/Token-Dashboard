@@ -12,8 +12,10 @@ import { RemoteSourcesCard } from "./settings/remote-sources-card.jsx";
 import { GlassCard } from "./settings/glass-card.jsx";
 import { WidgetCard } from "./settings/widget-card.jsx";
 import { ThresholdPicker } from "./budget/threshold-picker.jsx";
-import { AdvancedModeCard, DensityCard, DeveloperCard, AboutCard, Glossary, MultiProviderCard } from "./settings/misc-cards.jsx";
-import { broadcastAdvancedMode } from "../use-advanced-mode.js";
+import { DensityCard, DeveloperCard, AboutCard, Glossary, MultiProviderCard } from "./settings/misc-cards.jsx";
+import { broadcastPowerLevel } from "../use-power-level.js";
+import { clampLevel } from "../levels.js";
+import { LevelCard } from "./settings/level-card.jsx";
 
 export const Settings = ({ themeIdx, onPickTheme }) => {
   const [plan, setPlan] = useState((D.plan && D.plan.plan) || "api");
@@ -21,9 +23,9 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
   const [limitsEnabled, setLimitsEnabled] = useState(false);
   const [limitsSaving, setLimitsSaving] = useState(false);
   const [limitsLoaded, setLimitsLoaded] = useState(false);
-  const [advancedMode, setAdvancedMode] = useState(false);
-  const [advancedSaving, setAdvancedSaving] = useState(false);
-  const [advancedLoaded, setAdvancedLoaded] = useState(false);
+  const [level, setLevel] = useState(1);
+  const [levelSaving, setLevelSaving] = useState(false);
+  const [levelLoaded, setLevelLoaded] = useState(false);
   const [multiProviderEnabled, setMultiProviderEnabled] = useState(false);
   const [multiProviderSaving, setMultiProviderSaving] = useState(false);
   const [multiProviderLoaded, setMultiProviderLoaded] = useState(false);
@@ -34,31 +36,31 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
       .then((d) => {
         if (cancelled || !d) return;
         if (typeof d.limits_enabled === "boolean") setLimitsEnabled(d.limits_enabled);
-        if (typeof d.advanced_mode === "boolean") setAdvancedMode(d.advanced_mode);
+        if (d.power_level != null) setLevel(clampLevel(d.power_level));
         if (typeof d.multi_provider_enabled === "boolean") setMultiProviderEnabled(d.multi_provider_enabled);
       })
       .catch(() => {})
       .finally(() => {
         if (cancelled) return;
         setLimitsLoaded(true);
-        setAdvancedLoaded(true);
+        setLevelLoaded(true);
         setMultiProviderLoaded(true);
       });
     return () => { cancelled = true; };
   }, []);
-  const onToggleAdvanced = async (next) => {
-    setAdvancedMode(next);
-    setAdvancedSaving(true);
-    broadcastAdvancedMode(next);
+  const onPickLevel = async (next) => {
+    setLevel(next);
+    setLevelSaving(true);
+    broadcastPowerLevel(next);
     try {
       await fetch("/api/preferences", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ advanced_mode: next }),
+        body: JSON.stringify({ power_level: next }),
       });
       if (window.RELOAD_STATIC) window.RELOAD_STATIC();
     } catch (_) {}
-    setAdvancedSaving(false);
+    setLevelSaving(false);
   };
   const onToggleMultiProvider = async (next) => {
     setMultiProviderEnabled(next);
@@ -123,7 +125,7 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
           loaded={limitsLoaded}
           saving={limitsSaving}
         />
-        <PricingTable readOnly={!advancedMode} />
+        <PricingTable readOnly={level < 3} />
       </SettingsGroup>
 
       <SettingsGroup title="Limits &amp; alerts" description="dock indicator + budget threshold notifications">
@@ -138,13 +140,13 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
       </SettingsGroup>
 
       <SettingsGroup title="Advanced" description="reveal extra tabs and editable internals">
-        <AdvancedModeCard
-          enabled={advancedMode}
-          onChange={onToggleAdvanced}
-          loaded={advancedLoaded}
-          saving={advancedSaving}
+        <LevelCard
+          level={level}
+          onPick={onPickLevel}
+          loaded={levelLoaded}
+          saving={levelSaving}
         />
-        {advancedMode && (
+        {level >= 3 && (
           <MultiProviderCard
             enabled={multiProviderEnabled}
             onChange={onToggleMultiProvider}

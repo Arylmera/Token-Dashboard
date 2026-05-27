@@ -588,7 +588,7 @@ async fn preferences_get_defaults() {
     assert_eq!(body["badge_window_mode"].as_str(), Some("remaining"));
     assert_eq!(body["badge_dock_enabled"].as_bool(), Some(true));
     assert_eq!(body["limits_enabled"].as_bool(), Some(false));
-    assert_eq!(body["advanced_mode"].as_bool(), Some(false));
+    assert_eq!(body["power_level"].as_i64(), Some(1));
     assert_eq!(body["glass_enabled"].as_bool(), Some(false));
     assert_eq!(body["glass_opacity"].as_i64(), Some(25));
 }
@@ -599,20 +599,20 @@ async fn preferences_post_round_trip() {
     let (status, body) = post_json(
         &fx.state,
         "/api/preferences",
-        &json!({"badge_metric": "cost", "glass_opacity": 60, "limits_enabled": true, "advanced_mode": true}),
+        &json!({"badge_metric": "cost", "glass_opacity": 60, "limits_enabled": true, "power_level": 4}),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["badge_metric"].as_str(), Some("cost"));
     assert_eq!(body["glass_opacity"].as_i64(), Some(60));
     assert_eq!(body["limits_enabled"].as_bool(), Some(true));
-    assert_eq!(body["advanced_mode"].as_bool(), Some(true));
+    assert_eq!(body["power_level"].as_i64(), Some(4));
 
     let (_, after) = get_json(&fx.state, "/api/preferences").await;
     assert_eq!(after["badge_metric"].as_str(), Some("cost"));
     assert_eq!(after["glass_opacity"].as_i64(), Some(60));
     assert_eq!(after["limits_enabled"].as_bool(), Some(true));
-    assert_eq!(after["advanced_mode"].as_bool(), Some(true));
+    assert_eq!(after["power_level"].as_i64(), Some(4));
 }
 
 #[tokio::test]
