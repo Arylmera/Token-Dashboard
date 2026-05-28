@@ -823,7 +823,10 @@ pub fn recent_sessions<P: AsRef<Path>>(
         "SELECT m.session_id AS session_id, m.project_slug AS project_slug, \
                 MIN(m.timestamp) AS started, MAX(m.timestamp) AS ended, \
                 SUM(CASE WHEN m.type='user' THEN 1 ELSE 0 END) AS turns, \
-                COALESCE(SUM(m.input_tokens),0)+COALESCE(SUM(m.output_tokens),0) AS tokens \
+                COALESCE(SUM(m.input_tokens),0)+COALESCE(SUM(m.output_tokens),0) \
+                +COALESCE(SUM(m.cache_read_tokens),0) \
+                +COALESCE(SUM(m.cache_create_5m_tokens),0) \
+                +COALESCE(SUM(m.cache_create_1h_tokens),0) AS tokens \
          FROM messages m \
          {tag_join} \
          WHERE 1=1 {rng} {tag_filter}{prov} \
