@@ -389,6 +389,7 @@ const buildSkills = (skills) => skills.map((s) => ({
 }));
 
 const buildTips = (tips) => (Array.isArray(tips) ? tips : []).map((t) => ({
+  key: t.key || null,
   type: t.severity || t.type || "info",
   title: t.title || t.key || "Tip",
   body: t.body || t.message || "",
@@ -398,6 +399,9 @@ const buildTips = (tips) => (Array.isArray(tips) ? tips : []).map((t) => ({
   target: t.target || null,
   count: t.count || 0,
   sessions: t.sessions || 0,
+  api_opus: t.api_opus || 0,
+  api_sonnet: t.api_sonnet || 0,
+  savings: t.savings || 0,
 }));
 
 const buildHourly = (hourlyRaw) => Array.from({ length: 24 }, (_, i) => {
