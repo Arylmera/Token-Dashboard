@@ -312,6 +312,7 @@ mod tests {
     #[test]
     fn embedded_loads() {
         let p = Pricing::embedded();
+        assert!(p.models.contains_key("claude-opus-4-8"));
         assert!(p.models.contains_key("claude-opus-4-7"));
         assert!(p.tier_fallback.contains_key("sonnet"));
     }

@@ -1,5 +1,6 @@
 {
   "models": {
+    "claude-opus-4-8":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
     "claude-opus-4-7":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
     "claude-opus-4-6":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
     "claude-opus-4-5":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
