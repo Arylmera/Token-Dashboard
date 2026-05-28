@@ -577,6 +577,31 @@ body.td-setup-help-body #root { height: 100%; }
 .a-pill-btn:hover { border-color: var(--iron-border-2); }
 .a-pill-btn.is-active { background: var(--bg); color: var(--bone); border-color: var(--iron-border-2); }
 
+/* Segmented-control variant: the prompts tab row. Scoped so setup/theme pills stay as-is. */
+.a-pill-btn-row {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--iron-border);
+  border-radius: 9px;
+}
+.a-pill-btn-row .a-pill-btn {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 16px;
+  color: var(--gull);
+  letter-spacing: 0.06em;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+.a-pill-btn-row .a-pill-btn:hover { color: var(--bone); background: var(--panel); border-color: transparent; }
+.a-pill-btn-row .a-pill-btn.is-active {
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), inset 0 0 0 1px var(--iron-border-2);
+}
+
 .a-theme-picker { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .a-main-area { padding: 20px; overflow-y: auto; flex: 1; min-width: 0; min-height: 0; box-sizing: border-box; width: 100%; scrollbar-width: none; }
