@@ -171,12 +171,18 @@ pub fn check<P: AsRef<Path>>(db: P) -> rusqlite::Result<AlertResult> {
         }
         cfg.state.month = month.clone();
 
-        let snap = preferences::get_limits_server_snapshot(db)?;
-        weekly_resets_at = preferences::get_limit_reset_at(db, "limits_weekly_reset_at")?;
-        five_hour_resets_at = preferences::get_limit_reset_at(db, "limits_five_hour_reset_at")?;
+        // Evaluate against the same 5h/weekly utilization the dashboard
+        // displays. `compute_limits` dispatches on `limits_source`:
+        // the OAuth snapshot when synced, the local JSONL estimate
+        // otherwise. An absent `anchor` means the window has no data
+        // (idle / never synced) — skip it, matching the prior
+        // "no server snapshot → don't fire" behavior.
+        let limits = crate::limits::compute_limits(db, &pricing)?;
 
-        weekly_percent = snap.weekly_utilization.map(util_to_percent);
-        if let Some(pct) = weekly_percent {
+        if limits.weekly.anchor.is_some() {
+            let pct = util_to_percent(limits.weekly.pct_used);
+            weekly_percent = Some(pct);
+            weekly_resets_at = limits.weekly.resets_at.clone();
             evaluate_window(
                 &mut WindowState {
                     key: &mut cfg.state.weekly_window,
@@ -191,8 +197,10 @@ pub fn check<P: AsRef<Path>>(db: P) -> rusqlite::Result<AlertResult> {
             );
         }
 
-        five_hour_percent = snap.five_hour_utilization.map(util_to_percent);
-        if let Some(pct) = five_hour_percent {
+        if limits.five_hour.anchor.is_some() {
+            let pct = util_to_percent(limits.five_hour.pct_used);
+            five_hour_percent = Some(pct);
+            five_hour_resets_at = limits.five_hour.resets_at.clone();
             evaluate_window(
                 &mut WindowState {
                     key: &mut cfg.state.five_hour_window,
@@ -503,6 +511,38 @@ mod tests {
         let r2 = check(f.path()).unwrap();
         assert!(r2.newly_crossed_weekly.is_empty());
         assert!(r2.newly_crossed_5h.is_empty());
+    }
+
+    #[test]
+    fn subscription_falls_back_to_jsonl_when_no_server_snapshot() {
+        // No OAuth sync has happened, so the server snapshot is empty.
+        // Alerts must still fire off the locally-computed 5h utilization
+        // that the dashboard already displays.
+        let f = fresh_db();
+        let conn = Connection::open(f.path()).unwrap();
+        set_plan(&conn, "max");
+        // A single in-window assistant message worth 600 billable sonnet
+        // tokens (tier weight 1).
+        conn.execute(
+            "INSERT INTO messages \
+             (uuid, session_id, project_slug, type, timestamp, model, \
+              input_tokens, output_tokens, cache_read_tokens, \
+              cache_create_5m_tokens, cache_create_1h_tokens) \
+             VALUES ('u1', 's', 'p', 'assistant', datetime('now'), \
+              'claude-sonnet-4-6', 0, 600, 0, 0, 0)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        // Force the JSONL source and pin the 5h cap so 600/1000 = 60%.
+        crate::preferences::set_limits_source(f.path(), "jsonl").unwrap();
+        crate::preferences::set_limit_cap_override(f.path(), "limits_5h_cap_override", Some(1000))
+            .unwrap();
+
+        let r = check(f.path()).unwrap();
+        assert!(r.subscription_mode);
+        assert_eq!(r.five_hour_percent, Some(60.0));
+        assert_eq!(r.newly_crossed_5h, vec![50]);
     }
 
     #[test]
