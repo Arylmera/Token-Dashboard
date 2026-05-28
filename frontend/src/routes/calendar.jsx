@@ -153,7 +153,7 @@ const GroupList = ({ title, rows, labelOf, badge }) => {
 
 const DaySessions = ({ sessions }) => {
   const { sorted, sortState, requestSort } = useSortable(sessions, null, "desc", {
-    id: (r) => r.id,
+    prompt: (r) => (r.first_prompt || "").trim(),
     project: (r) => displayProject(r.project),
     started: (r) => r.started,
     turns: (r) => r.turns || 0,
@@ -168,7 +168,7 @@ const DaySessions = ({ sessions }) => {
       <table className="a-table a-sticky-head">
         <thead>
           <tr>
-            <SortHeader sortKey="id" {...hp}>session</SortHeader>
+            <SortHeader sortKey="prompt" {...hp}>prompt</SortHeader>
             <SortHeader sortKey="project" {...hp}>project</SortHeader>
             <SortHeader sortKey="started" {...hp}>started</SortHeader>
             <SortHeader sortKey="turns" className="num" {...hp}>turns</SortHeader>
@@ -177,16 +177,24 @@ const DaySessions = ({ sessions }) => {
           </tr>
         </thead>
         <tbody>
-          {sorted.map((s) => (
+          {sorted.map((s) => {
+            const prompt = (s.first_prompt || "").replace(/\s+/g, " ").trim();
+            return (
             <tr key={s.id} className="clickable" onClick={() => go(s.id)}>
-              <td className="mono" style={{ color: "var(--bone)" }}>{s.id.slice(0, 8)}</td>
+              <td className="a-cal-prompt-cell">
+                <span className="a-cal-prompt-trunc" style={{ color: "var(--bone)" }}>
+                  {prompt || <span className="mono muted">{s.id.slice(0, 8)}</span>}
+                </span>
+                {prompt && <span className="a-cal-prompt-pop">{prompt}</span>}
+              </td>
               <td className="muted" title={s.project}>{displayProject(s.project)}</td>
               <td className="muted">{(s.started || "").slice(11, 16)}</td>
               <td className="num">{s.turns}</td>
               <td className="num">{fmtTokens(s.tokens)}</td>
               <td className="num tone-good">{fmtCost(s.cost)}</td>
             </tr>
-          ))}
+          );
+          })}
         </tbody>
       </table>
     </section>
