@@ -114,7 +114,7 @@ export const Prompts = () => {
   const headProps = { state: sortState, requestSort };
   return (
     <div className="a-route">
-      <div className="a-pill-btn-row" role="tablist" style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <div className="a-pill-btn-row" role="tablist" style={{ marginBottom: 12 }}>
         <button
           role="tab"
           aria-selected={tab === "expensive"}

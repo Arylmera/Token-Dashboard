@@ -314,6 +314,7 @@ pub(crate) struct DaySessionCost {
     pub(crate) turns: i64,
     pub(crate) tokens: i64,
     pub(crate) cost: f64,
+    pub(crate) first_prompt: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -514,6 +515,7 @@ pub(crate) async fn day(
                 turns: *turns_by_id.get(&r.session_id).unwrap_or(&0),
                 tokens: 0,
                 cost: 0.0,
+                first_prompt: None,
             });
         entry.cost += c;
         entry.tokens += tok;
@@ -530,6 +532,19 @@ pub(crate) async fn day(
             .partial_cmp(&a.cost)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+
+    // First prompt per session (earliest non-empty user prompt_text).
+    let fp_path = s.db_path.clone();
+    let fp_ids: Vec<String> = sessions.iter().map(|se| se.id.clone()).collect();
+    let mut fp_map = blocking(move || {
+        let refs: Vec<&str> = fp_ids.iter().map(String::as_str).collect();
+        first_prompts(fp_path.as_ref(), &refs)
+    })
+    .await?
+    .0;
+    for se in &mut sessions {
+        se.first_prompt = fp_map.remove(&se.id);
+    }
 
     Ok(Json(DayResponse {
         date,
