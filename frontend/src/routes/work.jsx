@@ -6,6 +6,39 @@ import { displayProject } from "../project-name.js";
 
 const pctStyle = (v, max) => ({ "--pct": Math.min(100, Math.round(((v || 0) / (max || 1)) * 100)) });
 
+// Collapse rows that share a display name (worktrees, clones, re-slugged
+// projects) into a single summed row. Each input row is one project_slug;
+// displayProject() already normalizes worktree/git markers, so we group on
+// that and sum the numeric columns.
+const groupProjects = (rows) => {
+  const byName = new Map();
+  for (const p of rows) {
+    const key = displayProject(p.name) || p.slug || "";
+    const g = byName.get(key);
+    if (g) {
+      g.sessions += p.sessions || 0;
+      g.tokens += p.tokens || 0;
+      g.cost += p.cost || 0;
+      g.sources += 1;
+      if (p.lastActive && (!g.lastActive || p.lastActive > g.lastActive)) g.lastActive = p.lastActive;
+    } else {
+      byName.set(key, {
+        name: key,
+        slug: p.slug,
+        sessions: p.sessions || 0,
+        tokens: p.tokens || 0,
+        cost: p.cost || 0,
+        lastActive: p.lastActive || null,
+        sources: 1,
+      });
+    }
+  }
+  // For merged groups the per-slug sub-line is meaningless; replace it with a
+  // source count and key on the display name (unique post-group).
+  return Array.from(byName.values()).map((g) =>
+    g.sources > 1 ? { ...g, slug: g.name } : g);
+};
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtLastActive = (iso) => {
   if (!iso) return "—";
@@ -39,7 +72,9 @@ const ProjectsTable = ({ rows, max }) => {
             <tr key={p.slug} className="clickable has-bar" style={pctStyle(p.cost, max)}>
               <td title={p.slug || p.name}>
                 <div className="a-proj-nick">{displayProject(p.name)}</div>
-                {p.slug && p.slug !== p.name && <div className="a-proj-slug">{p.slug}</div>}
+                {p.sources > 1
+                  ? <div className="a-proj-slug">{p.sources} sources</div>
+                  : p.slug && p.slug !== p.name && <div className="a-proj-slug">{p.slug}</div>}
               </td>
               <td className="muted">{fmtLastActive(p.lastActive)}</td>
               <td className="num">{p.sessions}</td>
@@ -267,7 +302,7 @@ export const Work = () => {
   const [view, setView] = useState("projects");
   const mcpRows = view === "mcp" ? buildMcpRows() : [];
   const cacheRows = view === "cache" ? buildCacheRows() : [];
-  const source = view === "projects" ? (D.projects || [])
+  const source = view === "projects" ? groupProjects(D.projects || [])
     : view === "skills" ? (D.skills || [])
     : view === "mcp" ? mcpRows
     : view === "cache" ? cacheRows
