@@ -91,3 +91,18 @@ cargo run --release -p token-dashboard-tauri
 ```
 
 For iterative frontend work, prefer `npm run dev` (esbuild `--watch` + sourcemap) over re-running `npm run build` on every change — it stays resident and rebuilds `dist/app.js` on save.
+
+## Releasing
+
+Branch model: **`develop`** is the working branch (always ahead); **`main`** is the released/stable branch (trails between releases). A release promotes develop→main — nothing else.
+
+To release version `X.Y.Z`:
+
+1. Bump the version in **4 spots** (keep in sync): `crates/token-dashboard-{core,cli,tauri}/Cargo.toml` and `crates/token-dashboard-tauri/tauri.conf.json`. (`Cargo.lock` is gitignored — only the 4 files commit.)
+2. Commit on `develop`: `chore(release): bump version to X.Y.Z`, push.
+3. Open a **`develop`→`main` PR** titled `Release vX.Y.Z`. Wait for CI green.
+4. **Merge with a merge-commit** (not squash/rebase) — the `main-merge-commit-only` ruleset enforces this. `gh pr merge <n> --merge`.
+
+**The merge IS the release. Never create or push a tag manually.** `.github/workflows/release-tauri.yml` has a `tag` job that fires on push to `main`, reads the version from `token-dashboard-tauri/Cargo.toml`, and auto-creates+pushes `vX.Y.Z` if it doesn't exist — which chains into the Win/macOS/Linux bundle builds, the GitHub Release, and winget/homebrew. Pre-tagging makes that job skip (`tagged=false`) and the main-push run won't build, so the release stalls. After it succeeds, `sync-main-to-develop` merges `main` back into `develop`.
+
+Full walkthrough: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#releasing).
