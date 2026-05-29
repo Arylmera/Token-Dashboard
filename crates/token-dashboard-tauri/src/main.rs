@@ -936,13 +936,11 @@ async fn main() {
             }
         }))
         .plugin(tauri_plugin_notification::init())
-        // Live command post (ported from Praetorium): the shell plugin is not
-        // used to spawn `claude` (process.rs uses tokio::process so it can pin
-        // stdin to null), but dialog/opener back the vault picker and link
-        // opening in the Explorer/Console UI.
-        .plugin(tauri_plugin_shell::init())
+        // Live command post (ported from Praetorium): `claude` is spawned via
+        // tokio::process (process.rs), not the shell plugin, so it can pin
+        // stdin to null. Only the dialog plugin is needed — it backs the vault
+        // / working-directory pickers in the Explorer and Console UI.
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
         .manage(BaseUrl(base_url.clone()))
         .manage(DbPath(db_path_for_state))
         .manage(GlassState(std::sync::Mutex::new(glass_enabled)))

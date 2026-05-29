@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default permissions for the Token Dashboard tauri shell",
-  "windows": ["main", "widget", "setup-help"],
+  "windows": ["main", "widget", "setup-help", "live"],
   "remote": {
     "urls": ["http://127.0.0.1:*", "http://localhost:*"]
   },
@@ -24,6 +24,7 @@
     "core:window:allow-set-focus",
     "core:event:default",
     "core:tray:default",
-    "notification:default"
+    "notification:default",
+    "dialog:allow-open"
   ]
 }
