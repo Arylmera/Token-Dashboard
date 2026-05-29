@@ -129,6 +129,38 @@ const HourlyBars = ({ hourly }) => {
   );
 };
 
+// Pick the better-cased label between two variants that collapse to the same
+// project (e.g. "Token-Dashboard" vs "token-dashboard"). Mirrors the Rust
+// merge_display intent: prefer a name carrying real casing, then the longer.
+const betterLabel = (a, b) => {
+  const ua = /[A-Z]/.test(a);
+  const ub = /[A-Z]/.test(b);
+  if (ua !== ub) return ua ? a : b;
+  return b.length > a.length ? b : a;
+};
+
+// Collapse "by project" rows that share a display name (worktrees, clones,
+// re-slugged projects, casing variants) into a single summed row. Each input
+// row is keyed by one project_slug; displayProject() normalizes worktree/git
+// markers, and we group case-insensitively to match the backend's canonical
+// key. The surviving row keeps the best-cased label.
+const groupByName = (rows) => {
+  const byKey = new Map();
+  for (const r of rows) {
+    const name = displayProject(r.key) || r.key || "";
+    const ckey = name.toLowerCase();
+    const g = byKey.get(ckey);
+    if (g) {
+      g.key = betterLabel(g.key, name);
+      g.tokens += r.tokens || 0;
+      g.cost += r.cost || 0;
+    } else {
+      byKey.set(ckey, { key: name, tokens: r.tokens || 0, cost: r.cost || 0 });
+    }
+  }
+  return Array.from(byKey.values()).sort((a, b) => (b.cost || 0) - (a.cost || 0));
+};
+
 const GroupList = ({ title, rows, labelOf, badge }) => {
   const max = Math.max(0.000001, ...rows.map((r) => r.cost || 0));
   return (
@@ -258,7 +290,7 @@ const DayDetail = ({ date, data }) => {
         <HourlyBars hourly={data.hourly || []} />
       </section>
       <div className="a-cal-split">
-        <GroupList title="By project" rows={data.by_project || []} labelOf={displayProject} />
+        <GroupList title="By project" rows={groupByName(data.by_project || [])} labelOf={displayProject} />
         <GroupList title="By model" rows={data.by_model || []} badge />
       </div>
       <DaySessions sessions={data.sessions || []} />
