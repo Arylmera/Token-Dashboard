@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-label="Servo-skull placeholder">
+  
+  <path d="M5 11a7 7 0 1 1 14 0v4a2 2 0 0 1-2 2h-1v3h-2v-3h-4v3H8v-3H7a2 2 0 0 1-2-2z"></path>
+  <circle cx="9.5" cy="12.5" r="1.6" fill="currentColor"></circle>
+  <circle cx="14.5" cy="12.5" r="1.6" fill="currentColor"></circle>
+  <line x1="8" y1="17" x2="16" y2="17"></line>
+  <line x1="10" y1="17" x2="10" y2="19"></line>
+  <line x1="14" y1="17" x2="14" y2="19"></line>
+  
+  <line x1="12" y1="4" x2="12" y2="2"></line>
+  <circle cx="12" cy="1.5" r=".8" fill="currentColor" stroke="none"></circle>
+</svg>

@@ -1,0 +1,7 @@
+{"type":"system","subtype":"init","session_id":"s1"}
+{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"Spawning a subagent."},{"type":"tool_use","id":"toolu_agent1","name":"Agent","input":{"subagent_type":"genetor","prompt":"inspect infra"}}]}}
+{"type":"assistant","parent_tool_use_id":"toolu_agent1","message":{"content":[{"type":"tool_use","id":"toolu_read1","name":"Read","input":{"file_path":"/repo/Hera/Technical/Network/Map.md"}}]}}
+{"type":"user","parent_tool_use_id":"toolu_agent1","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_read1","is_error":false,"content":"..."}]}}
+{"type":"assistant","parent_tool_use_id":"toolu_agent1","message":{"content":[{"type":"tool_use","id":"toolu_edit1","name":"Edit","input":{"file_path":"/repo/Hera/Technical/Network/Map.md","old_string":"a","new_string":"b"}}]}}
+{"type":"user","parent_tool_use_id":null,"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_agent1","is_error":false,"content":"done"}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"finished"}

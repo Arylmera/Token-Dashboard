@@ -7,11 +7,16 @@
   "scripts": {
     "build": "npx esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --minify --legal-comments=none",
     "dev": "npx esbuild entry.jsx --bundle --outfile=dist/app.js --target=es2020 --loader:.jsx=jsx --jsx=automatic --sourcemap --watch",
-    "test": "node --test src/*.node-test.mjs"
+    "test": "node --test $(find src -name '*.node-test.mjs')"
   },
   "dependencies": {
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "d3-force": "^3.0.0",
+    "d3-hierarchy": "^3.1.2",
+    "marked": "^18.0.4",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.1"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"

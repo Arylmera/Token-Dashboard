@@ -23,8 +23,15 @@ crates/
                           Owns the /api/* surface and the SSE bus.
   token-dashboard-tauri/  Tauri 2 desktop shell. Links the cli as a
                           library and calls app(state) directly inside
-                          the tauri runtime — single process, no
-                          subprocess to spawn or kill.
+                          the tauri runtime — single process. The
+                          analytics surface spawns no subprocess. The
+                          src/live/ module (ported from Praetorium) is
+                          the one exception: it drives the `claude` CLI
+                          (process.rs) and watches ~/.claude/projects/
+                          (session_watch.rs), streaming events to the
+                          frontend over Tauri IPC channels.
+  praetorium-core/        Pure parser/vault library (no Tauri, no db,
+                          no async runtime) backing the Live feature.
 
 frontend/                 React 18 + esbuild (`entry.jsx` →
                           `frontend/dist/app.js`). The webview talks

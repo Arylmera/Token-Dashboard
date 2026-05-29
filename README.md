@@ -4,6 +4,8 @@
 
 100% local · no telemetry · no login · MIT · Windows / macOS / Linux · ~7 MB installer.
 
+> **New in v5 — Live.** The dashboard now folds in [Praetorium](https://github.com/Arylmera/praetorium): a live command post for your Claude Code sessions (Console / Cockpit / Explorer), reachable from the **Live** tab and detachable into its own window. The analytics tabs stay exactly as they were — passive and read-only, they only ever *read* the transcripts Claude already wrote. The Live tab is the one place the app can *launch* `claude` for you, and it only ever does so on an explicit, user-initiated action — never automatically.
+
 [![Latest release](https://img.shields.io/github/v/release/Arylmera/Token-Dashboard?style=for-the-badge&label=download)](https://github.com/Arylmera/Token-Dashboard/releases/latest)
 [![License](https://img.shields.io/github/license/Arylmera/Token-Dashboard?style=for-the-badge)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Arylmera-40DCA5?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://www.buymeacoffee.com/Arylmera)
