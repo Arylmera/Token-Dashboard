@@ -21,11 +21,16 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 token-dashboard-cli = { path = "../token-dashboard-cli" }
 token-dashboard-core = { path = "../token-dashboard-core" }
+praetorium-core = { path = "../praetorium-core" }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+notify = "6"
 window-vibrancy = "0.7"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "process", "io-util"] }
 axum = "0.7"
 ureq = { version = "2.10", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
