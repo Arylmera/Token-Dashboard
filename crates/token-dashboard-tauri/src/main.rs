@@ -116,10 +116,10 @@ async fn wait_for_ready(port: u16) -> Result<(), String> {
 }
 
 /// Show the main window, recreating it if it was destroyed.
-/// On every platform the close handler hides the main window instead of
-/// destroying it, so the fast path just calls show/unminimize/focus.
-/// The rebuild path is a fallback for any code (or future platform
-/// quirk) that lets the window get torn down.
+/// Closing the main window quits the app, so while the process is alive
+/// the window normally exists and the fast path just calls
+/// show/unminimize/focus. The rebuild path is a fallback for any code
+/// (or platform quirk) that tears the window down without exiting.
 fn show_or_spawn_main(app: &AppHandle, base_url: &str) {
     if let Some(w) = app.get_webview_window("main") {
         // Reset geometry so the dashboard doesn't reappear stranded
@@ -908,14 +908,17 @@ async fn main() {
             }
         })
         .on_window_event(|window, event| {
-            // Keep the main window alive in the tray on every platform.
-            // Destroying it on close left the tray "Show Dashboard" entry
-            // pointing at a missing webview, so the app appeared frozen
-            // when the widget kept the process running.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            // Closing the main dashboard window quits the whole app.
+            // The embedded server, scan loop, tray updater, and SSE
+            // listener tasks would otherwise keep the process alive with
+            // no window — a headless zombie in Task Manager that the tray
+            // icon's presence suppresses Tauri's own auto-exit from
+            // reaping. Exit explicitly so the process (and its job-bound
+            // msedgewebview2 children) terminates with the window.
+            // Secondary windows (widget, setup-help) close normally.
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
                 if window.label() == "main" {
-                    api.prevent_close();
-                    let _ = window.hide();
+                    window.app_handle().exit(0);
                 }
             }
         })

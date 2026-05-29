@@ -738,13 +738,13 @@ body.td-setup-help-body #root { height: 100%; }
   display: inline-block; min-width: 10px; margin-left: 4px;
   font-size: 9px; opacity: 0.6; vertical-align: 1px;
 }
+/* Flex lives on an inner wrapper, NOT the <th> — a flex <th> stops being a
+   table-cell and drops out of the column-sizing model, collapsing the column. */
+.a-table th.a-th-sort .a-th-sort-inner { display: inline-flex; align-items: baseline; }
 /* Numeric sort headers are right-aligned: keep the arrow LEFT of the label so
    the label's right edge lines up with the right-aligned numbers in the body
    (otherwise the reserved indicator space shifts the label ~14px left). */
-.a-table th.a-th-sort.num {
-  display: flex; flex-direction: row-reverse;
-  justify-content: flex-start; align-items: baseline;
-}
+.a-table th.a-th-sort.num .a-th-sort-inner { flex-direction: row-reverse; }
 .a-table th.a-th-sort.num .a-th-sort-ind { margin-left: 0; margin-right: 4px; }
 .a-table th.a-th-sort.is-sort-asc,
 .a-table th.a-th-sort.is-sort-desc { color: var(--accent); }

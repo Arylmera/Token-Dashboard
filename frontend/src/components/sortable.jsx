@@ -88,9 +88,11 @@ export const SortHeader = ({ sortKey, state, requestSort, className = "", childr
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); requestSort(sortKey); } }}
     >
-      {children}
-      <span className="a-th-sort-ind" aria-hidden="true">
-        {dir === "asc" ? "▲" : dir === "desc" ? "▼" : ""}
+      <span className="a-th-sort-inner">
+        {children}
+        <span className="a-th-sort-ind" aria-hidden="true">
+          {dir === "asc" ? "▲" : dir === "desc" ? "▼" : ""}
+        </span>
       </span>
     </th>
   );
