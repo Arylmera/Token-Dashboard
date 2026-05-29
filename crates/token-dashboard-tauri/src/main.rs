@@ -947,6 +947,7 @@ async fn main() {
         .manage(DbPath(db_path_for_state))
         .manage(GlassState(std::sync::Mutex::new(glass_enabled)))
         .manage(live::process::RunRegistry::default())
+        .manage(live::session_watch::WatcherHandle::default())
         .invoke_handler(tauri::generate_handler![
             open_external,
             open_widget,

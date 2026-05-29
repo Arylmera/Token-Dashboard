@@ -11,6 +11,7 @@ import { Settings } from "./routes/settings.jsx";
 import { Tips } from "./routes/tips.jsx";
 import { Work } from "./routes/work.jsx";
 import { ApiRoute } from "./routes/api.jsx";
+import { LiveTab } from "./live/index.jsx";
 import {
   THEMES,
   SPECIAL_THEME_IDS,
@@ -39,6 +40,7 @@ const ROUTES = {
   "token sink": Work,
   tips: Tips,
   api: ApiRoute,
+  live: LiveTab,
   settings: Settings,
 };
 

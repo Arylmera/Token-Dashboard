@@ -220,6 +220,7 @@ pub fn app_cwd() -> Option<String> {
 #[derive(Default)]
 pub struct WatchState(pub Mutex<HashMap<PathBuf, usize>>);
 
+#[derive(Default)]
 pub struct WatcherHandle(pub Mutex<Option<notify::RecommendedWatcher>>);
 
 fn pump(path: &Path, offsets: &Mutex<HashMap<PathBuf, usize>>, ch: &Arc<Channel<WatchEvent>>) {
@@ -334,7 +335,14 @@ pub fn watch_sessions(app: tauri::AppHandle, on_event: Channel<WatchEvent>) -> R
     watcher
         .watch(&root, RecursiveMode::Recursive)
         .map_err(|e| format!("watch: {e}"))?;
-    app.manage(WatcherHandle(Mutex::new(Some(watcher))));
+    // Single owning watcher: the handle is managed once at app startup, so we
+    // store (and replace) the watcher inside it rather than `app.manage`-ing a
+    // fresh one — calling manage twice panics, which the pop-out window's
+    // re-dock cycle would otherwise trigger. Replacing drops the prior watcher
+    // (stopping it) and re-binds streaming to the current window's Channel, so
+    // whichever window owns the Live view is the live event sink.
+    let handle = app.state::<WatcherHandle>();
+    *handle.0.lock().unwrap() = Some(watcher);
     Ok(())
 }
 
