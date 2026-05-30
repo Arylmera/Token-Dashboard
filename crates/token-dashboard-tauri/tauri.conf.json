@@ -20,6 +20,7 @@
       "../../frontend/index.html": "frontend/index.html",
       "../../frontend/widget.html": "frontend/widget.html",
       "../../frontend/styles.css": "frontend/styles.css",
+      "../../frontend/live.css": "frontend/live.css",
       "../../frontend/vendor": "frontend/vendor",
       "../../frontend/dist": "frontend/dist"
     },

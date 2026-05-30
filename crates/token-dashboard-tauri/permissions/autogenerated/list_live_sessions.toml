@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-live-sessions"
+description = "Enables the list_live_sessions command without any pre-configured scope."
+commands.allow = ["list_live_sessions"]
+
+[[permission]]
+identifier = "deny-list-live-sessions"
+description = "Denies the list_live_sessions command without any pre-configured scope."
+commands.deny = ["list_live_sessions"]

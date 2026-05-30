@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stop-claude"
+description = "Enables the stop_claude command without any pre-configured scope."
+commands.allow = ["stop_claude"]
+
+[[permission]]
+identifier = "deny-stop-claude"
+description = "Denies the stop_claude command without any pre-configured scope."
+commands.deny = ["stop_claude"]

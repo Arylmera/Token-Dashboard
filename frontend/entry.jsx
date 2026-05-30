@@ -25,20 +25,29 @@ try {
   }
 } catch (_) {}
 
+// Spawned windows (widget / setup-help / live) are routed via a `?w=<name>`
+// query param rather than a `#hash`, because WebView2's initial navigation
+// no-ops on fragment-only URLs and leaves the window blank. The hash forms are
+// still accepted for backward compatibility.
+const winParam = () => {
+  try { return new URLSearchParams(window.location.search).get("w") || ""; }
+  catch (_) { return ""; }
+};
+
 const isWidget = () => {
   try {
-    if (window.location.hash === "#widget") return true;
+    if (winParam() === "widget" || window.location.hash === "#widget") return true;
     return /widget\.html?$/i.test(window.location.pathname);
   } catch (_) { return false; }
 };
 
 const isSetupHelp = () => {
-  try { return window.location.hash === "#setup-help"; }
+  try { return winParam() === "setup-help" || window.location.hash === "#setup-help"; }
   catch (_) { return false; }
 };
 
 const isLiveWindow = () => {
-  try { return window.location.hash === "#live-window"; }
+  try { return winParam() === "live-window" || window.location.hash === "#live-window"; }
   catch (_) { return false; }
 };
 

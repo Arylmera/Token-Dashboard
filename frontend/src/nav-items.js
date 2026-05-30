@@ -71,7 +71,7 @@ const iconApi = svg(
   path("M5 4L1 8l4 4M11 4l4 4-4 4M9 2l-2 12"),
 );
 
-// live — broadcast / signal waves (the live command post)
+// live — radar / signal waves (the live command post)
 const iconLive = svg(
   circle({ cx: 8, cy: 8, r: 1.5 }),
   path("M4.5 4.5a5 5 0 000 7M11.5 4.5a5 5 0 010 7M2.5 2.5a8 8 0 000 11M13.5 2.5a8 8 0 010 11"),

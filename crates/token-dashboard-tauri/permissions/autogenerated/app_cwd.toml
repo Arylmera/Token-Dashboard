@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-cwd"
+description = "Enables the app_cwd command without any pre-configured scope."
+commands.allow = ["app_cwd"]
+
+[[permission]]
+identifier = "deny-app-cwd"
+description = "Denies the app_cwd command without any pre-configured scope."
+commands.deny = ["app_cwd"]

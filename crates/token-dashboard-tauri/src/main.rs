@@ -555,7 +555,9 @@ fn spawn_widget_inner(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
     // widget mount via a hash fragment that `entry.jsx` reads. Avoids the
     // `/web/widget.html` path, which on some setups intermittently 404s
     // and surfaces a Chromium error page as a second window.
-    let url = format!("{base_url}/#widget");
+    // Query param (not a `#hash`) so the spawned window actually navigates —
+    // see spawn_live_window for the WebView2 fragment-navigation gotcha.
+    let url = format!("{base_url}/?w=widget");
     let parsed: tauri::Url = url.parse().expect("widget url parse");
     let glass_on = app
         .try_state::<GlassState>()
@@ -622,7 +624,7 @@ fn spawn_setup_help(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         let _ = existing.set_focus();
         return Ok(());
     }
-    let url = format!("{base_url}/#setup-help");
+    let url = format!("{base_url}/?w=setup-help");
     let parsed: tauri::Url = url.parse().expect("setup-help url parse");
     // Always opaque — the help text doesn't need acrylic and a transparent
     // surface let the dashboard underneath bleed through.
@@ -675,7 +677,7 @@ fn set_glass(app: AppHandle, on: bool) -> Result<(), String> {
     } else {
         tauri::utils::config::Color(0x0a, 0x0a, 0x0a, 0xff)
     };
-    for label in ["main", "widget"] {
+    for label in ["main", "widget", "live"] {
         if let Some(win) = app.get_webview_window(label) {
             let _ = win.set_background_color(Some(bg));
             apply_glass(&win, on);
@@ -733,13 +735,16 @@ fn show_main_route(app: AppHandle, route: String) -> Result<(), String> {
 /// the watcher's IPC `Channel` needs the event-bus shim on the JS side so
 /// events reach whichever host currently owns the view.
 fn spawn_live_window(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
-    if let Some(existing) = app.get_webview_window("live") {
-        let _ = existing.show();
-        let _ = existing.unminimize();
-        let _ = existing.set_focus();
+    // Pre-create the window HIDDEN if it doesn't exist yet. WebView2 only
+    // navigates windows created during setup() (before the event loop starts);
+    // a window spawned later from a command stays stuck at about:blank. So this
+    // is called once at startup to build the (hidden) window, and
+    // open_live_window simply reveals it. entry.jsx reads the `?w=live-window`
+    // query param to mount the Live view.
+    if app.get_webview_window("live").is_some() {
         return Ok(());
     }
-    let url = format!("{base_url}/#live-window");
+    let url = format!("{base_url}/?w=live-window");
     let parsed: tauri::Url = url.parse().expect("live url parse");
     let glass_on = app
         .try_state::<GlassState>()
@@ -758,7 +763,12 @@ fn spawn_live_window(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         .resizable(true)
         .center()
         .background_color(bg)
-        .visible(true);
+        .visible(false);
+    // Always transparent on Windows so glass/acrylic can be toggled at runtime —
+    // window_vibrancy requires transparent set at creation time and it can't be
+    // added later. When glass is off the opaque appearance comes from
+    // background_color above; the pre-create-at-startup path means this no longer
+    // risks the blank-window navigation bug.
     #[cfg(target_os = "windows")]
     let builder = builder.transparent(true);
     let win = builder.build().map_err(|e| {
@@ -768,40 +778,44 @@ fn spawn_live_window(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
     if glass_on {
         apply_glass(&win, true);
     }
-    let _ = win.set_focus();
-    // Tell the main window the Live view detached so its docked tab can
-    // collapse to a "open in its own window" placeholder.
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = main.emit("live-window-opened", ());
-    }
-    let app_handle = app.clone();
-    win.on_window_event(move |event| {
-        if let tauri::WindowEvent::Destroyed = event {
-            // Re-dock: nudge the main window to re-render the Live tab inline.
-            if let Some(main) = app_handle.get_webview_window("main") {
-                let _ = main.emit("live-window-closed", ());
-            }
-        }
-    });
     Ok(())
 }
 
 #[tauri::command]
 fn open_live_window(app: AppHandle, base_url: tauri::State<'_, BaseUrl>) -> Result<(), String> {
-    spawn_live_window(&app, &base_url.0).map_err(|e| e.to_string())
+    // The Live window is pre-created (hidden) at startup; ensure it exists, then
+    // reveal it. Showing an existing window works from a command, whereas
+    // building+navigating one here leaves it stuck at about:blank.
+    spawn_live_window(&app, &base_url.0).map_err(|e| e.to_string())?;
+    if let Some(win) = app.get_webview_window("live") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+        if let Some(main) = app.get_webview_window("main") {
+            let _ = main.emit("live-window-opened", ());
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
 fn close_live_window(app: AppHandle) -> Result<(), String> {
+    // Hide (not close) so the navigated window survives for the next pop-out —
+    // a freshly rebuilt one would not navigate.
     if let Some(win) = app.get_webview_window("live") {
-        win.close().map_err(|e| e.to_string())?;
+        win.hide().map_err(|e| e.to_string())?;
+        if let Some(main) = app.get_webview_window("main") {
+            let _ = main.emit("live-window-closed", ());
+        }
     }
     Ok(())
 }
 
 #[tauri::command]
 fn is_live_window_open(app: AppHandle) -> bool {
-    app.get_webview_window("live").is_some()
+    app.get_webview_window("live")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false)
 }
 
 struct BaseUrl(String);
@@ -996,6 +1010,11 @@ async fn main() {
                     apply_glass(&win, true);
                 }
                 let _ = win.set_focus();
+                // Pre-create the Live pop-out window (hidden) now, while we're
+                // still in setup() — WebView2 only navigates windows built before
+                // the event loop starts, so a window spawned later from a command
+                // would stay blank. open_live_window just reveals this one.
+                let _ = spawn_live_window(app.handle(), &base_url);
                 build_tray(app.handle(), &base_url)?;
                 spawn_tray_updater(app.handle().clone(), base_url.clone());
                 spawn_budget_alert_listener(app.handle().clone(), base_url.clone());

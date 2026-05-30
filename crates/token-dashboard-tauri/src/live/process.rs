@@ -1,6 +1,8 @@
 use praetorium_core::events::ClaudeEvent;
 use praetorium_core::parser::parse_line;
 use std::collections::HashMap;
+use std::ffi::OsString;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
@@ -79,6 +81,66 @@ pub fn plan_claude(
     ClaudeInvocation { args, cwd }
 }
 
+/// Resolve the `claude` executable to an absolute path.
+///
+/// `Command::new("claude")` relies on a bare-name PATH lookup, which is fragile
+/// on Windows: a GUI-launched app can inherit a stale PATH that predates the
+/// claude install, and `CreateProcess` won't resolve PATHEXT shims (.cmd/.bat)
+/// for a bare name. Search PATH explicitly for the known executable names, then
+/// fall back to well-known install locations, then to the bare name so a
+/// correctly-configured PATH still works.
+fn resolve_claude_program() -> OsString {
+    #[cfg(windows)]
+    const NAMES: &[&str] = &["claude.exe", "claude.cmd", "claude.bat"];
+    #[cfg(not(windows))]
+    const NAMES: &[&str] = &["claude"];
+
+    let hit = |dir: &PathBuf| -> Option<PathBuf> {
+        NAMES.iter().map(|n| dir.join(n)).find(|p| p.is_file())
+    };
+
+    if let Some(paths) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&paths) {
+            if let Some(found) = hit(&dir) {
+                return found.into_os_string();
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let mut roots: Vec<PathBuf> = Vec::new();
+        if let Some(v) = std::env::var_os("LOCALAPPDATA") {
+            roots.push(
+                PathBuf::from(v)
+                    .join("Microsoft")
+                    .join("WinGet")
+                    .join("Links"),
+            );
+        }
+        if let Some(v) = std::env::var_os("USERPROFILE") {
+            roots.push(PathBuf::from(v).join(".local").join("bin"));
+        }
+        if let Some(v) = std::env::var_os("APPDATA") {
+            roots.push(PathBuf::from(v).join("npm"));
+        }
+        for root in &roots {
+            if let Some(found) = hit(root) {
+                return found.into_os_string();
+            }
+        }
+    }
+
+    OsString::from("claude")
+}
+
+/// True when the resolved program is a Windows batch shim (.cmd/.bat), which
+/// `CreateProcess` can't execute directly — it must be run via `cmd.exe /C`.
+fn is_batch_shim(program: &OsString) -> bool {
+    let s = program.to_string_lossy().to_ascii_lowercase();
+    s.ends_with(".cmd") || s.ends_with(".bat")
+}
+
 /// Spawn `claude -p <prompt> --output-format stream-json` and stream parsed
 /// events to the frontend through `on_event`. Returns once spawning is done;
 /// streaming continues on a background task.
@@ -100,9 +162,19 @@ pub async fn run_claude(
     registry: State<'_, RunRegistry>,
 ) -> Result<(), String> {
     let plan = plan_claude(&prompt, cwd, model, resume_id);
-    let mut command = Command::new("claude");
+    // Resolve claude to a concrete path so a stale/incomplete PATH on a
+    // GUI-launched app doesn't break the spawn; run batch shims via cmd.exe.
+    let program = resolve_claude_program();
+    let mut command = if is_batch_shim(&program) {
+        let mut c = Command::new("cmd");
+        c.arg("/C").arg(&program).args(&plan.args);
+        c
+    } else {
+        let mut c = Command::new(&program);
+        c.args(&plan.args);
+        c
+    };
     command
-        .args(plan.args)
         .env_clear()
         .envs(sanitized_env(std::env::vars()))
         .stdin(Stdio::null())
@@ -127,9 +199,12 @@ pub async fn run_claude(
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("failed to spawn claude: {e}"))?;
+    let mut child = command.spawn().map_err(|e| {
+        format!(
+            "failed to spawn claude ({}): {e}",
+            program.to_string_lossy()
+        )
+    })?;
     let stdout = child.stdout.take().ok_or("missing stdout pipe")?;
     let stderr = child.stderr.take().ok_or("missing stderr pipe")?;
     registry.insert(run_id.clone(), child);
@@ -179,7 +254,22 @@ pub async fn stop_claude(run_id: String, registry: State<'_, RunRegistry>) -> Re
 
 #[cfg(test)]
 mod tests {
-    use super::{plan_claude, sanitized_env};
+    use super::{is_batch_shim, plan_claude, resolve_claude_program, sanitized_env};
+    use std::ffi::OsString;
+
+    #[test]
+    fn batch_shim_detection() {
+        assert!(is_batch_shim(&OsString::from("C:\\x\\claude.cmd")));
+        assert!(is_batch_shim(&OsString::from("C:\\x\\CLAUDE.BAT")));
+        assert!(!is_batch_shim(&OsString::from("C:\\x\\claude.exe")));
+        assert!(!is_batch_shim(&OsString::from("claude")));
+    }
+
+    #[test]
+    fn resolve_claude_never_empty() {
+        // Always yields a usable program token, falling back to the bare name.
+        assert!(!resolve_claude_program().is_empty());
+    }
 
     #[test]
     fn registry_take_returns_value_once() {
