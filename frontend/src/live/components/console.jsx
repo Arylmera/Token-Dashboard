@@ -27,6 +27,15 @@ import { buildRail } from "../lib/consoleRail.js";
 import { buildAgentNames } from "../lib/agentNaming.js";
 import { failures } from "../lib/insightsStore.js";
 
+// ---- inline style tokens (native theme vars only; no shared-CSS edits) ----
+const MONO = 'var(--font-mono, "JetBrains Mono")';
+
+const statusColor = (failCount, status) =>
+  failCount > 0 ? "var(--bad)"
+  : status === "running" ? "var(--accent)"
+  : status === "idle" ? "var(--gull-2)"
+  : "var(--good)";
+
 export function Console() {
   const [prompt, setPrompt] = useState("");
   const [cwd, setCwd] = useState(undefined);
@@ -235,39 +244,76 @@ export function Console() {
     return set;
   }, [active, activeRunning]);
 
+  // ---- presentational helpers (inline, theme-var only) ----
+  const lineBase = { font: `400 12px ${MONO}`, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "1px 0" };
+  const promptLineStyle = {
+    ...lineBase, color: "var(--bone)", fontWeight: 500,
+    borderLeft: "2px solid var(--accent)", paddingLeft: 10, margin: "10px 0 6px",
+  };
+  const asstLineStyle = { ...lineBase, color: "var(--gull)" };
+  const answerLineStyle = { ...lineBase, color: "var(--bone)" };
+  const toolLineStyle = { ...lineBase, color: "var(--gull-2)" };
+
   return (
-    <div className="pr-console-grid">
-      {/* live sessions */}
-      <aside className="pr-sessions">
-        <div className="pr-sessions-head">
-          <span className="pr-sessions-title">LIVE SESSIONS</span>
-          <span className="pr-sessions-sub">{list.length} active</span>
-          <button className="pr-new-session" type="button" onClick={() => newLocalSession()}
-            title="start a new local session">+ NEW</button>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 280px) minmax(0, 1fr)", gap: 12, alignItems: "stretch", height: "calc(100vh - 130px)", minHeight: 440 }}>
+      {/* ============ LEFT RAIL: live sessions ============ */}
+      <aside className="a-card" style={{ padding: 0, overflow: "hidden", minHeight: 0 }}>
+        <div className="a-card-head" style={{ margin: 0, padding: "12px 14px", borderBottom: "1px solid var(--iron-border)" }}>
+          <h2>Live Sessions</h2>
+          <span className="a-card-meta">{list.length} active</span>
         </div>
-        <div className="pr-sessions-list">
-          {railGroups.map((g) => (
-            <div key={g.dir || "__root__"} className="pr-session-group">
-              <div className="pr-session-group-head" onClick={() => toggleGroup(g.dir)} title={g.dir || g.label}>
-                <span className="pr-folder-chevron">{isGroupOpen(g.dir) ? "▾" : "▸"}</span>
-                <span className="pr-session-group-dir">{g.label}</span>
-                {g.repo && <span className="pr-session-group-repo">{g.repo}</span>}
-                <span className="pr-folder-count">{g.sessions.length}</span>
-              </div>
-              {isGroupOpen(g.dir) && (
-                g.sessions.map((e) => {
-                  const bulletCls = e.failCount > 0 ? " is-failed" : (e.status ? ` is-${e.status}` : "");
+        <div style={{ padding: "8px 10px 10px" }}>
+          <button
+            className="a-pill-btn"
+            type="button"
+            onClick={() => newLocalSession()}
+            title="start a new local session"
+            style={{ width: "100%", textAlign: "center" }}
+          >
+            + New session
+          </button>
+        </div>
+        <div style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "0 6px 8px" }}>
+          {railGroups.map((g) => {
+            const open = isGroupOpen(g.dir);
+            return (
+              <div key={g.dir || "__root__"} style={{ marginBottom: 2 }}>
+                <div
+                  onClick={() => toggleGroup(g.dir)}
+                  title={g.dir || g.label}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
+                    padding: "5px 8px", font: `500 10px ${MONO}`, color: "var(--gull-2)",
+                    textTransform: "uppercase", letterSpacing: "0.08em",
+                  }}
+                >
+                  <span style={{ width: 10, color: "var(--gull)" }}>{open ? "▾" : "▸"}</span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--gull)" }}>{g.label}</span>
+                  {g.repo && <span style={{ color: "var(--accent-2)", letterSpacing: 0, textTransform: "none" }}>{g.repo}</span>}
+                  <span style={{ color: "var(--gull-2)" }}>{g.sessions.length}</span>
+                </div>
+                {open && g.sessions.map((e) => {
+                  const rowActive = e.id === activeId && viewRef === null;
                   return (
                     <React.Fragment key={e.id}>
                       <div
-                        className={`pr-session${e.id === activeId && viewRef === null ? " is-active" : ""}`}
                         onClick={() => { setActiveId(e.id); setViewRef(null); }}
                         title={e.id}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+                          padding: "6px 8px", marginLeft: 4,
+                          background: rowActive ? "var(--panel-2)" : "transparent",
+                          boxShadow: rowActive ? "inset 2px 0 0 var(--accent)" : "none",
+                          transition: "background 100ms",
+                        }}
                       >
-                        <span className={`pr-session-bullet${bulletCls}`} />
+                        <span style={{
+                          width: 7, height: 7, borderRadius: "50%", flex: "0 0 auto",
+                          background: statusColor(e.failCount, e.status),
+                        }} />
                         {renaming === e.id ? (
                           <input
-                            className="pr-session-rename"
+                            className="a-text-input"
                             autoFocus
                             defaultValue={sess(e.id)?.label ?? ""}
                             onClick={(ev) => ev.stopPropagation()}
@@ -276,81 +322,120 @@ export function Console() {
                               if (ev.key === "Enter") { renameSession(e.id, ev.currentTarget.value); setRenaming(null); }
                               else if (ev.key === "Escape") setRenaming(null);
                             }}
+                            style={{ flex: 1, minWidth: 0, padding: "2px 6px", fontSize: 12 }}
                           />
                         ) : (
                           <span
-                            className="pr-session-title"
                             onDoubleClick={(ev) => { ev.stopPropagation(); if (e.owned) setRenaming(e.id); }}
+                            style={{
+                              flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                              font: `500 12px ${MONO}`, color: rowActive ? "var(--bone)" : "var(--gull)",
+                            }}
                           >
                             {e.title}
                           </span>
                         )}
-                        <span className="pr-session-time">
+                        <span style={{ font: `400 10px ${MONO}`, color: e.status === "running" ? "var(--accent)" : "var(--gull-2)" }}>
                           {e.observed ? "" : e.status === "running" ? "live" : "now"}
                         </span>
                         {e.owned && e.status === "running" && (
-                          <button className="pr-session-stop" type="button" title="stop run"
-                            onClick={(ev) => { ev.stopPropagation(); void stopRun(e.id); }}>■</button>
+                          <button
+                            type="button" title="stop run"
+                            onClick={(ev) => { ev.stopPropagation(); void stopRun(e.id); }}
+                            style={{ background: "none", border: 0, cursor: "pointer", color: "var(--bad)", font: `700 10px ${MONO}`, padding: 0 }}
+                          >■</button>
                         )}
                         {e.owned && (
-                          <button className="pr-session-close" type="button" title="close session"
-                            onClick={(ev) => { ev.stopPropagation(); void closeSession(e.id); }}>×</button>
+                          <button
+                            type="button" title="close session"
+                            onClick={(ev) => { ev.stopPropagation(); void closeSession(e.id); }}
+                            style={{ background: "none", border: 0, cursor: "pointer", color: "var(--gull-2)", font: `700 13px ${MONO}`, padding: 0, lineHeight: 1 }}
+                          >×</button>
                         )}
-                        {e.observed && <span className="pr-session-observed">observed</span>}
+                        {e.observed && (
+                          <span style={{ font: `400 9px ${MONO}`, color: "var(--gull-2)", textTransform: "uppercase", letterSpacing: "0.06em" }}>observed</span>
+                        )}
                       </div>
-                      {e.subagents.map((sub) => (
-                        <div
-                          key={sub.ref}
-                          className={`pr-session-sub${e.id === activeId && viewRef === sub.ref ? " is-active" : ""}`}
-                          onClick={() => { setActiveId(e.id); setViewRef(sub.ref); }}
-                          title={`${sub.name} · ${sub.steps} steps`}
-                        >
-                          <span className="pr-session-sub-arrow">↳</span>
-                          <span className="pr-session-sub-name">{sub.name}</span>
-                          <span className="pr-session-sub-steps">{sub.steps}</span>
-                        </div>
-                      ))}
+                      {e.subagents.map((sub) => {
+                        const subActive = e.id === activeId && viewRef === sub.ref;
+                        return (
+                          <div
+                            key={sub.ref}
+                            onClick={() => { setActiveId(e.id); setViewRef(sub.ref); }}
+                            title={`${sub.name} · ${sub.steps} steps`}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
+                              padding: "4px 8px 4px 22px", marginLeft: 4,
+                              background: subActive ? "var(--panel-2)" : "transparent",
+                              boxShadow: subActive ? "inset 2px 0 0 var(--accent-2)" : "none",
+                            }}
+                          >
+                            <span style={{ color: "var(--gull-2)", font: `400 11px ${MONO}` }}>{"↳"}</span>
+                            <span style={{
+                              flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                              font: `400 11px ${MONO}`, color: subActive ? "var(--bone)" : "var(--gull-2)",
+                            }}>{sub.name}</span>
+                            <span style={{ font: `400 10px ${MONO}`, color: "var(--gull-2)" }}>{sub.steps}</span>
+                          </div>
+                        );
+                      })}
                     </React.Fragment>
                   );
-                })
-              )}
-            </div>
-          ))}
+                })}
+              </div>
+            );
+          })}
         </div>
       </aside>
 
-      {/* stream */}
-      <section className="pr-console-right">
-        <div className="pr-stream-head">
-          <div className="pr-stream-crumb">
-            <span className="pr-crumb-loc" onClick={() => setViewRef(null)}>{activeTitle}</span>
+      {/* ============ RIGHT: transcript / stream ============ */}
+      <section className="a-card" style={{ padding: 0, minHeight: 0, overflow: "hidden" }}>
+        {/* breadcrumb head */}
+        <div className="a-card-head" style={{ margin: 0, padding: "12px 16px", borderBottom: "1px solid var(--iron-border)" }}>
+          <h2 style={{ minWidth: 0 }}>
+            <span
+              onClick={() => setViewRef(null)}
+              style={{ cursor: "pointer", color: viewRef ? "var(--gull)" : "var(--bone)", textTransform: "none", letterSpacing: 0, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >
+              {activeTitle}
+            </span>
             {viewRef && (
               <>
-                <span className="pr-crumb-sep">/</span>
-                <b>{agentName(viewRef)}</b>
+                <span style={{ color: "var(--gull-2)", margin: "0 2px" }}>/</span>
+                <b style={{ color: "var(--bone)", textTransform: "none", letterSpacing: 0 }}>{agentName(viewRef)}</b>
               </>
             )}
-          </div>
-          <div className="pr-stream-stats">
-            <div className="pr-stream-stat"><span className="lbl">TURNS</span><span className="val">{active?.lines.length ?? 0}</span></div>
-          </div>
+          </h2>
+          <span className="a-card-meta">
+            {active?.lines.length ?? 0} <span style={{ color: "var(--gull-2)" }}>turns</span>
+          </span>
         </div>
 
-        <div className="pr-stream" ref={streamRef}>
+        {/* scroll container — keep ref + data-agent-ref intact */}
+        <div ref={streamRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "14px 16px" }}>
           {active && failCount(activeId) > 0 && (
-            <div className="pr-fail-banner">
-              <div className="pr-fail-banner-head" onClick={scrollToFirstFailure} title="scroll to first failure">
-                <span className="glyph">▲</span>
-                <span className="count">{failCount(activeId)}</span>
+            <div style={{ border: "1px solid var(--bad)", background: "var(--panel-2)", marginBottom: 14 }}>
+              <div
+                onClick={scrollToFirstFailure}
+                title="scroll to first failure"
+                style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "8px 12px", font: `500 11px ${MONO}`, color: "var(--bad)", textTransform: "uppercase", letterSpacing: "0.06em" }}
+              >
+                <span>{"▲"}</span>
+                <span style={{ fontWeight: 700 }}>{failCount(activeId)}</span>
                 <span>{failCount(activeId) === 1 ? "failure" : "failures"}</span>
               </div>
               {failingCalls.length > 0 && (
-                <ul className="pr-fail-list">
+                <ul style={{ listStyle: "none", margin: 0, padding: "0 0 6px" }}>
                   {failingCalls.map((c, i) => (
-                    <li key={i} className="pr-fail-item" onClick={() => scrollToAgent(c.agentRef)} title={c.errorText ?? "scroll to this call"}>
-                      <span className="pr-fail-tool">{c.name}</span>
-                      {c.filePath && <span className="pr-fail-path">{baseName(c.filePath)}</span>}
-                      {c.errorText && <span className="pr-fail-msg">{firstLine(c.errorText)}</span>}
+                    <li
+                      key={i}
+                      onClick={() => scrollToAgent(c.agentRef)}
+                      title={c.errorText ?? "scroll to this call"}
+                      style={{ display: "flex", alignItems: "baseline", gap: 8, cursor: "pointer", padding: "3px 12px", font: `400 11px ${MONO}`, overflow: "hidden" }}
+                    >
+                      <span style={{ color: "var(--bad)", fontWeight: 500, flex: "0 0 auto" }}>{c.name}</span>
+                      {c.filePath && <span style={{ color: "var(--gull)", flex: "0 0 auto" }}>{baseName(c.filePath)}</span>}
+                      {c.errorText && <span style={{ color: "var(--gull-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{firstLine(c.errorText)}</span>}
                     </li>
                   ))}
                 </ul>
@@ -362,26 +447,32 @@ export function Console() {
               <div data-agent-ref="master">
                 {masterFlow.map((item, i) => (
                   item.kind === "marker" ? (
-                    <button key={`marker-${item.ref}`} className="pr-spawn-marker" type="button"
-                      onClick={() => setViewRef(item.ref)}>
-                      ↳ spawned {agentName(item.ref)}
+                    <button
+                      key={`marker-${item.ref}`}
+                      type="button"
+                      onClick={() => setViewRef(item.ref)}
+                      style={{
+                        display: "block", margin: "8px 0", padding: "4px 10px", cursor: "pointer",
+                        background: "var(--panel-2)", border: "1px solid var(--iron-border)",
+                        color: "var(--accent-2)", font: `500 11px ${MONO}`, textAlign: "left",
+                      }}
+                    >
+                      {"↳"} spawned {agentName(item.ref)}
                     </button>
                   ) : (
                     item.line.role === "user" ? (
-                      <div key={i} className="pr-line pr-line-prompt">{item.line.text}</div>
+                      <div key={i} style={promptLineStyle}>{item.line.text}</div>
                     ) : (
-                      <div key={i} className={answerLines.has(item.line) ? "pr-answer" : undefined}>
+                      <div key={i}>
                         {toolSegs(item.line.text).map((s, j) =>
                           s.tool ? (
-                            <div key={j} className="pr-line pr-tool-line">
-                              <span className="pr-tool">
-                                <span className="pr-tool-n">{s.name}</span>
-                                {s.arg && <span className="pr-tool-a">{s.arg}</span>}
-                              </span>
+                            <div key={j} style={toolLineStyle}>
+                              <span style={{ color: "var(--accent)", fontWeight: 500 }}>{s.name}</span>
+                              {s.arg && <span style={{ color: "var(--gull-2)", marginLeft: 6 }}>{s.arg}</span>}
                             </div>
                           ) : (
                             s.text.trim() ? (
-                              <div key={j} className={answerLines.has(item.line) ? "pr-line pr-answer-text" : "pr-line pr-line-asst"}>{s.text}</div>
+                              <div key={j} style={answerLines.has(item.line) ? answerLineStyle : asstLineStyle}>{s.text}</div>
                             ) : null
                           )
                         )}
@@ -394,19 +485,17 @@ export function Console() {
               <div data-agent-ref={viewRef}>
                 {(active?.lines ?? []).filter((l) => l.agentRef === viewRef).map((l, i) => (
                   l.role === "user" ? (
-                    <div key={i} className="pr-line pr-line-prompt">{l.text}</div>
+                    <div key={i} style={promptLineStyle}>{l.text}</div>
                   ) : (
                     toolSegs(l.text).map((s, j) =>
                       s.tool ? (
-                        <div key={`${i}-${j}`} className="pr-line pr-tool-line">
-                          <span className="pr-tool">
-                            <span className="pr-tool-n">{s.name}</span>
-                            {s.arg && <span className="pr-tool-a">{s.arg}</span>}
-                          </span>
+                        <div key={`${i}-${j}`} style={toolLineStyle}>
+                          <span style={{ color: "var(--accent)", fontWeight: 500 }}>{s.name}</span>
+                          {s.arg && <span style={{ color: "var(--gull-2)", marginLeft: 6 }}>{s.arg}</span>}
                         </div>
                       ) : (
                         s.text.trim() ? (
-                          <div key={`${i}-${j}`} className="pr-line pr-line-asst">{s.text}</div>
+                          <div key={`${i}-${j}`} style={asstLineStyle}>{s.text}</div>
                         ) : null
                       )
                     )
@@ -417,31 +506,46 @@ export function Console() {
           )}
         </div>
 
+        {/* tool-call timeline */}
         {activeCalls.length > 0 && (
-          <div className={`pr-timeline${timelineOpen ? " is-open" : ""}`}>
-            <button className="pr-timeline-head" type="button" onClick={() => setTimelineOpen((v) => !v)}>
-              <span className="pr-timeline-title">TIMELINE</span>
-              <span className="pr-timeline-sub">{activeCalls.length} calls · {lanes.length} {lanes.length === 1 ? "lane" : "lanes"}</span>
+          <div style={{ borderTop: "1px solid var(--iron-border)", background: "var(--panel)" }}>
+            <button
+              type="button"
+              onClick={() => setTimelineOpen((v) => !v)}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
+                background: "transparent", border: 0, padding: "8px 16px", textAlign: "left",
+                font: `500 10px ${MONO}`, color: "var(--gull)", textTransform: "uppercase", letterSpacing: "0.1em",
+              }}
+            >
+              <span style={{ color: "var(--bone)" }}>{timelineOpen ? "▾" : "▸"} Timeline</span>
+              <span style={{ color: "var(--gull-2)", letterSpacing: "0.04em" }}>
+                {activeCalls.length} calls · {lanes.length} {lanes.length === 1 ? "lane" : "lanes"}
+              </span>
             </button>
             {timelineOpen && (
-              <div className="pr-timeline-body">
-                <div className="pr-timeline-axis"><span>t+0s</span><span>t+{(span.ms / 1000).toFixed(1)}s</span></div>
+              <div style={{ padding: "0 16px 14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", font: `500 10px ${MONO}`, color: "var(--gull-2)", margin: "0 0 6px" }}>
+                  <span>t+0s</span><span>t+{(span.ms / 1000).toFixed(1)}s</span>
+                </div>
                 {lanes.map((ref) => (
-                  <div key={ref} className="pr-timeline-lane">
-                    <span className="pr-timeline-lane-label" title={laneName(ref)}>{laneName(ref)}</span>
-                    <div className="pr-timeline-track">
+                  <div key={ref} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span
+                      title={laneName(ref)}
+                      style={{ width: 90, flex: "0 0 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", font: `400 10px ${MONO}`, color: "var(--gull)" }}
+                    >{laneName(ref)}</span>
+                    <div style={{ position: "relative", flex: 1, height: 14, background: "var(--panel-2)", border: "1px solid var(--iron-border)" }}>
                       {activeCalls.filter((c) => c.agentRef === ref).map((c, i) => {
                         const { t0, ms } = span;
                         const end = c.endMs ?? now;
                         const left = ((c.startMs - t0) / ms) * 100;
                         const width = ((end - c.startMs) / ms) * 100;
                         const dur = c.endMs ? `${c.endMs - c.startMs}ms` : "running…";
-                        const cls = c.status === "ok" ? "is-ok" : c.status === "error" ? "is-error" : "is-running";
+                        const barColor = c.status === "ok" ? "var(--good)" : c.status === "error" ? "var(--bad)" : "var(--accent)";
                         return (
                           <div
                             key={i}
-                            className={`pr-timeline-bar ${cls}`}
-                            style={{ left: `${left}%`, width: `${Math.max(width, 0)}%` }}
+                            style={{ position: "absolute", top: 1, bottom: 1, left: `${left}%`, width: `${Math.max(width, 0.5)}%`, background: barColor, cursor: "pointer", minWidth: 2 }}
                             title={`${c.name}${c.filePath ? ` ${c.filePath}` : ""} · ${dur}`}
                             onClick={() => scrollToAgent(ref)}
                           />
@@ -455,27 +559,42 @@ export function Console() {
           </div>
         )}
 
-        <form className="pr-inputbar" onSubmit={submit}>
-          <div className="pr-launch-opts">
+        {/* input bar */}
+        <form
+          onSubmit={submit}
+          style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "10px 16px", borderTop: "1px solid var(--iron-border)", background: "var(--panel)" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             {locked ? (
               <>
-                <span className="pr-cwd-chip is-locked" title={activeSess?.cwd ?? "app working directory"}>
+                <span className="a-pill-btn is-active" title={activeSess?.cwd ?? "app working directory"} style={{ cursor: "default" }}>
                   {activeSess?.cwd ? cwdLabel(activeSess.cwd) : "cwd: default"}
                 </span>
-                <span className="pr-model-chip is-locked">{activeSess?.model ?? "default"}</span>
+                <span className="a-pill-btn is-active" style={{ cursor: "default" }}>{activeSess?.model ?? "default"}</span>
               </>
             ) : (
               <>
-                <button type="button" className="pr-cwd-chip" onClick={pickCwd} disabled={activeRunning}
-                  title={cwd ?? appDir ?? "run in app's working directory"}>
-                  <span className="pr-cwd-label">{cwd ? cwdLabel(cwd) : appDir ? cwdLabel(appDir) : "cwd: default"}</span>
+                <button
+                  type="button" className="a-pill-btn" onClick={pickCwd} disabled={activeRunning}
+                  title={cwd ?? appDir ?? "run in app's working directory"}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: activeRunning ? 0.5 : 1 }}
+                >
+                  <span>{cwd ? cwdLabel(cwd) : appDir ? cwdLabel(appDir) : "cwd: default"}</span>
                   {cwd && (
-                    <span className="pr-cwd-clear" role="button" aria-label="clear working directory"
-                      onClick={(e) => { e.stopPropagation(); if (!activeRunning) setCwd(undefined); }}>×</span>
+                    <span
+                      role="button" aria-label="clear working directory"
+                      onClick={(e) => { e.stopPropagation(); if (!activeRunning) setCwd(undefined); }}
+                      style={{ color: "var(--gull-2)", cursor: "pointer" }}
+                    >{"×"}</span>
                   )}
                 </button>
-                <select className="pr-model-select" value={model} disabled={activeRunning}
-                  onChange={(e) => setModel(e.currentTarget.value)}>
+                <select
+                  className="a-text-input"
+                  value={model}
+                  disabled={activeRunning}
+                  onChange={(e) => setModel(e.currentTarget.value)}
+                  style={{ flex: "0 0 auto", width: "auto", padding: "4px 8px", fontSize: 11, cursor: "pointer" }}
+                >
                   <option value="default">default</option>
                   <option value="opus">opus</option>
                   <option value="sonnet">sonnet</option>
@@ -484,17 +603,28 @@ export function Console() {
               </>
             )}
           </div>
-          <div className="pr-input-wrap">
-            <span className="pr-input-ps">$</span>
+          <div className="a-search-prompt" style={{ flex: 1, minWidth: 200 }}>
+            <span className="a-search-prompt-glyph">$</span>
             <input
-              className="pr-input"
+              className="a-search"
+              style={{ flex: 1, minWidth: 0, width: "100%" }}
               value={prompt}
               onChange={(e) => setPrompt(e.currentTarget.value)}
               placeholder={activeRunning ? "running…" : canContinue ? "continue…" : "ask Claude (this machine)…"}
               disabled={activeRunning}
             />
           </div>
-          <button className={`pr-run${activeRunning ? " is-running" : ""}`} type="submit" disabled={activeRunning}>
+          <button
+            className={`a-pill-btn${activeRunning ? "" : " is-active"}`}
+            type="submit"
+            disabled={activeRunning}
+            style={{
+              padding: "6px 16px",
+              borderColor: activeRunning ? "var(--iron-border)" : "var(--accent)",
+              color: activeRunning ? "var(--gull-2)" : "var(--accent)",
+              opacity: activeRunning ? 0.7 : 1,
+            }}
+          >
             {activeRunning ? "RUNNING" : canContinue ? "CONTINUE" : "RUN"}
           </button>
         </form>

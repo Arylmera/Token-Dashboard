@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-close-widget"
+description = "Enables the close_widget command without any pre-configured scope."
+commands.allow = ["close_widget"]
+
+[[permission]]
+identifier = "deny-close-widget"
+description = "Denies the close_widget command without any pre-configured scope."
+commands.deny = ["close_widget"]

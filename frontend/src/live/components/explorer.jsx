@@ -10,19 +10,21 @@ const SUBS = ["files", "map", "sessions"];
 export function Explorer() {
   const sub = useStore(subStore);
   return (
-    <div className="pr-explorer">
-      <div className="pr-subnav">
+    <div className="a-explorer">
+      <div className="a-pill-btn-row" role="tablist" style={{ marginBottom: "12px" }}>
         {SUBS.map((s) => (
           <button
             key={s}
-            className={sub === s ? "is-active" : ""}
+            className={["a-pill-btn", sub === s && "is-active"].filter(Boolean).join(" ")}
+            role="tab"
+            aria-selected={sub === s}
             onClick={() => setSub(s)}
           >
             {s}
           </button>
         ))}
       </div>
-      <div className="pr-explorer-pane">
+      <div className="a-explorer-pane">
         {sub === "files" && <Files />}
         {sub === "map" && <MapView />}
         {sub === "sessions" && <Sessions />}

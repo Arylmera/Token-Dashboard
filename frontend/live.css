@@ -45,35 +45,16 @@
    override only the var layer; every component reads these tokens.
    ============================================================ */
 .pr-root {
-  /* Surfaces â€” ink-slate page, carbon panels. -solid indirection lets
-     glass mode redefine the consumer var as a color-mix(solid, transparent). */
-  --bg:            #0A0E14;
-  --panel-solid:   #11171F;
-  --panel-2-solid: #161D27;
-  --panel:         var(--panel-solid);
-  --panel-2:       var(--panel-2-solid);
-
-  /* Borders */
-  --iron-border:   #1F2630;
-  --iron-border-2: #283040;
-
-  /* Text */
-  --bone:    #E6EDF3;
-  --gull:    #8B98A6;
-  --gull-2:  #5A6573;
-
-  /* Accents â€” one console-blue brand, â‰¤10% of screen */
-  --accent:    #4A9EFF;
-  --accent-2:  #8B98A6;
-
-  /* Semantic status */
-  --good: #8B98A6;
-  --pos:  #4A9EFF;
-  --warn: #E8A23B;
-  --bad:  #E5484D;
-
-  /* Dot-grid background â€” 1px dot at 8Ã—8px spacing */
-  --grid-dot: rgba(255,255,255,0.025);
+  /* ---- THEME COLOR TOKENS ----
+     Live is mounted inside `.dir-a-root.theme-X` (frontend/styles.css), which
+     declares this exact token vocabulary (--bg / --panel / --panel-solid /
+     --panel-2-solid / --iron-border(-2) / --bone / --gull(-2) / --accent(-2) /
+     --good / --pos / --warn / --bad / --grid-dot). We deliberately DO NOT
+     redeclare them here so they cascade in from the active dashboard theme and
+     Live auto-follows every present and future theme with one rule set.
+     The standalone pop-out window (#live-window) has NO `.dir-a-root` ancestor,
+     so the `.td-live-window-body .pr-root` block below restores a full default
+     palette + per-theme overrides for that case only. See bottom of section 1. */
 
   /* Type families */
   --font-prose: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -140,24 +121,59 @@
   font-feature-settings: "cv11", "ss01";
 }
 
-/* ===== Light themes ===== */
-.pr-root[data-theme="paper"]       { --bg:#F7F9FC; --panel-solid:#FFFFFF; --panel-2-solid:#F1F4F9; --iron-border:#E5EAF1; --iron-border-2:#CDD5E0; --bone:#1A2330; --gull:#5A6573; --gull-2:#94A0AE; --accent:#2F7FDB; --accent-2:#5A6573; --good:#5A6573; --pos:#2F7FDB; --grid-dot: rgba(0,0,0,0.025); }
-.pr-root[data-theme="linen"]       { --bg:#F5EFE4; --panel-solid:#FCF7EC; --panel-2-solid:#EFE7D6; --iron-border:#DDD0B5; --iron-border-2:#C8B898; --bone:#3A2E1C; --gull:#7A6A4E; --gull-2:#A89878; --accent:#A85528; --accent-2:#7A6A4E; --good:#7A6A4E; --pos:#A85528; --grid-dot: rgba(58,46,28,0.025); }
-.pr-root[data-theme="mint"]        { --bg:#ECF6EF; --panel-solid:#F8FCF9; --panel-2-solid:#E2EFE7; --iron-border:#C5DBCD; --iron-border-2:#A4C5B0; --bone:#1B3A2A; --gull:#4F7A63; --gull-2:#85A695; --accent:#0F9669; --accent-2:#4F7A63; --good:#4F7A63; --pos:#0F9669; --grid-dot: rgba(27,58,42,0.025); }
-.pr-root[data-theme="lilac"]       { --bg:#F2EEF8; --panel-solid:#FAF7FF; --panel-2-solid:#EAE2F4; --iron-border:#D2C5E2; --iron-border-2:#B5A4CD; --bone:#2D1F47; --gull:#6E5C90; --gull-2:#9F90BC; --accent:#7449F0; --accent-2:#6E5C90; --good:#6E5C90; --pos:#7449F0; --grid-dot: rgba(45,31,71,0.025); }
-.pr-root[data-theme="bb-light"]    { --bg:#F4EFC8; --panel-solid:#FAF7DD; --panel-2-solid:#EBE5B5; --iron-border:#D8D196; --iron-border-2:#A6A65B; --bone:#12140F; --gull:#6A7220; --gull-2:#A6A65B; --accent:#1F5C36; --accent-2:#A89A1A; --good:#6A7220; --pos:#1F5C36; --grid-dot: rgba(18,20,15,0.025); }
-.pr-root[data-theme="cyber-light"] { --bg:#F2EAE5; --panel-solid:#FBF5F2; --panel-2-solid:#E8DCD5; --iron-border:#D5C4D6; --iron-border-2:#B5A0BC; --bone:#272932; --gull:#6B52A0; --gull-2:#9370DB; --accent:#BE2BBE; --accent-2:#0E94B0; --good:#0F8A78; --pos:#BE2BBE; --warn:#B89500; --bad:#710000; --grid-dot: rgba(39,41,50,0.025); }
+/* ============================================================
+   STANDALONE FALLBACK PALETTE
+   These full palettes apply ONLY in the popped-out Live window
+   (#live-window → body.td-live-window-body), which renders `.pr-root`
+   with NO `.dir-a-root` ancestor, so the cascade has no theme tokens to
+   inherit. When Live is docked inside the dashboard shell, body has no
+   `.td-live-window-body` class and these rules don't match, leaving the
+   inherited `.dir-a-root.theme-X` tokens in force (theme-follow).
+   The bare (no data-theme) standalone default is the dark baseline. */
+.td-live-window-body .pr-root {
+  --bg:            #0A0E14;
+  --panel-solid:   #11171F;
+  --panel-2-solid: #161D27;
+  --panel:         var(--panel-solid);
+  --panel-2:       var(--panel-2-solid);
+  --iron-border:   #1F2630;
+  --iron-border-2: #283040;
+  --bone:    #E6EDF3;
+  --gull:    #8B98A6;
+  --gull-2:  #5A6573;
+  --accent:    #4A9EFF;
+  --accent-2:  #8B98A6;
+  --good: #8B98A6;
+  --pos:  #4A9EFF;
+  --warn: #E8A23B;
+  --bad:  #E5484D;
+  --grid-dot: rgba(255,255,255,0.025);
+}
 
-/* ===== Dark themes ===== */
-.pr-root[data-theme="forge"]      { --bg:#14100C; --panel-solid:#1A140E; --panel-2-solid:#221A12; --iron-border:#2D2419; --iron-border-2:#3A2E1F; --bone:#F5E8D8; --gull:#B89578; --gull-2:#7A6049; --accent:#ED7E3F; --accent-2:#B89578; --good:#A8956B; --pos:#ED7E3F; --grid-dot: rgba(245,232,216,0.025); }
-.pr-root[data-theme="forest"]     { --bg:#0C1410; --panel-solid:#0F1A14; --panel-2-solid:#13221B; --iron-border:#1F2D24; --iron-border-2:#2A3D31; --bone:#E0F0E5; --gull:#8FB39C; --gull-2:#5C7A68; --accent:#5CBC7A; --accent-2:#8FB39C; --good:#6FA88A; --pos:#5CBC7A; --grid-dot: rgba(224,240,229,0.025); }
-.pr-root[data-theme="dusk"]       { --bg:#0F0D1A; --panel-solid:#171326; --panel-2-solid:#1F1A33; --iron-border:#2A2342; --iron-border-2:#3A3056; --bone:#ECE6FF; --gull:#A296C9; --gull-2:#6E6391; --accent:#A77FF0; --accent-2:#A296C9; --good:#A296C9; --pos:#A77FF0; --grid-dot: rgba(236,230,255,0.025); }
-.pr-root[data-theme="ocean"]      { --bg:#07131A; --panel-solid:#0B1B26; --panel-2-solid:#0F2533; --iron-border:#163240; --iron-border-2:#214458; --bone:#DCEFF7; --gull:#7FA9BB; --gull-2:#54798A; --accent:#36C2C2; --accent-2:#7FA9BB; --good:#7FA9BB; --pos:#36C2C2; --grid-dot: rgba(220,239,247,0.025); }
-.pr-root[data-theme="matrix"]     { --bg:#000805; --panel-solid:#031410; --panel-2-solid:#062019; --iron-border:#0B3024; --iron-border-2:#114A38; --bone:#B8FFD0; --gull:#3FBF7A; --gull-2:#1F7A4A; --accent:#1FE26F; --accent-2:#3FBF7A; --good:#3FBF7A; --pos:#1FE26F; --grid-dot: rgba(0,255,102,0.04); }
-.pr-root[data-theme="rose"]       { --bg:#1A0A12; --panel-solid:#22101A; --panel-2-solid:#2D1622; --iron-border:#3D1F2D; --iron-border-2:#502A3D; --bone:#FFE2EC; --gull:#C68DA3; --gull-2:#8A5C70; --accent:#F4598F; --accent-2:#C68DA3; --good:#C68DA3; --pos:#F4598F; --grid-dot: rgba(255,226,236,0.025); }
-.pr-root[data-theme="bb-dark"]    { --bg:#0A0E08; --panel-solid:#12140F; --panel-2-solid:#1A1D14; --iron-border:#2A301F; --iron-border-2:#3D4628; --bone:#F0E8B8; --gull:#A6A65B; --gull-2:#6A7220; --accent:#DCC81A; --accent-2:#1B5530; --good:#A6A65B; --pos:#DCC81A; --grid-dot: rgba(233,215,27,0.03); }
-.pr-root[data-theme="cyber-dark"] { --bg:#0A0710; --panel-solid:#1A1B26; --panel-2-solid:#272932; --iron-border:#3D2D5C; --iron-border-2:#5C4A8A; --bone:#D1C5C0; --gull:#9370DB; --gull-2:#6B52A0; --accent:#BB22BD; --accent-2:#37EBF3; --good:#1AC5B0; --pos:#BB22BD; --warn:#FDF500; --bad:#E455AE; --grid-dot: rgba(203,29,205,0.04); }
-.pr-root[data-theme="dim"]        { --bg:#0F1318; --panel-solid:#13181F; --panel-2-solid:#181E27; --iron-border:#222A35; --iron-border-2:#2F3B4A; --bone:#C7CFD8; --gull:#8E97A3; --gull-2:#5E6772; --accent:#4A9EFF; --accent-2:#8E97A3; --good:#8E97A3; --pos:#4A9EFF; --grid-dot: rgba(199,207,216,0.025); }
+/* ===== Light themes (standalone only) ===== */
+.td-live-window-body .pr-root[data-theme="paper"]       { --bg:#F7F9FC; --panel-solid:#FFFFFF; --panel-2-solid:#F1F4F9; --iron-border:#E5EAF1; --iron-border-2:#CDD5E0; --bone:#1A2330; --gull:#5A6573; --gull-2:#94A0AE; --accent:#2F7FDB; --accent-2:#5A6573; --good:#5A6573; --pos:#2F7FDB; --grid-dot: rgba(0,0,0,0.025); }
+.td-live-window-body .pr-root[data-theme="linen"]       { --bg:#F5EFE4; --panel-solid:#FCF7EC; --panel-2-solid:#EFE7D6; --iron-border:#DDD0B5; --iron-border-2:#C8B898; --bone:#3A2E1C; --gull:#7A6A4E; --gull-2:#A89878; --accent:#A85528; --accent-2:#7A6A4E; --good:#7A6A4E; --pos:#A85528; --grid-dot: rgba(58,46,28,0.025); }
+.td-live-window-body .pr-root[data-theme="mint"]        { --bg:#ECF6EF; --panel-solid:#F8FCF9; --panel-2-solid:#E2EFE7; --iron-border:#C5DBCD; --iron-border-2:#A4C5B0; --bone:#1B3A2A; --gull:#4F7A63; --gull-2:#85A695; --accent:#0F9669; --accent-2:#4F7A63; --good:#4F7A63; --pos:#0F9669; --grid-dot: rgba(27,58,42,0.025); }
+.td-live-window-body .pr-root[data-theme="lilac"]       { --bg:#F2EEF8; --panel-solid:#FAF7FF; --panel-2-solid:#EAE2F4; --iron-border:#D2C5E2; --iron-border-2:#B5A4CD; --bone:#2D1F47; --gull:#6E5C90; --gull-2:#9F90BC; --accent:#7449F0; --accent-2:#6E5C90; --good:#6E5C90; --pos:#7449F0; --grid-dot: rgba(45,31,71,0.025); }
+.td-live-window-body .pr-root[data-theme="bb-light"]    { --bg:#F4EFC8; --panel-solid:#FAF7DD; --panel-2-solid:#EBE5B5; --iron-border:#D8D196; --iron-border-2:#A6A65B; --bone:#12140F; --gull:#6A7220; --gull-2:#A6A65B; --accent:#1F5C36; --accent-2:#A89A1A; --good:#6A7220; --pos:#1F5C36; --grid-dot: rgba(18,20,15,0.025); }
+.td-live-window-body .pr-root[data-theme="cyber-light"] { --bg:#F2EAE5; --panel-solid:#FBF5F2; --panel-2-solid:#E8DCD5; --iron-border:#D5C4D6; --iron-border-2:#B5A0BC; --bone:#272932; --gull:#6B52A0; --gull-2:#9370DB; --accent:#BE2BBE; --accent-2:#0E94B0; --good:#0F8A78; --pos:#BE2BBE; --warn:#B89500; --bad:#710000; --grid-dot: rgba(39,41,50,0.025); }
+
+/* ===== Dark themes (standalone only) ===== */
+.td-live-window-body .pr-root[data-theme="forge"]      { --bg:#14100C; --panel-solid:#1A140E; --panel-2-solid:#221A12; --iron-border:#2D2419; --iron-border-2:#3A2E1F; --bone:#F5E8D8; --gull:#B89578; --gull-2:#7A6049; --accent:#ED7E3F; --accent-2:#B89578; --good:#A8956B; --pos:#ED7E3F; --grid-dot: rgba(245,232,216,0.025); }
+.td-live-window-body .pr-root[data-theme="forest"]     { --bg:#0C1410; --panel-solid:#0F1A14; --panel-2-solid:#13221B; --iron-border:#1F2D24; --iron-border-2:#2A3D31; --bone:#E0F0E5; --gull:#8FB39C; --gull-2:#5C7A68; --accent:#5CBC7A; --accent-2:#8FB39C; --good:#6FA88A; --pos:#5CBC7A; --grid-dot: rgba(224,240,229,0.025); }
+.td-live-window-body .pr-root[data-theme="dusk"]       { --bg:#0F0D1A; --panel-solid:#171326; --panel-2-solid:#1F1A33; --iron-border:#2A2342; --iron-border-2:#3A3056; --bone:#ECE6FF; --gull:#A296C9; --gull-2:#6E6391; --accent:#A77FF0; --accent-2:#A296C9; --good:#A296C9; --pos:#A77FF0; --grid-dot: rgba(236,230,255,0.025); }
+.td-live-window-body .pr-root[data-theme="ocean"]      { --bg:#07131A; --panel-solid:#0B1B26; --panel-2-solid:#0F2533; --iron-border:#163240; --iron-border-2:#214458; --bone:#DCEFF7; --gull:#7FA9BB; --gull-2:#54798A; --accent:#36C2C2; --accent-2:#7FA9BB; --good:#7FA9BB; --pos:#36C2C2; --grid-dot: rgba(220,239,247,0.025); }
+.td-live-window-body .pr-root[data-theme="matrix"]     { --bg:#000805; --panel-solid:#031410; --panel-2-solid:#062019; --iron-border:#0B3024; --iron-border-2:#114A38; --bone:#B8FFD0; --gull:#3FBF7A; --gull-2:#1F7A4A; --accent:#1FE26F; --accent-2:#3FBF7A; --good:#3FBF7A; --pos:#1FE26F; --grid-dot: rgba(0,255,102,0.04); }
+.td-live-window-body .pr-root[data-theme="rose"]       { --bg:#1A0A12; --panel-solid:#22101A; --panel-2-solid:#2D1622; --iron-border:#3D1F2D; --iron-border-2:#502A3D; --bone:#FFE2EC; --gull:#C68DA3; --gull-2:#8A5C70; --accent:#F4598F; --accent-2:#C68DA3; --good:#C68DA3; --pos:#F4598F; --grid-dot: rgba(255,226,236,0.025); }
+.td-live-window-body .pr-root[data-theme="bb-dark"]    { --bg:#0A0E08; --panel-solid:#12140F; --panel-2-solid:#1A1D14; --iron-border:#2A301F; --iron-border-2:#3D4628; --bone:#F0E8B8; --gull:#A6A65B; --gull-2:#6A7220; --accent:#DCC81A; --accent-2:#1B5530; --good:#A6A65B; --pos:#DCC81A; --grid-dot: rgba(233,215,27,0.03); }
+.td-live-window-body .pr-root[data-theme="cyber-dark"] { --bg:#0A0710; --panel-solid:#1A1B26; --panel-2-solid:#272932; --iron-border:#3D2D5C; --iron-border-2:#5C4A8A; --bone:#D1C5C0; --gull:#9370DB; --gull-2:#6B52A0; --accent:#BB22BD; --accent-2:#37EBF3; --good:#1AC5B0; --pos:#BB22BD; --warn:#FDF500; --bad:#E455AE; --grid-dot: rgba(203,29,205,0.04); }
+.td-live-window-body .pr-root[data-theme="dim"]        { --bg:#0F1318; --panel-solid:#13181F; --panel-2-solid:#181E27; --iron-border:#222A35; --iron-border-2:#2F3B4A; --bone:#C7CFD8; --gull:#8E97A3; --gull-2:#5E6772; --accent:#4A9EFF; --accent-2:#8E97A3; --good:#8E97A3; --pos:#4A9EFF; --grid-dot: rgba(199,207,216,0.025); }
+
+/* ===== Special themes (standalone only) — palette layer only; the dashboard's
+   ambient canvas + display fonts are out of scope for the Live pop-out. ===== */
+.td-live-window-body .pr-root[data-theme="terminal"] { --bg:#020806; --panel-solid:#04140d; --panel-2-solid:#062418; --iron-border:#0a3a26; --iron-border-2:#0f5239; --bone:#b7ffce; --gull:#4ddc7d; --gull-2:#2e8a4f; --accent:#36ff7a; --accent-2:#4ddc7d; --good:#4ddc7d; --pos:#36ff7a; --bad:#ff4d4d; --grid-dot: rgba(54,255,122,0.03); }
+.td-live-window-body .pr-root[data-theme="cockpit"]  { --bg:#04080f; --panel-solid:rgba(10,26,44,0.82); --panel-2-solid:rgba(14,36,60,0.85); --iron-border:#0e3a5c; --iron-border-2:#1a5688; --bone:#d3ebff; --gull:#6b9cc4; --gull-2:#466884; --accent:#00d4ff; --accent-2:#ffaa00; --good:#6b9cc4; --pos:#00d4ff; --bad:#ff4a6b; --grid-dot: rgba(0,212,255,0.025); }
+.td-live-window-body .pr-root[data-theme="grimdark"] { --bg:#0a0807; --panel-solid:#181311; --panel-2-solid:#221814; --iron-border:#3a261c; --iron-border-2:#5a3a26; --bone:#e8d5b0; --gull:#a08566; --gull-2:#6e5640; --accent:#c8a24a; --accent-2:#b8231a; --good:#a08566; --pos:#c8a24a; --bad:#b8231a; --grid-dot: rgba(232,213,176,0.022); }
 
 /* ===== Glass mode â€” translucent panels over OS vibrancy (Tauri) ===== */
 .pr-root.is-glass {
@@ -240,6 +256,23 @@
 .pr-navlink:hover, .pr-navlink.is-active { color: var(--bone); }
 .pr-navlink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; color: var(--bone); }
 .pr-navlink.is-active::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: -13px; height: 2px; background: var(--accent); }
+
+/* ── ☰ view switcher (hamburger menu in the Live brand bar) ───────────────── */
+.pr-hamburger { position: relative; display: inline-flex; flex: none; }
+.pr-hamburger-trigger { display: inline-flex; align-items: center; gap: 8px; }
+.pr-hamburger-trigger .pr-hamburger-icon { font-size: 14px; line-height: 1; }
+.pr-hamburger-current { text-transform: uppercase; letter-spacing: 0.06em; }
+.pr-hamburger-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+  display: flex; flex-direction: column; min-width: 160px;
+  padding: 4px; gap: 2px;
+  background: var(--panel-solid, var(--panel)); border: 1px solid var(--iron-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.pr-hamburger-menu .pr-navlink { text-align: left; padding: 8px 12px; }
+.pr-hamburger-menu .pr-navlink.is-active { background: var(--panel-2); color: var(--bone); }
+/* the brand-bar underline indicator is meaningless in a vertical dropdown */
+.pr-hamburger-menu .pr-navlink.is-active::after { display: none; }
 
 .pr-topbar-actions { display: flex; gap: 8px; align-items: center; }
 .pr-brand-sub { font: var(--t-brand-sub); color: var(--gull-2); margin-right: 4px; }

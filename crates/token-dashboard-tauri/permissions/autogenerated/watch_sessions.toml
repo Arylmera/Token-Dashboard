@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-watch-sessions"
+description = "Enables the watch_sessions command without any pre-configured scope."
+commands.allow = ["watch_sessions"]
+
+[[permission]]
+identifier = "deny-watch-sessions"
+description = "Denies the watch_sessions command without any pre-configured scope."
+commands.deny = ["watch_sessions"]

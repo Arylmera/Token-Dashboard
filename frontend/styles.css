@@ -74,6 +74,7 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
 .dir-a-root.is-glass .a-kpi-row,
 .dir-a-root.is-glass .a-strip,
 .dir-a-root.is-glass .a-topbar,
+.dir-a-root.is-glass .a-live-titlebar,
 .dir-a-root.is-glass .a-sticky-head thead th {
   /* The translucent --panel above already gives the bg; the blur is what
      turns it into a frosted-glass surface over the OS vibrancy. Saturate
@@ -86,6 +87,9 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
 .dir-a-root.is-glass .a-table tbody tr {
   background: transparent;
 }
+/* Pop-out window: let the OS acrylic show through when glass is on (the
+   window otherwise paints an opaque var(--bg)). */
+.dir-a-root.is-glass .a-live-window { background: transparent; }
 .a-glass-slider { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
 .a-glass-slider-head { display: flex; justify-content: space-between; align-items: baseline; }
 .a-glass-slider input[type="range"] {
@@ -128,6 +132,10 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
   --warn: #E8A23B;
   --bad: #E5484D;
   --grid-dot: rgba(255,255,255,0.025);
+  /* Default mono font token. Themes (terminal/cockpit/grimdark) override this;
+     defining it here means var(--font-mono) always resolves (no Inter fallback)
+     for the Live views and anything else that consumes it. */
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
   /* Reserve space for native window controls. Tauri shell uses decorations(false)
      and draws its own controls inside .a-wincontrols, so no OS reservation is
      needed. Browser mode also gets 0 via the body fallback. macOS still reserves
@@ -140,7 +148,7 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
     var(--bg);
   color: var(--bone);
   font: 400 12.5px/1.55 "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-feature-settings: "cv11", "ss01";
+  font-feature-settings: normal;
   font-variant-numeric: tabular-nums;
 }
 /* Light themes use hairline borders (1px on near-paper surfaces),
@@ -247,6 +255,76 @@ html:has(.dir-a-root.is-glass), body:has(.dir-a-root.is-glass) { background: tra
 .a-rail-label { opacity: 0; transition: opacity 120ms; }
 .a-rail.is-expanded .a-rail-label { opacity: 1; }
 .a-rail-burger { display: none; }
+
+/* ── Live tab: secondary nav rail (mirrors the main .a-rail) + view ────────── */
+/* Break out of the .a-main-area 20px padding so the sub-rail sits flush against
+   the main nav bar (no gap), reading as an attached submenu / second column. */
+.a-live-shell { display: flex; align-items: stretch; gap: 0; margin: -20px; min-height: calc(100vh - 49px); }
+.a-live-view { flex: 1; min-width: 0; padding: 20px; }
+/* Slim sub-rail that expands on hover, exactly like the main nav bar. Reuses
+   the .a-rail-nav / .a-rail-link / .a-rail-ico / .a-rail-label classes. No box
+   border — just a hairline right divider and the same panel background as the
+   main rail, so the two merge into one continuous navigation column. */
+.a-live-subrail {
+  flex: 0 0 52px; width: 52px; align-self: stretch;
+  display: flex; flex-direction: column;
+  background: var(--panel); border: 0; border-right: 1px solid var(--iron-border);
+  overflow: hidden; transition: width 160ms ease, flex-basis 160ms ease;
+}
+.a-live-subrail.is-expanded { flex-basis: 190px; width: 190px; }
+.a-live-subrail .a-rail-nav { padding: 8px 0; }
+.a-live-subrail .a-rail-label { opacity: 0; transition: opacity 120ms; }
+.a-live-subrail.is-expanded .a-rail-label { opacity: 1; }
+/* Pop-out launcher pinned to the bottom of the sub-rail, styled like a rail
+   nav item (reuses .a-rail-link/.a-rail-ico/.a-rail-label). */
+.a-rail-popout {
+  margin-top: auto; margin-bottom: 8px;
+  border-top: 1px solid var(--iron-border);
+}
+/* Pop-out window: custom title bar (drag + controls) over a scrollable body. */
+.a-live-window { height: 100vh; background: var(--bg); display: flex; flex-direction: column; box-sizing: border-box; }
+.a-live-window-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 20px; box-sizing: border-box; }
+.a-live-titlebar {
+  flex: 0 0 auto; display: flex; align-items: center; height: 36px;
+  padding-left: 14px; background: var(--panel); border-bottom: 1px solid var(--iron-border);
+  user-select: none;
+}
+.a-live-titlebar-title { font: 500 11px "JetBrains Mono"; text-transform: uppercase; letter-spacing: 0.08em; color: var(--gull); white-space: nowrap; }
+.a-live-titlebar-drag { flex: 1 1 auto; align-self: stretch; }
+.a-live-wincontrols { display: flex; flex: 0 0 auto; }
+.a-live-winbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 36px; background: transparent; border: 0; color: var(--gull);
+  cursor: pointer; transition: background 100ms, color 100ms;
+}
+.a-live-winbtn:hover { background: var(--panel-2); color: var(--bone); }
+.a-live-winbtn-close:hover { background: var(--bad); color: #fff; }
+
+/* Placeholder shown in the docked tab while Live runs in its own window. */
+.a-live-detached {
+  display: flex; align-items: center; justify-content: center;
+  min-height: calc(100vh - 120px); padding: 24px;
+}
+.a-live-detached-card {
+  max-width: 420px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 28px 32px;
+}
+.a-live-detached-title {
+  color: var(--bone); font: 600 14px "JetBrains Mono";
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.a-live-detached-sub { color: var(--gull); font: 400 12px "JetBrains Mono"; line-height: 1.6; }
+.a-live-detached-btn {
+  margin-top: 6px; cursor: pointer;
+  background: var(--panel); color: var(--bone);
+  border: 1px solid var(--iron-border); border-radius: 6px;
+  padding: 8px 16px; font: 500 12px "JetBrains Mono";
+  text-transform: uppercase; letter-spacing: 0.06em;
+  transition: border-color 120ms, color 120ms;
+}
+.a-live-detached-btn:hover { border-color: var(--accent); color: var(--accent); }
+.a-live-detached-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* window-resize handles */
 .a-resize-layer { position: fixed; inset: 0; pointer-events: none; }
@@ -620,7 +698,7 @@ body.td-setup-help-body #root { height: 100%; }
   display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px;
   gap: 14px; flex-wrap: wrap;
 }
-.a-card-head h2 { margin: 0; font: 500 11px "JetBrains Mono"; text-transform: uppercase; letter-spacing: 0.1em; color: var(--bone); display: inline-flex; align-items: center; gap: 10px; }
+.a-card-head h2 { margin: 0; font: 400 11px "JetBrains Mono"; text-transform: uppercase; letter-spacing: 0.1em; color: var(--bone); display: inline-flex; align-items: center; gap: 10px; }
 .a-card-head h2::before { content: ""; display: inline-block; width: 16px; height: 2px; background: var(--accent); flex: 0 0 auto; }
 .a-card-meta { font: 500 11px "JetBrains Mono"; color: var(--gull); }
 .a-card-divider { height: 1px; background: var(--iron-border); margin: 16px 0; }
@@ -871,6 +949,16 @@ body.td-setup-help-body #root { height: 100%; }
 }
 .a-search:focus { border-color: var(--accent); }
 
+/* Generic native text input / select (used by the Live console rename field,
+   model picker, etc.) — same surface idiom as .a-search. */
+.a-text-input {
+  background: var(--panel-2); border: 1px solid var(--iron-border);
+  color: var(--bone); font: 500 12px "JetBrains Mono";
+  padding: 6px 10px; border-radius: 0; outline: none;
+}
+.a-text-input:focus { border-color: var(--accent); }
+.a-text-input::placeholder { color: var(--gull-2); }
+
 /* Sessions filter input with leading prompt glyph */
 .a-search-prompt {
   display: inline-flex; align-items: center;
@@ -922,7 +1010,7 @@ body.td-setup-help-body #root { height: 100%; }
   border: 1px solid var(--iron-border); background: var(--panel); margin-bottom: 12px; }
 .a-strip-left, .a-strip-right { padding: 14px 18px; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
 .a-strip-mid { padding: 14px 8px 8px; border-left: 1px solid var(--iron-border); border-right: 1px solid var(--iron-border); display: flex; flex-direction: column; }
-.a-strip-num { font: 500 28px/1 "JetBrains Mono"; letter-spacing: -0.04em; color: var(--bone); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.a-strip-num { font: 400 28px/1 "JetBrains Mono"; letter-spacing: -0.04em; color: var(--bone); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .a-strip-unit { font-size: 13px; color: var(--gull); margin-left: 4px; letter-spacing: 0; }
 .a-strip-sub { font: 400 11px "JetBrains Mono"; color: var(--gull); margin-top: 6px; }
 .a-strip-spark { width: 100%; display: block; position: relative; }
@@ -952,7 +1040,7 @@ body.td-setup-help-body #root { height: 100%; }
 .a-limits { margin-bottom: 12px; }
 .a-limits-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 6px 2px 2px; }
 .a-limit { display: flex; flex-direction: column; gap: 4px; }
-.a-limit-num { font: 500 28px/1 "JetBrains Mono"; letter-spacing: -0.04em; color: var(--bone); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.a-limit-num { font: 400 28px/1 "JetBrains Mono"; letter-spacing: -0.04em; color: var(--bone); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .a-limits-note { margin-top: 12px; padding: 8px 10px; border: 1px solid var(--iron-border-2); background: var(--panel-2); color: var(--gull); font: 400 11px/1.5 "JetBrains Mono"; }
 .a-limits-note code { background: var(--bg); padding: 1px 5px; border: 1px solid var(--iron-border); color: var(--bone); }
 @media (max-width: 720px) { .a-limits-grid { grid-template-columns: 1fr; } }

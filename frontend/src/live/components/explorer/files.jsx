@@ -3,10 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { marked } from "marked";
 import { resolveWikilinks } from "../../lib/wikilinks.js";
 import { buildLinkMaps } from "../../lib/vaultLinks.js";
-import { vaultPathStore } from "../../stores/vault-store.js";
+import { vaultPathStore, initVaultPath } from "../../stores/vault-store.js";
 import { pendingNoteStore, clearPendingNote } from "../../stores/explorer-store.js";
 import { useStore } from "../../stores/use-store.js";
 import { buildTree, flattenVisible } from "../../lib/fileTree.js";
+
+const EMPTY_STYLE = { padding: "14px", color: "var(--gull)", font: "400 12.5px var(--font-mono)", lineHeight: 1.5 };
+const ERR_STYLE = { padding: "14px", color: "var(--bad)", font: "400 12.5px var(--font-mono)", lineHeight: 1.5, whiteSpace: "pre-wrap" };
 
 export function Files() {
   const vaultPath = useStore(vaultPathStore);
@@ -22,12 +25,22 @@ export function Files() {
   // "expanded" = set of folder paths currently open in the tree
   const [expanded, setExpanded] = useState(new Set());
 
+  const [listErr, setListErr] = useState("");
+
+  // Resolve the default vault (~/.claude/projects) once on mount.
+  useEffect(() => { initVaultPath(); }, []);
+
   // Load files and links whenever vaultPath changes.
   useEffect(() => {
     setActiveRel(""); setHtml(""); setErr(""); setExpanded(new Set());
-    if (!vaultPath) { setFiles([]); setLinks([]); return; }
-    invoke("vault_index", { vaultPath }).then(setFiles).catch(() => setFiles([]));
-    invoke("vault_links", { vaultPath }).then(setLinks).catch(() => setLinks([]));
+    if (!vaultPath) { setFiles([]); setLinks([]); setListErr(""); return; }
+    setListErr("");
+    invoke("vault_index", { vaultPath })
+      .then((res) => setFiles(res ?? []))
+      .catch((e) => { setFiles([]); setListErr(String(e)); });
+    invoke("vault_links", { vaultPath })
+      .then((res) => setLinks(res ?? []))
+      .catch(() => setLinks([]));
   }, [vaultPath]);
 
   const index = useMemo(
@@ -112,97 +125,131 @@ export function Files() {
   const breadcrumb = activeRel.replace(/\\/g, "/").split("/");
 
   return (
-    <div className="pr-files-grid">
-      <aside className="pr-files-list">
-        <div className="pr-files-search">
+    <div className="a-card-row" style={{ marginBottom: 0, alignItems: "stretch" }}>
+      <section className="a-card" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <div className="a-card-head">
+          <h2>Vault</h2>
+          <span className="a-card-meta">{files.length} <span style={{ color: "var(--gull-2)" }}>notes</span></span>
+        </div>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "10px", flexWrap: "wrap" }}>
           <input
-            className="pr-search-input"
+            className="a-text-input"
             placeholder="grep vault…"
             value={q}
             onChange={(e) => setQ(e.currentTarget.value)}
+            style={{
+              flex: "1 1 120px", minWidth: 0,
+              background: "var(--panel-2)", color: "var(--bone)",
+              border: "1px solid var(--iron-border)", borderRadius: "6px",
+              padding: "5px 9px", font: "500 12px \"JetBrains Mono\"", outline: "none",
+            }}
           />
-          <div className="pr-sort" role="group" aria-label="Sort">
-            <button className={sort === "name" ? "is-active" : ""} onClick={() => setSort("name")}>name</button>
-            <button className={sort === "modified" ? "is-active" : ""} onClick={() => setSort("modified")}>mod</button>
-            <button className={sort === "size" ? "is-active" : ""} onClick={() => setSort("size")}>size</button>
+          <div className="a-pill-btn-row" role="group" aria-label="Sort">
+            <button className={["a-pill-btn", sort === "name" && "is-active"].filter(Boolean).join(" ")} onClick={() => setSort("name")}>name</button>
+            <button className={["a-pill-btn", sort === "modified" && "is-active"].filter(Boolean).join(" ")} onClick={() => setSort("modified")}>mod</button>
+            <button className={["a-pill-btn", sort === "size" && "is-active"].filter(Boolean).join(" ")} onClick={() => setSort("size")}>size</button>
           </div>
         </div>
-        <div className="pr-files-scroll">
-          {rows.map((r) =>
-            r.kind === "folder" ? (
-              <div
-                key={r.id}
-                className="pr-folder"
-                style={{ paddingLeft: `${8 + r.depth * 14}px` }}
-                onClick={() => toggle(r.id)}
-              >
-                <span className="pr-folder-chevron">{expanded.has(r.id) || q ? "▾" : "▸"}</span>
-                <span className="pr-folder-name">{r.name}</span>
-                <span className="pr-folder-count">{r.count}</span>
-              </div>
-            ) : (
-              <div
-                key={r.id}
-                className={["pr-file", r.id === activeRel && "is-active"].filter(Boolean).join(" ")}
-                style={{ paddingLeft: `${8 + r.depth * 14}px` }}
-                onClick={() => openNote(r.id)}
-                title={r.id}
-              >
-                <span>{r.name}</span>
-                <span className="pr-file-tail">
-                  {isOrphan(r.id) && <span className="pr-orphan" title="no links in or out">○</span>}
-                  {sizeByRel.get(r.id) ? (
-                    <span className="size">{(sizeByRel.get(r.id) / 1024).toFixed(1)}k</span>
-                  ) : null}
-                </span>
-              </div>
-            )
+        <div className="a-table-scroll" style={{ overflowY: "auto", flex: 1, minHeight: 0, maxHeight: "62vh" }}>
+          {!vaultPath ? (
+            <div style={EMPTY_STYLE}>Locating Claude vault…</div>
+          ) : listErr ? (
+            <div style={ERR_STYLE}>{listErr}</div>
+          ) : rows.length === 0 ? (
+            <div style={EMPTY_STYLE}>
+              {q ? "No notes match your search." : "No vault content found."}
+            </div>
+          ) : null}
+          {rows.length > 0 && (
+            <table className="a-table">
+              <tbody>
+                {rows.map((r) =>
+                  r.kind === "folder" ? (
+                    <tr key={r.id} className="clickable" onClick={() => toggle(r.id)}>
+                      <td colSpan={2} style={{ paddingLeft: `${8 + r.depth * 14}px` }}>
+                        <span style={{ color: "var(--gull-2)", marginRight: "6px" }}>{expanded.has(r.id) || q ? "▾" : "▸"}</span>
+                        <span style={{ color: "var(--bone)", fontWeight: 600 }}>{r.name}</span>
+                        <span style={{ color: "var(--gull-2)", marginLeft: "6px", font: "500 10px \"JetBrains Mono\"" }}>{r.count}</span>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr
+                      key={r.id}
+                      className={["clickable", r.id === activeRel && "is-active"].filter(Boolean).join(" ")}
+                      onClick={() => openNote(r.id)}
+                      title={r.id}
+                    >
+                      <td style={{ paddingLeft: `${8 + r.depth * 14}px` }}>{r.name}</td>
+                      <td className="num" style={{ whiteSpace: "nowrap" }}>
+                        {isOrphan(r.id) && <span style={{ color: "var(--gull-2)", marginRight: "6px" }} title="no links in or out">○</span>}
+                        {sizeByRel.get(r.id) ? (
+                          <span style={{ color: "var(--gull)", font: "500 10px \"JetBrains Mono\"" }}>{(sizeByRel.get(r.id) / 1024).toFixed(1)}k</span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  )
+                )}
+              </tbody>
+            </table>
           )}
         </div>
-      </aside>
-      <article className="pr-doc" onClick={onContentClick}>
+      </section>
+      <article className="a-card" onClick={onContentClick} style={{ overflowY: "auto", maxHeight: "calc(62vh + 60px)" }}>
         {err ? (
-          <pre style={{ color: "var(--bad)" }}>{err}</pre>
+          <>
+            <div className="a-card-head"><h2>Reader</h2></div>
+            <pre className="a-pre" style={{ color: "var(--bad)" }}>{err}</pre>
+          </>
         ) : html ? (
           <>
-            <nav className="pr-breadcrumb">
-              {breadcrumb.map((seg, i) => (
-                <React.Fragment key={i}>
-                  {i > 0 && <span className="pr-crumb-sep">/</span>}
-                  <span className="pr-crumb">{seg}</span>
-                </React.Fragment>
-              ))}
+            <nav className="a-card-head" style={{ flexWrap: "wrap", gap: "2px" }}>
+              <h2 style={{ display: "flex", alignItems: "center", gap: "2px", flexWrap: "wrap" }}>
+                {breadcrumb.map((seg, i) => (
+                  <React.Fragment key={i}>
+                    {i > 0 && <span style={{ color: "var(--gull-2)", margin: "0 4px" }}>/</span>}
+                    <span style={{ color: i === breadcrumb.length - 1 ? "var(--bone)" : "var(--gull)" }}>{seg}</span>
+                  </React.Fragment>
+                ))}
+              </h2>
+              <span className="a-card-meta">
+                {wordCount} words · {backlinks.length} backlinks · {outlinks.length} links out
+              </span>
             </nav>
-            <div className="pr-note-meta">
-              <span>{wordCount} words</span>
-              <span>{backlinks.length} backlinks</span>
-              <span>{outlinks.length} links out</span>
-            </div>
             <div dangerouslySetInnerHTML={{ __html: html }} />
             {activeRel && (
-              <section className="pr-backlinks">
-                <div className="pr-backlinks-head">Linked references</div>
-                {backlinks.length ? (
-                  <div className="pr-backlinks-list">
-                    {backlinks.map((rel) => (
-                      <span
-                        key={rel}
-                        className="pr-backlink"
-                        onClick={() => openNote(rel)}
-                        title={rel}
-                      >
-                        {nameByRel.get(rel) ?? rel}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="pr-backlinks-empty">No linked references.</div>
-                )}
-              </section>
+              <>
+                <div className="a-card-divider" />
+                <section>
+                  <div className="a-card-meta" style={{ marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Linked references</div>
+                  {backlinks.length ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {backlinks.map((rel) => (
+                        <span
+                          key={rel}
+                          onClick={() => openNote(rel)}
+                          title={rel}
+                          style={{
+                            cursor: "pointer", padding: "3px 8px", borderRadius: "6px",
+                            background: "var(--panel-2)", border: "1px solid var(--iron-border)",
+                            color: "var(--accent)", font: "500 11px \"JetBrains Mono\"",
+                          }}
+                        >
+                          {nameByRel.get(rel) ?? rel}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="a-card-meta">No linked references.</div>
+                  )}
+                </section>
+              </>
             )}
           </>
         ) : (
-          <p className="muted">Select a note to read it.</p>
+          <>
+            <div className="a-card-head"><h2>Reader</h2></div>
+            <p className="a-card-meta">Select a note to read it.</p>
+          </>
         )}
       </article>
     </div>

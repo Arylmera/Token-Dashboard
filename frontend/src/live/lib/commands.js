@@ -1,5 +1,5 @@
-/* The four navigable views, in the same order the ViewSwitcher renders them. */
-const NAV_VIEWS = ["console", "cockpit", "explorer", "settings"];
+/* The navigable views, in the same order the ViewSwitcher renders them. */
+const NAV_VIEWS = ["console", "cockpit", "explorer"];
 
 /* Dependencies are injectable so buildCommands stays unit-testable without
    touching the live stores. In browser/Tauri context, import the real stores

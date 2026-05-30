@@ -73,21 +73,61 @@ export const THEMED_COPY = {
   },
 };
 
-const KEY = "praetorium.theme";
+/* ── Theme follow ───────────────────────────────────────────────────────────
+   Live no longer keeps its own palette. live.css `.pr-root` consumes the main
+   dashboard's theme CSS vars (--bg / --panel / --accent / …), which cascade in
+   from the `.dir-a-root.theme-X` ancestor — so when Live is docked it follows
+   the ACTIVE dashboard theme for free, every present and future theme.
+
+   This store now MIRRORS the dashboard's selected theme id rather than holding
+   a separate Praetorium theme. The dashboard persists its choice in
+   localStorage["td.theme.v2"] (see frontend/src/theme.js); we read the same
+   key. The value is used only to (a) set `data-theme` on `.pr-root` — harmless
+   when docked, and the palette source for the standalone pop-out window whose
+   `.pr-root` has no `.dir-a-root` ancestor — and (b) pick themed copy for the
+   three special themes. Keep `themeStore`, `theme`, `setTheme`, `themedCopy`
+   exports stable: index.jsx imports them. */
+
+const MAIN_KEY = "td.theme.v2";        // dashboard's persisted theme id
 const hasStorage = typeof localStorage !== "undefined";
-function initial() {
-  const stored = hasStorage ? localStorage.getItem(KEY) : null;
-  return THEMES.includes(stored) ? stored : "forge";
+
+/* The dashboard baseline id is "bench" (bare .dir-a-root, no theme class). Live
+   represents the bare baseline as "dark" so it maps onto live.css's no-data-theme
+   default. Every other id is shared verbatim between the two theme tables. */
+function normalize(id) {
+  if (id === "bench" || id == null) return "dark";
+  return THEMES.includes(id) ? id : "dark";
 }
 
-export const themeStore = createStore(initial());
+function readMain() {
+  const stored = hasStorage ? localStorage.getItem(MAIN_KEY) : null;
+  return normalize(stored);
+}
+
+export const themeStore = createStore(readMain());
+
+/* Re-sync from the dashboard's persisted choice. The shell calls applyThemeClass
+   on switch; storage events fire for other tabs/windows (e.g. the pop-out), and
+   we also re-read on focus so the docked surface tracks in-process changes. */
+export function syncFromDashboard() {
+  themeStore.set(readMain());
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === MAIN_KEY) syncFromDashboard();
+  });
+  window.addEventListener("focus", syncFromDashboard);
+}
 
 export const theme = () => themeStore.get();
 export const getTheme = theme;
 
+/* Back-compat: callers may still push a theme onto Live directly. Persist to the
+   shared dashboard key so both surfaces stay in lockstep. */
 export function setTheme(t) {
-  if (hasStorage) localStorage.setItem(KEY, t);
-  themeStore.set(t);
+  const id = normalize(t);
+  if (hasStorage) localStorage.setItem(MAIN_KEY, id);
+  themeStore.set(id);
 }
 
 /* Reactive copy overrides for the active theme; undefined for non-special themes. */

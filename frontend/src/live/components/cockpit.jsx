@@ -16,8 +16,8 @@ const strategies = {
 
 const hue = (sid) => sid ? (Array.from(sid).reduce((a, c) => a + c.charCodeAt(0), 0) * 47) % 360 : 0;
 const nodeStroke = (n) =>
-  n.status === "failed" ? "tomato"
-  : n.kind === "folder" ? "var(--accent-dim)"
+  n.status === "failed" ? "var(--bad)"
+  : n.kind === "folder" ? "var(--gull)"
   : n.session ? `hsl(${hue(n.session)},70%,60%)` : "var(--accent)";
 const truncate = (s, n = 24) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const folderBase = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p;
@@ -225,9 +225,26 @@ export function Cockpit() {
   );
 
   return (
-    <div className="pr-cockpit">
+    <section className="a-card" style={{ marginBottom: 12, padding: 0, minHeight: 0 }}>
+      <div className="a-card-head" style={{ margin: 0, padding: "14px 16px", borderBottom: "1px solid var(--iron-border)" }}>
+        <h2>Agent graph</h2>
+        <span className="a-card-meta">
+          {aggregates.sessions} <span style={{ color: "var(--gull-2)" }}>sessions</span>
+          {" · "}{aggregates.agents} <span style={{ color: "var(--gull-2)" }}>agents</span>
+          {aggregates.fails > 0 && <span style={{ color: "var(--bad)" }}>{" · "}{aggregates.fails} fail</span>}
+        </span>
+      </div>
+      <div
+        style={{
+          position: "relative", overflow: "hidden",
+          height: "70vh", minHeight: 440,
+          background: "var(--panel)",
+          backgroundImage: "radial-gradient(var(--grid-dot) 1px, transparent 1px)",
+          backgroundSize: "26px 26px",
+        }}
+      >
       <svg ref={svgEl} width="100%" height="100%" viewBox={viewBox} preserveAspectRatio="xMidYMid meet"
-        style={{ cursor: "grab", touchAction: "none" }}
+        style={{ cursor: "grab", touchAction: "none", position: "absolute", inset: 0 }}
         onClick={() => { if (!moved.current) setSelected(null); }}>
         {[...displayGraph.edges.values()].map((e) => {
           const a = positions.get(e.source);
@@ -237,7 +254,8 @@ export function Cockpit() {
           const dim = (sn && isDimmed(sn)) || (tn && isDimmed(tn));
           return (
             <line key={e.id} className={["cockpit-edge", dim && "is-dimmed"].filter(Boolean).join(" ")}
-              x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--border)" strokeWidth="1.5" />
+              x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--iron-border)" strokeWidth="1.5"
+              opacity={dim ? 0.25 : 0.6} />
           );
         })}
         {displayGraph.activity.slice(-12).map((ping, i) => {
@@ -271,15 +289,17 @@ export function Cockpit() {
                 <circle className={["cockpit-status-ring", n.status === "running" && "is-running"].filter(Boolean).join(" ")}
                   cx={p.x} cy={p.y} r={r + 4} fill="none" stroke={ringColor} strokeWidth="1.5" />
               )}
-              <circle className="cockpit-node" cx={p.x} cy={p.y} r={r} fill="var(--panel)"
+              <circle className="cockpit-node" cx={p.x} cy={p.y} r={r} fill="var(--panel-solid)"
                 stroke={nodeStroke(n)} strokeWidth="2" style={{ filter: glow }} />
-              <text className="pr-node-label" x={p.x + r + 4} y={p.y + 4}>{nodeLabel(n)}</text>
+              <text x={p.x + r + 4} y={p.y + 4}
+                style={{ fill: "var(--bone)", font: "500 12px var(--font-mono)" }}>{nodeLabel(n)}</text>
               {idle && live?.idleMs !== undefined && (
-                <text className="pr-node-idle" x={p.x + r + 4} y={p.y + 16}>idle {fmtIdle(live.idleMs)}</text>
+                <text x={p.x + r + 4} y={p.y + 16}
+                  style={{ fill: "var(--gull)", font: "400 10px var(--font-mono)" }}>idle {fmtIdle(live.idleMs)}</text>
               )}
               {n.kind === "master" && (n.done ?? 0) > 0 && (
-                <text className={["pr-node-done", (n.doneFailed ?? 0) > 0 && "is-fail"].filter(Boolean).join(" ")}
-                  x={p.x + r + 4} y={p.y + 16}>
+                <text x={p.x + r + 4} y={p.y + 16}
+                  style={{ fill: (n.doneFailed ?? 0) > 0 ? "var(--bad)" : "var(--good)", font: "400 10px var(--font-mono)" }}>
                   +{n.done} done{(n.doneFailed ?? 0) > 0 ? ` \xB7 ${n.doneFailed} ✗` : ""}
                 </text>
               )}
@@ -289,68 +309,93 @@ export function Cockpit() {
       </svg>
 
       {/* layout toggle pinned top-right */}
-      <div className="pr-cockpit-layout pr-seg">
-        <button className={layoutName === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
-        <button className={layoutName === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hier</button>
+      <div className="a-pill-btn-row" style={{ position: "absolute", top: 12, right: 12, zIndex: 4 }}>
+        <button className={`a-pill-btn${layoutName === "radial" ? " is-active" : ""}`} onClick={() => setLayout("radial")}>radial</button>
+        <button className={`a-pill-btn${layoutName === "hierarchical" ? " is-active" : ""}`} onClick={() => setLayout("hierarchical")}>hier</button>
       </div>
 
       {/* mini legend pinned top-left, expandable */}
-      <div className="pr-legend">
-        {[["read","read"],["edit","edit"],["bash","bash"],["web","web"],["search","grep"],["other","other"]].map(([cat,lbl]) => (
-          <span key={cat} className="pr-legend-swatch"><i style={{ background: CATEGORY_COLOR[cat] }} />{lbl}</span>
-        ))}
-        <button className="pr-legend-more" onClick={() => setLegendOpen((v) => !v)}>?</button>
-      </div>
-      {legendOpen && (
-        <div className="pr-info-card pr-legend-card">
-          <h3>LIVE AGENT GRAPH</h3>
-          <p>Each <b>project</b> spawns <b>sessions</b> (one per master) which dispatch <b>subagents</b> linked to the <b>folders</b> they touch. Pulses = file activity, colored by tool. A node&apos;s <b>glow</b> tracks recent activity; a faded node with <b>idle Ns</b> is running but quiet. The ring is green on success, red on failure.</p>
-          <div className="pr-info-meta">scroll = zoom &middot; drag = pan &middot; <a onClick={reset}>reset view</a></div>
+      <div
+        className="a-card"
+        style={{ position: "absolute", top: 12, left: 12, zIndex: 4, padding: "8px 10px", margin: 0 }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {[["read","read"],["edit","edit"],["bash","bash"],["web","web"],["search","grep"],["other","other"]].map(([cat,lbl]) => (
+            <span key={cat} style={{ display: "inline-flex", alignItems: "center", gap: 5, font: "400 11px var(--font-mono)", color: "var(--gull)" }}>
+              <i style={{ width: 8, height: 8, borderRadius: "50%", background: CATEGORY_COLOR[cat], display: "inline-block" }} />{lbl}
+            </span>
+          ))}
+          <button
+            className={`a-pill-btn${legendOpen ? " is-active" : ""}`}
+            style={{ padding: "2px 8px" }}
+            onClick={() => setLegendOpen((v) => !v)}
+          >?</button>
         </div>
-      )}
+        {legendOpen && (
+          <div style={{ maxWidth: 320, marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--iron-border)" }}>
+            <div className="a-card-head" style={{ marginBottom: 8 }}><h2>LIVE AGENT GRAPH</h2></div>
+            <p style={{ margin: 0, font: "400 12px/1.5 var(--font-mono)", color: "var(--gull-2)" }}>
+              Each <b style={{ color: "var(--bone)" }}>project</b> spawns <b style={{ color: "var(--bone)" }}>sessions</b> (one per master) which dispatch <b style={{ color: "var(--bone)" }}>subagents</b> linked to the <b style={{ color: "var(--bone)" }}>folders</b> they touch. Pulses = file activity, colored by tool. A node&apos;s <b style={{ color: "var(--bone)" }}>glow</b> tracks recent activity; a faded node with <b style={{ color: "var(--bone)" }}>idle Ns</b> is running but quiet. The ring is green on success, red on failure.
+            </p>
+            <div style={{ marginTop: 8, font: "400 11px var(--font-mono)", color: "var(--gull)" }}>
+              scroll = zoom &middot; drag = pan &middot;{" "}
+              <a onClick={reset} style={{ color: "var(--accent)", cursor: "pointer" }}>reset view</a>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* slide-in detail panel (single-click a node) */}
-      {detail && (
-        <div className="pr-cockpit-detail">
-          <button className="pr-detail-x" onClick={() => setSelected(null)}>&times;</button>
-          <div className="pr-detail-head">
-            <span className="pr-detail-title">
+      {detail && (() => {
+        const detailLabelStyle = { font: "500 10px var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--gull)", margin: "14px 0 6px" };
+        const chipBase = { display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 4, font: "400 11px var(--font-mono)", border: "1px solid var(--iron-border)", color: "var(--gull-2)", background: "var(--panel-2)" };
+        return (
+        <section
+          className="a-card"
+          style={{ position: "absolute", top: 12, right: 12, zIndex: 5, width: 320, maxHeight: "calc(100% - 110px)", overflowY: "auto", margin: 0 }}
+        >
+          <button
+            onClick={() => setSelected(null)}
+            style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: "var(--gull)", cursor: "pointer", font: "400 18px var(--font-mono)", lineHeight: 1 }}
+          >&times;</button>
+          <div className="a-card-head" style={{ paddingRight: 24 }}>
+            <h2>
               {selected?.startsWith("proj:") || detail.kind === "folder"
                 ? truncate(folderBase(detail.label), 40)
                 : detail.sessionId ? sessionTitle(detail.sessionId) : detail.label}
-            </span>
-            <span className={["pr-detail-state", detail.state === "failed" && "is-fail"].filter(Boolean).join(" ")}>{detail.state}</span>
+            </h2>
+            <span className="a-card-meta" style={{ color: detail.state === "failed" ? "var(--bad)" : "var(--good)" }}>{detail.state}</span>
           </div>
-          <div className="pr-detail-sub">{detail.project ?? detail.kind}</div>
-          <div className="pr-detail-metrics">
+          <div style={{ font: "400 11px var(--font-mono)", color: "var(--gull)", marginTop: 4 }}>{detail.project ?? detail.kind}</div>
+          <div style={{ display: "flex", gap: 14, marginTop: 12, font: "400 12px var(--font-mono)", color: "var(--bone)", flexWrap: "wrap" }}>
             <span>&#x23F1; {fmtDur(detail.durationMs)}</span>
-            <span className={detail.fails > 0 ? "is-fail" : ""}>&times; {detail.fails}</span>
+            <span style={{ color: detail.fails > 0 ? "var(--bad)" : undefined }}>&times; {detail.fails}</span>
             <span>&#x26A1; {detail.calls}</span>
-            <span className="muted">idle {fmtIdle(detail.idleMs)}</span>
+            <span style={{ color: "var(--gull)" }}>idle {fmtIdle(detail.idleMs)}</span>
           </div>
           {detail.recentCalls.length > 0 && (
             <>
-              <div className="pr-detail-label">recent calls</div>
+              <div style={detailLabelStyle}>recent calls</div>
               {[...detail.recentCalls].reverse().map((c, i) => (
-                <div key={i} className={["pr-detail-call", c.status === "error" && "is-fail"].filter(Boolean).join(" ")}>
-                  <span className="pr-call-glyph">{TOOL_GLYPH[c.tool]}</span>
-                  <span className="pr-call-name">{c.name}{c.target ? ` ${folderBase(c.target)}` : ""}</span>
-                  <span className="pr-call-meta">{c.status === "error" ? "✗" : c.status === "ok" ? "✓" : "⟳"} {fmtDur(c.durMs)}</span>
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", font: "400 11px var(--font-mono)", color: c.status === "error" ? "var(--bad)" : "var(--gull-2)" }}>
+                  <span style={{ color: "var(--accent)" }}>{TOOL_GLYPH[c.tool]}</span>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}{c.target ? ` ${folderBase(c.target)}` : ""}</span>
+                  <span style={{ color: "var(--gull)" }}>{c.status === "error" ? "✗" : c.status === "ok" ? "✓" : "⟳"} {fmtDur(c.durMs)}</span>
                 </div>
               ))}
             </>
           )}
           {(detail.subagents.length > 0 || (detail.subagentsDone ?? 0) > 0) && (
             <>
-              <div className="pr-detail-label">
+              <div style={detailLabelStyle}>
                 subagents ({detail.subagents.length} active{(detail.subagentsDone ?? 0) > 0 ? ` \xB7 +${detail.subagentsDone} done` : ""})
               </div>
-              <div className="pr-detail-chips">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {detail.subagents.map((a, i) => (
-                  <span key={i} className={["pr-chip is-running", a.status === "failed" && "is-fail"].filter(Boolean).join(" ")}>{a.label}</span>
+                  <span key={i} style={{ ...chipBase, borderColor: a.status === "failed" ? "var(--bad)" : "var(--accent)", color: a.status === "failed" ? "var(--bad)" : "var(--bone)" }}>{a.label}</span>
                 ))}
                 {(detail.doneSubagents ?? []).map((a, i) => (
-                  <span key={`done-${i}`} className={["pr-chip is-done", a.status === "failed" && "is-fail", a.status === "complete" && "is-ok"].filter(Boolean).join(" ")}>
+                  <span key={`done-${i}`} style={{ ...chipBase, color: a.status === "failed" ? "var(--bad)" : "var(--good)" }}>
                     {a.status === "failed" ? "✗" : "✓"} {a.label}
                   </span>
                 ))}
@@ -359,64 +404,93 @@ export function Cockpit() {
           )}
           {detail.folders.length > 0 && (
             <>
-              <div className="pr-detail-label">folders touched ({detail.folders.length})</div>
-              <div className="pr-detail-chips">
+              <div style={detailLabelStyle}>folders touched ({detail.folders.length})</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {detail.folders.map((f, i) => (
-                  <span key={i} className="pr-chip">{folderBase(f)}</span>
+                  <span key={i} style={chipBase}>{folderBase(f)}</span>
                 ))}
               </div>
             </>
           )}
-        </div>
-      )}
+        </section>
+        );
+      })()}
 
       {/* persistent bottom bar */}
-      <div className="pr-cockpit-bar">
-        <div className="pr-bar-group">
-          <span className="pr-bar-stat"><b>{aggregates.agents}</b> agents</span>
-          <span className="pr-bar-sep" />
-          <span className="pr-bar-stat"><b>{aggregates.sessions}</b> sessions</span>
-          <span className="pr-bar-stat is-fail"><b>{aggregates.fails}</b> fail</span>
-          <span className="pr-bar-stat muted"><b>{aggregates.idle}</b> idle</span>
-          <span className="pr-bar-stat"><b>{aggregates.folders}</b> folders</span>
+      {(() => {
+        const stat = (n, label, tone) => (
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: 5 }}>
+            <span className="a-strip-num" style={{ fontSize: 20, marginTop: 0, color: tone ?? "var(--bone)" }}>{n}</span>
+            <span className="a-strip-unit" style={{ marginLeft: 0 }}>{label}</span>
+          </span>
+        );
+        const ctrl = {
+          font: "400 12px var(--font-mono)", color: "var(--bone)",
+          background: "var(--panel-2)", border: "1px solid var(--iron-border)",
+          borderRadius: 4, padding: "4px 8px", outline: "none",
+        };
+        return (
+        <div
+          style={{
+            position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 4,
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap",
+            padding: "10px 14px", background: "var(--panel-solid)", borderTop: "1px solid var(--iron-border)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+            {stat(aggregates.agents, "agents")}
+            {stat(aggregates.sessions, "sessions")}
+            {stat(aggregates.fails, "fail", "var(--bad)")}
+            {stat(aggregates.idle, "idle", "var(--gull)")}
+            {stat(aggregates.folders, "folders")}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ font: "400 11px var(--font-mono)", color: "var(--gull)" }}>activity</span>
+            <svg width="120" height="24" viewBox="0 0 120 24" preserveAspectRatio="none">
+              <line x1="0" y1="23.5" x2="120" y2="23.5" stroke="var(--iron-border)" strokeWidth="1" />
+              {(() => {
+                const data = aggregates.callsPerSec;
+                const max = Math.max(1, ...data);
+                const bw = 120 / data.length;
+                return data.map((v, i) => (
+                  <rect key={i} x={i * bw + 0.15} y={24 - Math.max(v ? 1.5 : 0, (v / max) * 23)}
+                    width={Math.max(0.6, bw - 0.3)} height={Math.max(v ? 1.5 : 0, (v / max) * 23)}
+                    fill="var(--accent)" opacity="0.85" />
+                ));
+              })()}
+            </svg>
+            <input style={{ ...ctrl, width: 110 }} placeholder="search" value={query}
+              onInput={(e) => setQuery(e.currentTarget.value)}
+              onChange={(e) => setQuery(e.currentTarget.value)} />
+            <select style={ctrl} value={projFilter} onChange={(e) => setProjFilter(e.currentTarget.value)}>
+              <option value="all">all projects</option>
+              {projects.map((p) => <option key={p} value={p}>{truncate(p, 22)}</option>)}
+            </select>
+            <select style={ctrl} value={statusFilter} onChange={(e) => setStatusFilter(e.currentTarget.value)}>
+              <option value="all">any status</option>
+              <option value="running">running</option>
+              <option value="failed">failed</option>
+              <option value="idle">idle</option>
+            </select>
+          </div>
         </div>
-        <div className="pr-bar-group pr-bar-right">
-          <span className="pr-bar-label">activity</span>
-          <svg className="pr-spark" viewBox="0 0 120 24" preserveAspectRatio="none">
-            <line className="pr-spark-base" x1="0" y1="23.5" x2="120" y2="23.5" />
-            {(() => {
-              const data = aggregates.callsPerSec;
-              const max = Math.max(1, ...data);
-              const bw = 120 / data.length;
-              return data.map((v, i) => (
-                <rect key={i} x={i * bw + 0.15} y={24 - Math.max(v ? 1.5 : 0, (v / max) * 23)}
-                  width={Math.max(0.6, bw - 0.3)} height={Math.max(v ? 1.5 : 0, (v / max) * 23)}
-                  fill="var(--good)" opacity="0.85" />
-              ));
-            })()}
-          </svg>
-          <span className="pr-bar-sep" />
-          <input className="pr-bar-search" placeholder="search" value={query}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-            onChange={(e) => setQuery(e.currentTarget.value)} />
-          <select className="pr-bar-select" value={projFilter} onChange={(e) => setProjFilter(e.currentTarget.value)}>
-            <option value="all">all projects</option>
-            {projects.map((p) => <option key={p} value={p}>{truncate(p, 22)}</option>)}
-          </select>
-          <select className="pr-bar-select" value={statusFilter} onChange={(e) => setStatusFilter(e.currentTarget.value)}>
-            <option value="all">any status</option>
-            <option value="running">running</option>
-            <option value="failed">failed</option>
-            <option value="idle">idle</option>
-          </select>
-        </div>
-      </div>
+        );
+      })()}
 
       {hover && (
-        <div className="pr-tooltip" style={{ left: `${hover.x + 14}px`, top: `${hover.y + 14}px` }}>
+        <div
+          style={{
+            position: "fixed", left: `${hover.x + 14}px`, top: `${hover.y + 14}px`, zIndex: 10,
+            pointerEvents: "none", padding: "4px 8px", borderRadius: 4, maxWidth: 320,
+            font: "400 12px var(--font-mono)", color: "var(--bone)",
+            background: "var(--panel-solid)", border: "1px solid var(--iron-border-2)",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}
+        >
           {hover.text}
         </div>
       )}
-    </div>
+      </div>
+    </section>
   );
 }

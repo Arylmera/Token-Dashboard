@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { RadialForceLayout, HierarchicalLayout } from "../../lib/layout";
-import { vaultPathStore } from "../../stores/vault-store.js";
+import { vaultPathStore, initVaultPath } from "../../stores/vault-store.js";
 import { linksToGraph } from "../../lib/linksGraph";
 import { openNote } from "../../stores/explorer-store.js";
 import { layoutNameStore, setLayout } from "../../stores/settings.js";
@@ -26,14 +26,19 @@ export function MapView() {
 
   const [linkNotes, setLinkNotes] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  // Resolve the default vault (~/.claude/projects) once on mount.
+  useEffect(() => { initVaultPath(); }, []);
 
   useEffect(() => {
-    if (!vaultPath) { setLinkNotes([]); return; }
+    if (!vaultPath) { setLinkNotes([]); setErr(""); return; }
     let cancelled = false;
     setLoading(true);
+    setErr("");
     invoke("vault_links", { vaultPath })
-      .then((res) => { if (!cancelled) setLinkNotes(res); })
-      .catch(() => { if (!cancelled) setLinkNotes([]); })
+      .then((res) => { if (!cancelled) setLinkNotes(res ?? []); })
+      .catch((e) => { if (!cancelled) { setLinkNotes([]); setErr(String(e)); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [vaultPath]);
@@ -122,15 +127,31 @@ export function MapView() {
   const nodes = [...base.g.nodes.values()];
 
   return (
-    <div className="pr-map-wrap">
-      <div className="pr-info-card pr-map-info">
-        <h3>CARTOGRAPHICUM</h3>
-        <p>Every note linked by <b><code>{"[[wikilinks]]"}</code></b>, parsed live — coloured by <b>folder</b>, sized by <b>link count</b>. Works on any vault.</p>
-        <div className="pr-map-toggle">
-          <button className={layoutName === "radial" ? "is-active" : ""} onClick={() => setLayout("radial")}>radial</button>
-          <button className={layoutName === "hierarchical" ? "is-active" : ""} onClick={() => setLayout("hierarchical")}>hierarchical</button>
+    <section className="a-card" style={{ marginBottom: 0, padding: 0, minHeight: 0 }}>
+      <div className="a-card-head" style={{ margin: 0, padding: "14px 16px", borderBottom: "1px solid var(--iron-border)" }}>
+        <h2>Link map</h2>
+        <span className="a-card-meta">{nodes.length} <span style={{ color: "var(--gull-2)" }}>notes</span> · {edges.length} <span style={{ color: "var(--gull-2)" }}>links</span></span>
+      </div>
+      <div style={{ position: "relative", overflow: "hidden", height: "70vh", minHeight: "440px" }}>
+      <div
+        style={{
+          position: "absolute", top: "12px", left: "12px", zIndex: 2, maxWidth: "300px",
+          background: "var(--panel-solid)", border: "1px solid var(--iron-border)",
+          padding: "12px 14px",
+          boxShadow: "var(--shadow-dropdown, 0 6px 24px rgba(0,0,0,0.4))",
+        }}
+      >
+        <div className="a-card-head" style={{ margin: 0, marginBottom: 8 }}><h2>Legend</h2></div>
+        <p style={{ margin: "0 0 10px", font: "400 11.5px \"JetBrains Mono\"", color: "var(--gull)", lineHeight: 1.5 }}>
+          Every note linked by <b style={{ color: "var(--bone)" }}><code>{"[[wikilinks]]"}</code></b>, parsed live — coloured by <b style={{ color: "var(--bone)" }}>folder</b>, sized by <b style={{ color: "var(--bone)" }}>link count</b>. Works on any vault.
+        </p>
+        <div className="a-pill-btn-row">
+          <button className={["a-pill-btn", layoutName === "radial" && "is-active"].filter(Boolean).join(" ")} onClick={() => setLayout("radial")}>radial</button>
+          <button className={["a-pill-btn", layoutName === "hierarchical" && "is-active"].filter(Boolean).join(" ")} onClick={() => setLayout("hierarchical")}>hierarchical</button>
         </div>
-        <div className="pr-info-meta" style={{ marginTop: "8px" }}>scroll = zoom · drag = pan · click a node to open · <a onClick={reset}>reset</a></div>
+        <div style={{ marginTop: "8px", font: "400 10.5px \"JetBrains Mono\"", color: "var(--gull-2)" }}>
+          scroll = zoom · drag = pan · click a node to open · <a onClick={reset} style={{ color: "var(--accent)", cursor: "pointer" }}>reset</a>
+        </div>
       </div>
       {(linkNotes ?? []).length ? (
         <svg ref={svgRef} width="100%" height="100%" viewBox={viewBox} preserveAspectRatio="xMidYMid meet"
@@ -144,7 +165,7 @@ export function MapView() {
             return (
               <line key={e.id}
                 x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                stroke="var(--border)" strokeWidth="1" opacity={dim ? 0.1 : 0.7} />
+                stroke="var(--iron-border-2)" strokeWidth="1" opacity={dim ? 0.1 : 0.7} />
             );
           })}
           {nodes.map((n) => {
@@ -160,14 +181,20 @@ export function MapView() {
                 onMouseEnter={(e) => setHover({ x: e.clientX, y: e.clientY, id: n.id, title: n.label })}
                 onMouseMove={(e) => setHover({ x: e.clientX, y: e.clientY, id: n.id, title: n.label })}
                 onMouseLeave={() => setHover(null)}>
-                <circle cx={p.x} cy={p.y} r={r} fill="var(--panel)" stroke={folderColor(n.session)} strokeWidth="2" />
+                <circle cx={p.x} cy={p.y} r={r} fill="var(--panel-solid)" stroke={folderColor(n.session)} strokeWidth="2" />
                 {showLabel && (
-                  <text x={p.x + r + 4} y={p.y + 4} fill="var(--fg)" style={{ fontSize: "11px" }}>{n.label}</text>
+                  <text x={p.x + r + 4} y={p.y + 4} fill="var(--bone)" style={{ fontSize: "11px", fontFamily: "\"JetBrains Mono\"" }}>{n.label}</text>
                 )}
               </g>
             );
           })}
         </svg>
+      ) : !vaultPath ? (
+        <div style={{ padding: "14px", color: "var(--gull)" }}>Locating Claude vault…</div>
+      ) : err ? (
+        <div style={{ padding: "14px", color: "var(--bad)" }}>{err}</div>
+      ) : loading ? (
+        <div style={{ padding: "14px", color: "var(--gull)" }}>building graph…</div>
       ) : (
         <div style={{ padding: "14px", color: "var(--gull)" }}>No linked notes in this vault.</div>
       )}
@@ -175,11 +202,21 @@ export function MapView() {
         <div style={{ position: "absolute", bottom: "12px", left: "12px", color: "var(--gull-2)", fontSize: "11px", fontFamily: "var(--font-mono)" }}>building graph…</div>
       )}
       {hover && (
-        <div className="pr-tooltip" style={{ left: `${hover.x + 14}px`, top: `${hover.y + 14}px` }}>
+        <div
+          style={{
+            position: "fixed", left: `${hover.x + 14}px`, top: `${hover.y + 14}px`,
+            zIndex: 5, pointerEvents: "none", maxWidth: "320px",
+            background: "var(--panel-solid)", border: "1px solid var(--iron-border-2)",
+            borderRadius: "6px", padding: "6px 9px",
+            color: "var(--bone)", font: "500 11.5px \"JetBrains Mono\"",
+            boxShadow: "0 3px 10px rgba(0,0,0,0.35)",
+          }}
+        >
           {hover.title}
-          <span className="sub">{hover.id}</span>
+          <span style={{ display: "block", marginTop: "2px", color: "var(--gull-2)", font: "400 10px \"JetBrains Mono\"" }}>{hover.id}</span>
         </div>
       )}
-    </div>
+      </div>
+    </section>
   );
 }

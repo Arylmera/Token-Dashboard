@@ -47,13 +47,12 @@ test("filterCommands: preserves group order", () => {
 const noSessions = () => new Map();
 const noMetas = () => new Map();
 
-test("buildCommands: always includes the four navigate commands in order", () => {
+test("buildCommands: always includes the navigate commands in order", () => {
   const cmds = buildCommands({ sessions: noSessions, metas: noMetas, themedCopy: () => undefined });
   assert.deepEqual(cmds.filter((c) => c.group === "Navigate").map((c) => c.title), [
     "console",
     "cockpit",
     "explorer",
-    "settings",
   ]);
 });
 
@@ -62,14 +61,13 @@ test("buildCommands: honors themed nav labels when present", () => {
     sessions: noSessions,
     metas: noMetas,
     themedCopy: () => ({
-      nav: { console: "COMMS", cockpit: "HELM", explorer: "CHARTS", settings: "CONFIG" },
+      nav: { console: "COMMS", cockpit: "HELM", explorer: "CHARTS" },
     }),
   });
   assert.deepEqual(cmds.filter((c) => c.group === "Navigate").map((c) => c.title), [
     "COMMS",
     "HELM",
     "CHARTS",
-    "CONFIG",
   ]);
 });
 
