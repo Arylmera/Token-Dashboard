@@ -225,7 +225,7 @@ export function Cockpit() {
   );
 
   return (
-    <section className="a-card" style={{ marginBottom: 12, padding: 0, minHeight: 0 }}>
+    <section className="a-card" style={{ display: "flex", flexDirection: "column", height: "100%", padding: 0, minHeight: 0 }}>
       <div className="a-card-head" style={{ margin: 0, padding: "14px 16px", borderBottom: "1px solid var(--iron-border)" }}>
         <h2>Agent graph</h2>
         <span className="a-card-meta">
@@ -237,7 +237,7 @@ export function Cockpit() {
       <div
         style={{
           position: "relative", overflow: "hidden",
-          height: "70vh", minHeight: 440,
+          flex: 1, minHeight: 0,
           background: "var(--panel)",
           backgroundImage: "radial-gradient(var(--grid-dot) 1px, transparent 1px)",
           backgroundSize: "26px 26px",

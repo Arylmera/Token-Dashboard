@@ -255,7 +255,7 @@ export function Console() {
   const toolLineStyle = { ...lineBase, color: "var(--gull-2)" };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 280px) minmax(0, 1fr)", gap: 12, alignItems: "stretch", height: "calc(100vh - 130px)", minHeight: 440 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 280px) minmax(0, 1fr)", gap: 12, alignItems: "stretch", height: "100%", minHeight: 0 }}>
       {/* ============ LEFT RAIL: live sessions ============ */}
       <aside className="a-card" style={{ padding: 0, overflow: "hidden", minHeight: 0 }}>
         <div className="a-card-head" style={{ margin: 0, padding: "12px 14px", borderBottom: "1px solid var(--iron-border)" }}>
