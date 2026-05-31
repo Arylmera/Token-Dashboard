@@ -168,6 +168,22 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> rusqlite::Result<()> {
     migrate_add_provider(&conn)?;
     conn.execute_batch(SCHEMA)?;
     migrate_add_fts(&conn)?;
+    ensure_analyzed(&conn)?;
+    Ok(())
+}
+
+/// Run a one-time sampled `ANALYZE` on DBs that have never been analyzed, so
+/// the planner has statistics on first launch (existing DBs predate the
+/// scan-time `PRAGMA optimize`). Once `sqlite_stat1` exists this is a no-op;
+/// scans keep the stats fresh thereafter. Best-effort.
+fn ensure_analyzed(conn: &Connection) -> rusqlite::Result<()> {
+    if table_exists(conn, "sqlite_stat1")? {
+        return Ok(());
+    }
+    if !table_exists(conn, "messages")? {
+        return Ok(());
+    }
+    let _ = conn.execute_batch("PRAGMA analysis_limit=400; ANALYZE;");
     Ok(())
 }
 
