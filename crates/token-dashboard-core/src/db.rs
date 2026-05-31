@@ -210,9 +210,32 @@ pub fn open<P: AsRef<Path>>(path: P) -> rusqlite::Result<Connection> {
             | OpenFlags::SQLITE_OPEN_CREATE
             | OpenFlags::SQLITE_OPEN_URI,
     )?;
-    conn.busy_timeout(std::time::Duration::from_secs(30))?;
+    tune(&conn)?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     Ok(conn)
+}
+
+/// Apply the performance PRAGMAs shared by the read and write paths.
+///
+/// WAL lets the scanner (writer) and the dashboard reads proceed without
+/// blocking each other; `synchronous=NORMAL` is durable under WAL with far
+/// fewer fsyncs; `mmap_size`/`cache_size` keep the hot DB in mapped/cached
+/// pages so cold opens stay warm. `execute_batch` is used because some
+/// PRAGMAs (e.g. `journal_mode`) return a row, which `pragma_update` rejects.
+///
+/// `query_only` is deliberately *not* set: the `open_ro` read helper is also
+/// used by a few write paths (e.g. `budget_alerts` recording fired alerts),
+/// and the connection pool reuses these connections across both.
+pub fn tune(conn: &Connection) -> rusqlite::Result<()> {
+    conn.busy_timeout(std::time::Duration::from_secs(30))?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;\
+         PRAGMA synchronous=NORMAL;\
+         PRAGMA mmap_size=268435456;\
+         PRAGMA cache_size=-65536;\
+         PRAGMA temp_store=MEMORY;",
+    )?;
+    Ok(())
 }
 
 /// Add `messages.message_id` for streaming-snapshot dedup.
