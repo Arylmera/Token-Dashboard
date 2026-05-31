@@ -98,10 +98,33 @@ fn main() {
         let _ = queries::daily_token_breakdown(&db, None, None, None);
     });
 
+    // --- first_prompts: the per-session prompt lookup the day handler runs
+    // for every session on the selected date. Measured at ~6ms for ~188
+    // sessions — NOT the /api/day bottleneck (the endpoint is ~31ms
+    // server-side; earlier higher numbers were PowerShell client-side JSON
+    // parsing, not server time). Tracked here so it stays measurable. ---
+    let session_ids: Vec<String> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT session_id FROM messages \
+                 WHERE type='assistant' AND substr(timestamp,1,10)=?1",
+            )
+            .unwrap();
+        stmt.query_map([&busy_date], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    let fp_refs: Vec<&str> = session_ids.iter().map(String::as_str).collect();
+    let fp_ms = median_ms(|| {
+        let _ = queries::first_prompts(&db, &fp_refs);
+    });
+
     println!("RESULTS (median of {RUNS} warm runs, ms):");
     println!("  /api/day (6 queries)   {day_ms:8.1}");
     println!("  tags-summary (2 q)     {tag_ms:8.1}");
     println!("  daily (all-time)       {daily_ms:8.1}");
+    println!("  first_prompts ({:3} ids) {fp_ms:8.1}", session_ids.len());
 
     explain(
         &conn,
@@ -114,5 +137,17 @@ fn main() {
         "tag_aggregates",
         "SELECT st.tag,m.model FROM session_tags st JOIN messages m ON m.session_id=st.session_id WHERE m.type='assistant' GROUP BY st.tag,m.model",
         false,
+    );
+    explain(
+        &conn,
+        "first_prompts (current)",
+        "SELECT session_id, prompt_text FROM ( \
+             SELECT session_id, prompt_text, timestamp, \
+                    ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY timestamp ASC) AS rn \
+             FROM messages \
+             WHERE type='user' AND prompt_text IS NOT NULL AND TRIM(prompt_text) <> '' \
+               AND session_id IN (?1) \
+         ) WHERE rn = 1",
+        true,
     );
 }
