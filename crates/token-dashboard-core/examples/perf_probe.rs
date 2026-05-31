@@ -56,6 +56,10 @@ fn main() {
         .unwrap_or_else(|_| token_dashboard_core::default_db_path());
     println!("DB: {}", db.display());
 
+    // Apply schema/migrations exactly as the app does on launch, so any new
+    // index (e.g. the Tier 2 expression index) is built before we measure.
+    token_dashboard_core::init_db(&db).unwrap();
+
     let conn = Connection::open(&db).unwrap();
 
     // Pick the busiest UTC date so timings reflect a heavy day-click.

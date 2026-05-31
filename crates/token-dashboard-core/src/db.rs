@@ -56,6 +56,12 @@ CREATE INDEX IF NOT EXISTS idx_messages_model     ON messages(model);
 CREATE INDEX IF NOT EXISTS idx_messages_msgid     ON messages(session_id, message_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread    ON messages(session_id, type, is_sidechain, timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_provider  ON messages(provider);
+-- Expression index on the UTC calendar date. The day/* and cache_stats/
+-- burn_rate queries filter `substr(timestamp,1,10) = ?` (often with
+-- `type = 'assistant'`); wrapping the column in substr() makes the plain
+-- timestamp index unusable, so without this they full-scan `messages`.
+-- The leading expression also serves date-only filters (e.g. day_totals).
+CREATE INDEX IF NOT EXISTS idx_messages_day ON messages(substr(timestamp, 1, 10), type);
 
 CREATE TABLE IF NOT EXISTS tool_calls (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_tools_session ON tool_calls(session_id);
 CREATE INDEX IF NOT EXISTS idx_tools_name    ON tool_calls(tool_name);
 CREATE INDEX IF NOT EXISTS idx_tools_target  ON tool_calls(target);
 CREATE INDEX IF NOT EXISTS idx_tools_use_id  ON tool_calls(session_id, use_id);
+CREATE INDEX IF NOT EXISTS idx_tools_day     ON tool_calls(substr(timestamp, 1, 10));
 
 CREATE TABLE IF NOT EXISTS plan (
   k TEXT PRIMARY KEY,
