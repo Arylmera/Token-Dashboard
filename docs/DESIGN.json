@@ -95,7 +95,7 @@
       "title": { "displayName": "Title", "purpose": "Sub-section heads inside cards." },
       "body": { "displayName": "Body", "purpose": "Paragraphs, table cells, tip body, captions." },
       "mono": { "displayName": "Mono", "purpose": "Pills, badges, mono identifiers, code chips." },
-      "metric": { "displayName": "Metric", "purpose": "KPI values — visual anchor of the Overview tab (22px). The Live Cockpit HUD uses a 48px focal variant — the sole exception to the no-hero cap." },
+      "metric": { "displayName": "Metric", "purpose": "KPI values — the visual anchor and largest tier. Mono 400, fluid clamp(28px,4vw,36px) at default (KPI tiles clamp(26px,18cqi,36px) via container query), scaling to 56px in spacious density and special themes. Large but dense — a row of equals, never a single dramatized hero." },
       "label": { "displayName": "Micro-Label", "purpose": "10px uppercase 0.08em — instrument-panel signal for KPI captions and table headers." }
     },
     "shadows": [
@@ -220,7 +220,7 @@
       "live": {
         "displayName": "Live tab (vault-explorer subsystem)",
         "rootClass": "pr-root",
-        "source": "frontend/src/live/ (ported from Praetorium); own themes/styles.css",
+        "source": "frontend/src/live/ (JS, ported from Praetorium); stylesheet served as frontend/live.css (canonical, wired into index.html)",
         "northStar": "The Terminal Status Readout",
         "note": "Not a second design system. Re-declares the same tokens (ink-slate page, carbon panels, Console Blue ≤10% accent, Inter + JetBrains Mono, flat-by-default, 120ms color/background motion) and reuses the main .a-rail nav classes. Two-voice contract is stricter: mono carries the brand prompt, nav, card titles, and every number; Inter carries prose only.",
         "views": [
@@ -239,7 +239,7 @@
       "refersTo": "kpi",
       "description": "The visual anchor of Overview. Caption + mono metric value, optional delta + sub. Cost variant tints the value receipt-green.",
       "html": "<div class=\"ds-kpi ds-kpi-cost\"><div class=\"ds-kpi-label\">COST TODAY</div><div class=\"ds-kpi-value\">$4.21</div><div class=\"ds-kpi-delta ds-up\">+12% vs avg</div><div class=\"ds-kpi-sub\">3 sessions</div></div>",
-      "css": ".ds-kpi { background: #0F1419; border: 1px solid #1F2630; border-radius: 10px; padding: 16px; min-width: 180px; font-family: Inter, system-ui, sans-serif; } .ds-kpi-label { color: #8B98A6; text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; font-weight: 600; white-space: nowrap; } .ds-kpi-value { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; margin-top: 6px; line-height: 1.1; color: #E6EDF3; } .ds-kpi-cost .ds-kpi-value { color: #3FB68B; } .ds-kpi-delta { font-family: 'JetBrains Mono', monospace; font-size: 12px; margin-top: 4px; color: #8B98A6; } .ds-kpi-delta.ds-up { color: #3FB68B; } .ds-kpi-sub { color: #8B98A6; font-size: 11px; margin-top: 2px; }"
+      "css": ".ds-kpi { background: #0F1419; border: 1px solid #1F2630; border-radius: 10px; padding: 16px; min-width: 180px; font-family: Inter, system-ui, sans-serif; } .ds-kpi-label { color: #8B98A6; text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; font-weight: 600; white-space: nowrap; } .ds-kpi-value { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: clamp(28px, 4vw, 36px); font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: -0.04em; margin-top: 6px; line-height: 1; color: #E6EDF3; } .ds-kpi-cost .ds-kpi-value { color: #3FB68B; } .ds-kpi-delta { font-family: 'JetBrains Mono', monospace; font-size: 12px; margin-top: 4px; color: #8B98A6; } .ds-kpi-delta.ds-up { color: #3FB68B; } .ds-kpi-sub { color: #8B98A6; font-size: 11px; margin-top: 2px; }"
     },
     {
       "name": "Primary Button",
@@ -315,7 +315,7 @@
       { "name": "The No-Gradient Rule", "body": "Decorative gradients are forbidden. Only the topbar's vertical fade is permitted, to soften the edge between sticky chrome and content.", "section": "colors" },
       { "name": "The Mono-for-Numbers Rule", "body": "Any number representing a quantity renders in JetBrains Mono with tabular-nums. Numbers in sans are wrong.", "section": "typography" },
       { "name": "The Uppercase-Micro-Label Rule", "body": "10px tier uppercase with 0.08em letter-spacing. Do not use uppercase for body. Do not raise above 11px while keeping uppercase.", "section": "typography" },
-      { "name": "The No-Hero-Type Rule", "body": "In the main dashboard, no font size above 24px in any view; the 22px KPI value is the apex. The Live Cockpit's 48px focal metric is the sole scoped exception, permitted only there.", "section": "typography" },
+      { "name": "The No-Hero-Metric Rule", "body": "The prohibition is the SaaS hero-metric template (one giant centered number + gradient halo + supporting stats), not large numerals. Metrics are deliberately large (fluid 28-36px default, 56px in spacious density and special themes) but appear as a dense row of equal KPIs, so the eye reads across a ledger rather than staring at one figure. Density scales the whole row, never promotes one number.", "section": "typography" },
       { "name": "The Flat-By-Default Rule", "body": "Cards, KPIs, tables, tips, drawers carry no shadow. Border + background contrast does the work.", "section": "elevation" },
       { "name": "The Floating-Layer Exception", "body": "Shadows are reserved for surfaces that float above the document — modals and dropdown menus.", "section": "elevation" },
       { "name": "The One-Glow Rule", "body": "Glow effects forbidden except for the brand dot.", "section": "elevation" }
@@ -337,7 +337,7 @@
       "Don't use emoji, confetti, gamified language, or oversized red/green dollar figures.",
       "Don't add shadows to at-rest content surfaces.",
       "Don't use border-left or border-right >1px as a colored side-stripe accent.",
-      "Don't introduce hero text in the main dashboard. The Live Cockpit's 48px readout is the sole, scoped exception; do not generalize it.",
+      "Don't build the single dramatized hero metric — one giant centered number with a gradient halo and a few supporting stats. Large mono numerals are intended; a dense row of equal KPIs is the form. One number promoted above its row is the anti-pattern.",
       "Don't use uppercase on anything other than the 10px label tier.",
       "Don't apply good/bad color tints to rows or backgrounds based on cost magnitude.",
       "Don't introduce a new theme without owning it as a complete identity.",

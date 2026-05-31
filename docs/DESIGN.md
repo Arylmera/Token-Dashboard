@@ -43,10 +43,10 @@ typography:
     letterSpacing: "normal"
   metric:
     fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace"
-    fontSize: "22px"
-    fontWeight: 500
-    lineHeight: 1.1
-    letterSpacing: "-0.03em"
+    fontSize: "clamp(28px, 4vw, 36px)"
+    fontWeight: 400
+    lineHeight: 1
+    letterSpacing: "-0.04em"
   label:
     fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', sans-serif"
     fontSize: "10px"
@@ -238,7 +238,7 @@ The three **special** themes (`terminal`, `cockpit`, `grimdark`) are the only on
 
 ## 3. Typography
 
-**Display Font:** None. The main dashboard has no display tier — the largest text is the 22px KPI metric. Hero typography is rejected by design (the lone exception is the Live Cockpit's 48px focal metric — see the No-Hero-Type Rule).
+**Display Font:** None — no separate display *family*. The largest tier is the mono metric, a fluid `clamp(28px, 4vw, 36px)` (KPI tiles: `clamp(26px, 18cqi, 36px)` via container query) that scales up under denser layouts (compact 36px, spacious 56px) and the special themes. Large but *dense* — the system rejects the single dramatized hero number, not large numerals (see the No-Hero-Metric Rule).
 **Body Font:** Inter (with `system-ui`, `-apple-system`, `Segoe UI` fallbacks). OpenType features `cv11` and `ss01` enabled for cleaner numerals and a-glyphs.
 **Mono Font:** JetBrains Mono (with `ui-monospace`, `SFMono-Regular`, `Consolas` fallbacks).
 
@@ -250,7 +250,7 @@ The three **special** themes (`terminal`, `cockpit`, `grimdark`) are the only on
 - **Title** (Inter 600, 13px): Sub-section headings inside cards (`.card h3`). Same size as body, distinguished by weight.
 - **Body** (Inter 400, 13px, line-height 1.55): Paragraphs, table cells, tip body text, muted captions.
 - **Mono** (JetBrains Mono 500, 12px): Pills, badges, range-tab values, table mono cells, code in glossary terms.
-- **Metric** (JetBrains Mono 500, 22px, line-height 1.1, letter-spacing -0.03em, tabular-nums): KPI values. The visual anchor of the Overview tab.
+- **Metric** (JetBrains Mono 400, fluid `clamp(28px, 4vw, 36px)`, line-height 1, letter-spacing -0.04em, tabular-nums): KPI values, the visual anchor of the Overview tab. KPI tiles size via container query (`clamp(26px, 18cqi, 36px)`); density modes scale it to 36px (compact) / 56px (spacious); the activity-map headline runs ~40px; special themes (terminal 56px) push further for their pixel/display fonts. It is the largest tier in the system, by design.
 - **Label** (Inter 600, 10px, letter-spacing 0.08em, **uppercase**): KPI captions, table column headers, tip-type headers, glossary `<dt>`. The instrument-panel signal — small, spaced, deliberate.
 
 ### Named Rules
@@ -259,7 +259,7 @@ The three **special** themes (`terminal`, `cockpit`, `grimdark`) are the only on
 
 **The Uppercase-Micro-Label Rule.** Labels at the 10px tier are uppercase with 0.08em letter-spacing. This is the instrument-panel cue. Do not use uppercase for body content. Do not raise the size above 11px while keeping uppercase — it crosses into shouting.
 
-**The No-Hero-Type Rule.** In the main dashboard, no font size above 24px in any view — the KPI value at 22px is the apex. The dashboard is read across, not stared at. **One scoped exception:** the Live tab's Cockpit HUD uses a 48px mono metric (`--t-metric`) as the single focal readout of that instrument view. It is permitted only there, in the Cockpit, and only for the one primary figure. Everywhere else the 22px cap holds.
+**The No-Hero-Metric Rule.** The prohibition is the *SaaS hero-metric template*, not large numerals: never a single giant centered number with a gradient halo and three small supporting stats. Metrics are deliberately large (fluid 28–36px at default, 56px in spacious density and special themes) — but they appear as a **dense row of equals** (up to 7 KPIs across), so the eye reads *across* a ledger rather than staring at one dramatized figure. Density adds whitespace and scale to the whole row, never promotes one number to a hero. The Live Cockpit's 48px focal readout fits this: it is the instrument's primary gauge among other readouts, not a marketing hero.
 
 ## 4. Elevation
 
@@ -359,7 +359,7 @@ Depth in the resting layout is conveyed by border + background contrast, not by 
 
 ### Live tab (vault-explorer subsystem)
 
-A self-contained subsystem ported from Praetorium (`frontend/src/live/`, root class `.pr-root`, own `themes/styles.css`), embedded as a tab and also openable as a Tauri pop-out window. It is **not a second design system**: its foundation block re-declares the same tokens (`#0A0E14` ink-slate page, carbon panels, `#4A9EFF` Console Blue accent held to ≤10%, Inter + JetBrains Mono, flat-by-default, 120ms `color`/`background` motion). The north star is the same instrument bench, framed as "The Terminal Status Readout": terminal-prompt chrome, mono everywhere, sharp panels, a dot-grid background and a single animated scan-line.
+A self-contained subsystem ported from Praetorium (JS in `frontend/src/live/`, root class `.pr-root`; its stylesheet is served as `frontend/live.css` — the canonical Live CSS, wired into `index.html`), embedded as a tab and also openable as a Tauri pop-out window. It is **not a second design system**: its foundation block re-declares the same tokens (`#0A0E14` ink-slate page, carbon panels, `#4A9EFF` Console Blue accent held to ≤10%, Inter + JetBrains Mono, flat-by-default, 120ms `color`/`background` motion). The north star is the same instrument bench, framed as "The Terminal Status Readout": terminal-prompt chrome, mono everywhere, sharp panels, a dot-grid background and a single animated scan-line.
 
 - **Two-voice contract (stricter here):** Inter carries prose and body only; JetBrains Mono carries the brand prompt, nav, card titles, and every number / identifier. The Live surface leans more mono than the main dashboard.
 - **Secondary nav rail:** a slim icon rail (`.a-live-subrail`) that expands on hover, reusing the main dashboard's `.a-rail` / `.a-rail-link` / `.a-rail-ico` / `.a-rail-label` classes so it stays pixel-consistent with the primary nav.
@@ -416,7 +416,7 @@ Two tiers — card-local and global.
 - **Don't** use emoji, confetti, gamified language ("you saved $X this week!"), or oversized red/green dollar figures. Cost is a fact. (PRODUCT.md anti-reference: *"Fintech gamification"*).
 - **Don't** add shadows to at-rest content surfaces. Cards, KPIs, tips, drawers are flat. Shadows are reserved for floating layers (modal, dropdown). (Flat-By-Default Rule, §4.)
 - **Don't** use `border-left` or `border-right` greater than 1px as a colored side-stripe accent on cards, list items, or tips. Always rewrite with full borders or a tinted background.
-- **Don't** introduce hero text in the main dashboard. The 22px KPI metric is the apex of the type system. The Live Cockpit's 48px focal readout is the sole, scoped exception — do not generalize it.
+- **Don't** build the single dramatized hero metric — one giant centered number with a gradient halo and a few supporting stats. Large mono numerals are fine, and intended; a *dense row of equal KPIs* is the form. One number promoted above its row is the anti-pattern.
 - **Don't** use uppercase on anything other than the 10px label tier. Uppercased body or headings cross into shouting.
 - **Don't** apply `good`/`bad` color tints to rows or backgrounds based on cost magnitude. Cost is reported, not judged. The user decides what is high.
 - **Don't** introduce a fifth theme without owning it as a complete identity (named, with its own personality and palette ramp). Random color skins erode the system.
