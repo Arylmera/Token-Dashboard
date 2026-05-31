@@ -145,7 +145,7 @@ components:
 
 **Creative North Star: "The Quiet Telemetry Bench"**
 
-A personal workbench with instruments laid out — readouts, gauges, a small ledger — sitting calmly on the desk. The user glances down, reads what they need, looks back up. Multi-theme like a real cockpit panel (dark by default, with `light`, `forge`, `forest` skins for the same instruments), but the *layout, density, and rules* never shift. Themes are instrument finishes, not redesigns.
+A personal workbench with instruments laid out — readouts, gauges, a small ledger — sitting calmly on the desk. The user glances down, reads what they need, looks back up. Multi-theme like a real cockpit panel (a `bench` dark default, plus 18 named finishes spanning dark, light, and three animated "special" identities), but the *layout, density, and rules* never shift. Themes are instrument finishes, not redesigns.
 
 The system rejects the SaaS-dashboard impulse to dramatize. No giant centered "TOTAL TOKENS" with gradient halo. No animated mesh background pretending the data is alive. No glassmorphism stacked on a hero. Cost is reported as a fact in tabular-nums monospace. The user is trusted to read.
 
@@ -154,15 +154,16 @@ It also rejects the corporate-observability impulse to feel like a Datadog conso
 **Key Characteristics:**
 - Density-first, instrument-grade layout. 13px body, dense rows, mono numbers, tabular-nums everywhere costs appear.
 - Flat-by-default surfaces. 1px borders carry the structure; shadows are reserved for floating layers (modal, dropdown).
-- Four-theme color system on a single shared scale: dark (default), light, forge (warm), forest (cool green). Same tokens, swapped values.
+- Nineteen-theme color system on a single shared scale: 10 dark, 6 light, 3 animated "special" finishes. Same tokens, swapped values; layout never changes.
 - Uppercase micro-labels (10px, 0.08em letter-spacing) for KPI captions and table headers — the instrument-panel signal.
 - Status colors (`good`/`warn`/`bad`) used quietly. Not as decoration.
+- A Live tab (vault-explorer subsystem ported from Praetorium) reuses the same token contract — same surfaces, same Console Blue accent, same type pairing — applied to a terminal-readout surface with console / cockpit / explorer views.
 
 ## 2. Colors
 
 A muted, high-contrast slate-and-blue base with a small set of semantic accents. The palette is intentionally narrow per theme — one primary accent, one secondary, three semantic — because the dashboard's job is reading numbers, not painting moods.
 
-The frontmatter holds the **dark theme (default)**. The same token names exist in the three alternate themes; values shift, semantics don't. The `[Themes]` block below catalogues the alternates so the spec covers all four finishes.
+The frontmatter holds the **`bench` dark theme (the default)**. The same token names exist in all eighteen other themes; values shift, semantics don't. The `[Themes]` block below catalogues the alternates so the spec covers every finish.
 
 ### Primary
 - **Console Blue** (#4A9EFF / `oklch(70% 0.15 250)`): Brand accent. The glowing brand dot, link color, primary button, sonnet model badge, active-tab indicator. Used on ≤10% of any given screen.
@@ -187,21 +188,45 @@ The frontmatter holds the **dark theme (default)**. The same token names exist i
 
 ### Themes
 
-The dashboard ships four themes on the same token scale. The user picks one in Settings. Each is a complete identity, not a skin variant: forge has its own personality (warm, dusk, forge-fire) just as forest does (mossy, shaded, evergreen).
+The dashboard ships **nineteen themes** on the same token scale, registered in `frontend/src/theme.js` and grouped into three modes in Settings → Theme: **Dark**, **Light**, and **Special**. The user picks one. Each is a complete identity, not a skin variant — forge has its own personality (warm, forge-fire) just as forest does (mossy, evergreen). The token *contract* (surface roles, accent budget, type pairing, flat elevation) is identical across all nineteen; only the `--bg` / `--panel` / `--accent` / `--bone` values change.
 
-| Token | Dark (default) | Light | Forge | Forest |
+The table lists each theme's identity anchors — page background, panel, accent, and primary text — pulled from the swatch registry. These four colors define the finish; the full thirteen-token block per theme lives in `frontend/styles.css` (`.dir-a-root.theme-X { … }`).
+
+**Dark (10) — `bench` is the default (no theme class).**
+
+| Theme | `--bg` | `--panel` | `--accent` | `--bone` |
 |---|---|---|---|---|
-| bg | #0A0E14 | #F7F9FC | #14100C | #0C1410 |
-| panel | #0F1419 | #FFFFFF | #1A140E | #0F1A14 |
-| text | #E6EDF3 | #1A2330 | #F5E8D8 | #E0F0E5 |
-| muted | #8B98A6 | #5A6573 | #B89578 | #8FB39C |
-| accent | #4A9EFF | #2B7FE0 | #FF8A3D | #4FCB7A |
-| accent-2 | #7C5CFF | #5C3FE0 | #FF5C2E | #2EA66B |
-| good | #3FB68B | #2E9870 | #C8A24A | #4FCB7A |
-| warn | #E8A23B | #C8821E | #FFB347 | #E8A23B |
-| bad | #E5484D | #D43338 | #E5484D | #E5484D |
+| bench (default) | #0A0E14 | #0F1419 | #4A9EFF | #E6EDF3 |
+| dim | #0F1318 | #13181F | #4A9EFF | #C7CFD8 |
+| forge | #14100C | #1A140E | #ED7E3F | #F5E8D8 |
+| forest | #0C1410 | #0F1A14 | #5CBC7A | #E0F0E5 |
+| dusk | #0F0D1A | #171326 | #A77FF0 | #ECE6FF |
+| ocean | #07131A | #0B1B26 | #36C2C2 | #DCEFF7 |
+| matrix | #000805 | #031410 | #1FE26F | #B8FFD0 |
+| rose | #1A0A12 | #22101A | #F4598F | #FFE2EC |
+| breaking bad (bb-dark) | #0A0E08 | #12140F | #DCC81A | #F0E8B8 |
+| cyberpunk (cyber-dark) | #0A0710 | #1A1B26 | #BB22BD | #D1C5C0 |
 
-ECharts series palettes shift per theme too — see `web/charts/theme.js` for the full series arrays.
+**Light (6)**
+
+| Theme | `--bg` | `--panel` | `--accent` | `--bone` |
+|---|---|---|---|---|
+| paper | #F7F9FC | #FFFFFF | #2F7FDB | #1A2330 |
+| linen | #F5EFE4 | #FCF7EC | #A85528 | #3A2E1C |
+| mint | #ECF6EF | #F8FCF9 | #0F9669 | #1B3A2A |
+| lilac | #F2EEF8 | #FAF7FF | #7449F0 | #2D1F47 |
+| breaking bad (bb-light) | #F4EFC8 | #FAF7DD | #1F5C36 | #12140F |
+| cyberpunk (cyber-light) | #F2EAE5 | #FBF5F2 | #BE2BBE | #272932 |
+
+**Special (3) — animated ambient canvas + custom display fonts, gated on `prefers-reduced-motion` / the "reduce motion" toggle.**
+
+| Theme | `--bg` | `--panel` | `--accent` | `--bone` |
+|---|---|---|---|---|
+| terminal | #020806 | #0a3a26 | #36ff7a | #b7ffce |
+| cockpit | #04080f | #0e3a5c | #00d4ff | #ffaa00 |
+| grimdark | #0a0807 | #3a261c | #c8a24a | #b8231a |
+
+The three **special** themes (`terminal`, `cockpit`, `grimdark`) are the only ones that layer extra fonts (VT323, Orbitron, Cinzel/Cormorant) and an animated ambient canvas on top of the token contract. They carry the same density and rules — the animation is chrome, not content motion, and it freezes under reduced-motion. Per-theme chart series palettes shift alongside the tokens.
 
 ### Named Rules
 
@@ -213,7 +238,7 @@ ECharts series palettes shift per theme too — see `web/charts/theme.js` for th
 
 ## 3. Typography
 
-**Display Font:** None. The system has no display tier — the largest text is 26px (KPI values). Hero typography is rejected by design.
+**Display Font:** None. The main dashboard has no display tier — the largest text is the 22px KPI metric. Hero typography is rejected by design (the lone exception is the Live Cockpit's 48px focal metric — see the No-Hero-Type Rule).
 **Body Font:** Inter (with `system-ui`, `-apple-system`, `Segoe UI` fallbacks). OpenType features `cv11` and `ss01` enabled for cleaner numerals and a-glyphs.
 **Mono Font:** JetBrains Mono (with `ui-monospace`, `SFMono-Regular`, `Consolas` fallbacks).
 
@@ -234,7 +259,7 @@ ECharts series palettes shift per theme too — see `web/charts/theme.js` for th
 
 **The Uppercase-Micro-Label Rule.** Labels at the 10px tier are uppercase with 0.08em letter-spacing. This is the instrument-panel cue. Do not use uppercase for body content. Do not raise the size above 11px while keeping uppercase — it crosses into shouting.
 
-**The No-Hero-Type Rule.** No font size above 24px in any view. The KPI value at 22px is the apex. The dashboard is read across, not stared at.
+**The No-Hero-Type Rule.** In the main dashboard, no font size above 24px in any view — the KPI value at 22px is the apex. The dashboard is read across, not stared at. **One scoped exception:** the Live tab's Cockpit HUD uses a 48px mono metric (`--t-metric`) as the single focal readout of that instrument view. It is permitted only there, in the Cockpit, and only for the one primary figure. Everywhere else the 22px cap holds.
 
 ## 4. Elevation
 
@@ -332,6 +357,18 @@ Depth in the resting layout is conveyed by border + background contrast, not by 
 - **Pattern:** Native `<details>` / `<summary>`, custom triangle marker (`▸` rotates 90° on open).
 - **Layout:** `<dl>` with 160px `<dt>` column, terms uppercase label-tier, definitions in body tier with inline `<code>` chips on `carbon-panel-2`.
 
+### Live tab (vault-explorer subsystem)
+
+A self-contained subsystem ported from Praetorium (`frontend/src/live/`, root class `.pr-root`, own `themes/styles.css`), embedded as a tab and also openable as a Tauri pop-out window. It is **not a second design system**: its foundation block re-declares the same tokens (`#0A0E14` ink-slate page, carbon panels, `#4A9EFF` Console Blue accent held to ≤10%, Inter + JetBrains Mono, flat-by-default, 120ms `color`/`background` motion). The north star is the same instrument bench, framed as "The Terminal Status Readout": terminal-prompt chrome, mono everywhere, sharp panels, a dot-grid background and a single animated scan-line.
+
+- **Two-voice contract (stricter here):** Inter carries prose and body only; JetBrains Mono carries the brand prompt, nav, card titles, and every number / identifier. The Live surface leans more mono than the main dashboard.
+- **Secondary nav rail:** a slim icon rail (`.a-live-subrail`) that expands on hover, reusing the main dashboard's `.a-rail` / `.a-rail-link` / `.a-rail-ico` / `.a-rail-label` classes so it stays pixel-consistent with the primary nav.
+- **Three views** (switched by the rail; "settings" was removed — theme/glass/vault live in the main Settings tab):
+  - **Console** — the agent run log: a terminal-style readout streaming `claude` CLI events with a left rail of runs.
+  - **Cockpit** — a radial constellation HUD of sessions/agents. The one place a large display metric appears (see the No-Hero-Type exception in §3).
+  - **Explorer** — the vault file explorer: a `files` tree, a `map` (links graph), and a `sessions` list.
+- **Pop-out:** the rail's pop-out button invokes the `open_live_window` Tauri command to detach Live into its own window. No-op in plain web/dev (no Tauri), so the button degrades gracefully.
+
 ### Empty / Loading / Error states
 
 The principle: **panel positions never shift between states.** The card shell — border, panel bg, padding, dimensions — stays identical whether the card is full, empty, loading, or errored. The data inside changes; the architecture does not. No skeleton bars, no spinners, no ghost-UI outlines, no illustrations.
@@ -379,7 +416,7 @@ Two tiers — card-local and global.
 - **Don't** use emoji, confetti, gamified language ("you saved $X this week!"), or oversized red/green dollar figures. Cost is a fact. (PRODUCT.md anti-reference: *"Fintech gamification"*).
 - **Don't** add shadows to at-rest content surfaces. Cards, KPIs, tips, drawers are flat. Shadows are reserved for floating layers (modal, dropdown). (Flat-By-Default Rule, §4.)
 - **Don't** use `border-left` or `border-right` greater than 1px as a colored side-stripe accent on cards, list items, or tips. Always rewrite with full borders or a tinted background.
-- **Don't** add a custom typeface above 28px. The 26px KPI value is the apex of the type system. No hero text.
+- **Don't** introduce hero text in the main dashboard. The 22px KPI metric is the apex of the type system. The Live Cockpit's 48px focal readout is the sole, scoped exception — do not generalize it.
 - **Don't** use uppercase on anything other than the 10px label tier. Uppercased body or headings cross into shouting.
 - **Don't** apply `good`/`bad` color tints to rows or backgrounds based on cost magnitude. Cost is reported, not judged. The user decides what is high.
 - **Don't** introduce a fifth theme without owning it as a complete identity (named, with its own personality and palette ramp). Random color skins erode the system.

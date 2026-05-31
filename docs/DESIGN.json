@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-04-29T00:00:00Z",
+  "generatedAt": "2026-05-31T00:00:00Z",
   "title": "Design System: Token Dashboard",
   "extensions": {
     "colorMeta": {
@@ -95,7 +95,7 @@
       "title": { "displayName": "Title", "purpose": "Sub-section heads inside cards." },
       "body": { "displayName": "Body", "purpose": "Paragraphs, table cells, tip body, captions." },
       "mono": { "displayName": "Mono", "purpose": "Pills, badges, mono identifiers, code chips." },
-      "metric": { "displayName": "Metric", "purpose": "KPI values — visual anchor of the Overview tab." },
+      "metric": { "displayName": "Metric", "purpose": "KPI values — visual anchor of the Overview tab (22px). The Live Cockpit HUD uses a 48px focal variant — the sole exception to the no-hero cap." },
       "label": { "displayName": "Micro-Label", "purpose": "10px uppercase 0.08em — instrument-panel signal for KPI captions and table headers." }
     },
     "shadows": [
@@ -112,25 +112,123 @@
       { "name": "mobile", "value": "720px" }
     ],
     "themes": {
-      "dark": {
-        "displayName": "Dark (default)",
+      "_note": "Nineteen themes on one token scale, registered in frontend/src/theme.js and grouped into Dark / Light / Special in Settings. The token contract is identical across all of them; only values change. Full thirteen-token blocks live in frontend/styles.css (.dir-a-root.theme-X). 'bench' is the default and carries no theme class. The three 'special' themes layer custom fonts + an animated ambient canvas on top of the same tokens; their swatch anchors are listed, full token blocks live in styles.css.",
+      "bench": {
+        "displayName": "bench (default)",
+        "mode": "dark",
         "tokens": { "bg": "#0A0E14", "panel": "#0F1419", "panel-2": "#131922", "border": "#1F2630", "border-2": "#283040", "text": "#E6EDF3", "muted": "#8B98A6", "muted-2": "#5A6573", "accent": "#4A9EFF", "accent-2": "#7C5CFF", "good": "#3FB68B", "warn": "#E8A23B", "bad": "#E5484D" },
         "chartPalette": ["#4A9EFF", "#7C5CFF", "#3FB68B", "#E8A23B", "#E5484D", "#5BCEDA", "#F472B6"]
       },
-      "light": {
-        "displayName": "Light",
-        "tokens": { "bg": "#F7F9FC", "panel": "#FFFFFF", "panel-2": "#F1F4F8", "border": "#E2E7EE", "border-2": "#CFD6DF", "text": "#1A2330", "muted": "#5A6573", "muted-2": "#8B98A6", "accent": "#2B7FE0", "accent-2": "#5C3FE0", "good": "#2E9870", "warn": "#C8821E", "bad": "#D43338" },
-        "chartPalette": ["#2B7FE0", "#5C3FE0", "#2E9870", "#C8821E", "#D43338", "#1F9AAA", "#D85FA0"]
+      "dim": {
+        "displayName": "dim",
+        "mode": "dark",
+        "tokens": { "bg": "#0F1318", "panel": "#13181F", "panel-2": "#181E27", "border": "#222A35", "border-2": "#2F3B4A", "text": "#C7CFD8", "muted": "#8E97A3", "muted-2": "#5E6772", "accent": "#4A9EFF", "accent-2": "#8E97A3", "good": "#8E97A3", "warn": "#E8A23B", "bad": "#E5484D" }
       },
       "forge": {
-        "displayName": "Forge",
-        "tokens": { "bg": "#14100C", "panel": "#1A140E", "panel-2": "#221A12", "border": "#2E2218", "border-2": "#3D2D1F", "text": "#F5E8D8", "muted": "#B89578", "muted-2": "#7A5E45", "accent": "#FF8A3D", "accent-2": "#FF5C2E", "good": "#C8A24A", "warn": "#FFB347", "bad": "#E5484D" },
-        "chartPalette": ["#FF8A3D", "#FF5C2E", "#FFB347", "#C8A24A", "#E5484D", "#B86B3A", "#FFD27F"]
+        "displayName": "forge",
+        "mode": "dark",
+        "tokens": { "bg": "#14100C", "panel": "#1A140E", "panel-2": "#221A12", "border": "#2D2419", "border-2": "#3A2E1F", "text": "#F5E8D8", "muted": "#B89578", "muted-2": "#7A6049", "accent": "#ED7E3F", "accent-2": "#B89578", "good": "#A8956B", "warn": "#E8A23B", "bad": "#E5484D" },
+        "chartPalette": ["#ED7E3F", "#FF5C2E", "#FFB347", "#C8A24A", "#E5484D", "#B86B3A", "#FFD27F"]
       },
       "forest": {
-        "displayName": "Forest",
-        "tokens": { "bg": "#0C1410", "panel": "#0F1A14", "panel-2": "#13221A", "border": "#1B2E24", "border-2": "#264736", "text": "#E0F0E5", "muted": "#8FB39C", "muted-2": "#5C7C68", "accent": "#4FCB7A", "accent-2": "#2EA66B", "good": "#4FCB7A", "warn": "#E8A23B", "bad": "#E5484D" },
-        "chartPalette": ["#4FCB7A", "#2EA66B", "#9CD66F", "#E8A23B", "#E5484D", "#5BCEDA", "#7C5CFF"]
+        "displayName": "forest",
+        "mode": "dark",
+        "tokens": { "bg": "#0C1410", "panel": "#0F1A14", "panel-2": "#13221B", "border": "#1F2D24", "border-2": "#2A3D31", "text": "#E0F0E5", "muted": "#8FB39C", "muted-2": "#5C7A68", "accent": "#5CBC7A", "accent-2": "#8FB39C", "good": "#6FA88A", "warn": "#E8A23B", "bad": "#E5484D" },
+        "chartPalette": ["#5CBC7A", "#2EA66B", "#9CD66F", "#E8A23B", "#E5484D", "#5BCEDA", "#7C5CFF"]
+      },
+      "dusk": {
+        "displayName": "dusk",
+        "mode": "dark",
+        "tokens": { "bg": "#0F0D1A", "panel": "#171326", "panel-2": "#1F1A33", "border": "#2A2342", "border-2": "#3A3056", "text": "#ECE6FF", "muted": "#A296C9", "muted-2": "#6E6391", "accent": "#A77FF0", "accent-2": "#A296C9", "good": "#A296C9", "warn": "#E8A23B", "bad": "#E5484D" }
+      },
+      "ocean": {
+        "displayName": "ocean",
+        "mode": "dark",
+        "tokens": { "bg": "#07131A", "panel": "#0B1B26", "panel-2": "#0F2533", "border": "#163240", "border-2": "#214458", "text": "#DCEFF7", "muted": "#7FA9BB", "muted-2": "#54798A", "accent": "#36C2C2", "accent-2": "#7FA9BB", "good": "#7FA9BB", "warn": "#E8A23B", "bad": "#E5484D" }
+      },
+      "matrix": {
+        "displayName": "matrix",
+        "mode": "dark",
+        "tokens": { "bg": "#000805", "panel": "#031410", "panel-2": "#062019", "border": "#0B3024", "border-2": "#114A38", "text": "#B8FFD0", "muted": "#3FBF7A", "muted-2": "#1F7A4A", "accent": "#1FE26F", "accent-2": "#3FBF7A", "good": "#3FBF7A", "warn": "#E8A23B", "bad": "#E5484D" }
+      },
+      "rose": {
+        "displayName": "rose",
+        "mode": "dark",
+        "tokens": { "bg": "#1A0A12", "panel": "#22101A", "panel-2": "#2D1622", "border": "#3D1F2D", "border-2": "#502A3D", "text": "#FFE2EC", "muted": "#C68DA3", "muted-2": "#8A5C70", "accent": "#F4598F", "accent-2": "#C68DA3", "good": "#C68DA3", "warn": "#E8A23B", "bad": "#E5484D" }
+      },
+      "bb-dark": {
+        "displayName": "breaking bad (dark)",
+        "mode": "dark",
+        "tokens": { "bg": "#0A0E08", "panel": "#12140F", "panel-2": "#1A1D14", "border": "#2A301F", "border-2": "#3D4628", "text": "#F0E8B8", "muted": "#A6A65B", "muted-2": "#6A7220", "accent": "#DCC81A", "accent-2": "#1B5530", "good": "#A6A65B", "warn": "#E8A23B", "bad": "#E5484D" }
+      },
+      "cyber-dark": {
+        "displayName": "cyberpunk (dark)",
+        "mode": "dark",
+        "tokens": { "bg": "#0A0710", "panel": "#1A1B26", "panel-2": "#272932", "border": "#3D2D5C", "border-2": "#5C4A8A", "text": "#D1C5C0", "muted": "#9370DB", "muted-2": "#6B52A0", "accent": "#BB22BD", "accent-2": "#37EBF3", "good": "#1AC5B0", "warn": "#FDF500", "bad": "#E455AE" }
+      },
+      "paper": {
+        "displayName": "paper",
+        "mode": "light",
+        "tokens": { "bg": "#F7F9FC", "panel": "#FFFFFF", "panel-2": "#F1F4F9", "border": "#E5EAF1", "border-2": "#CDD5E0", "text": "#1A2330", "muted": "#5A6573", "muted-2": "#94A0AE", "accent": "#2F7FDB", "accent-2": "#5A6573", "good": "#5A6573", "warn": "#E8A23B", "bad": "#E5484D" },
+        "chartPalette": ["#2F7FDB", "#5C3FE0", "#2E9870", "#C8821E", "#D43338", "#1F9AAA", "#D85FA0"]
+      },
+      "linen": {
+        "displayName": "linen",
+        "mode": "light",
+        "tokens": { "bg": "#F5EFE4", "panel": "#FCF7EC", "panel-2": "#EFE7D6", "border": "#DDD0B5", "border-2": "#C8B898", "text": "#3A2E1C", "muted": "#7A6A4E", "muted-2": "#A89878", "accent": "#A85528", "accent-2": "#7A6A4E", "good": "#7A6A4E", "warn": "#E8A23B", "bad": "#E5484D" }
+      },
+      "mint": {
+        "displayName": "mint",
+        "mode": "light",
+        "tokens": { "bg": "#ECF6EF", "panel": "#F8FCF9", "panel-2": "#E2EFE7", "border": "#C5DBCD", "border-2": "#A4C5B0", "text": "#1B3A2A", "muted": "#4F7A63", "muted-2": "#85A695", "accent": "#0F9669", "accent-2": "#4F7A63", "good": "#4F7A63", "warn": "#E8A23B", "bad": "#E5484D" }
+      },
+      "lilac": {
+        "displayName": "lilac",
+        "mode": "light",
+        "tokens": { "bg": "#F2EEF8", "panel": "#FAF7FF", "panel-2": "#EAE2F4", "border": "#D2C5E2", "border-2": "#B5A4CD", "text": "#2D1F47", "muted": "#6E5C90", "muted-2": "#9F90BC", "accent": "#7449F0", "accent-2": "#6E5C90", "good": "#6E5C90", "warn": "#E8A23B", "bad": "#E5484D" }
+      },
+      "bb-light": {
+        "displayName": "breaking bad (light)",
+        "mode": "light",
+        "tokens": { "bg": "#F4EFC8", "panel": "#FAF7DD", "panel-2": "#EBE5B5", "border": "#D8D196", "border-2": "#A6A65B", "text": "#12140F", "muted": "#6A7220", "muted-2": "#A6A65B", "accent": "#1F5C36", "accent-2": "#A89A1A", "good": "#6A7220", "warn": "#E8A23B", "bad": "#E5484D" }
+      },
+      "cyber-light": {
+        "displayName": "cyberpunk (light)",
+        "mode": "light",
+        "tokens": { "bg": "#F2EAE5", "panel": "#FBF5F2", "panel-2": "#E8DCD5", "border": "#D5C4D6", "border-2": "#B5A0BC", "text": "#272932", "muted": "#6B52A0", "muted-2": "#9370DB", "accent": "#BE2BBE", "accent-2": "#0E94B0", "good": "#0F8A78", "warn": "#B89500", "bad": "#710000" }
+      },
+      "terminal": {
+        "displayName": "terminal",
+        "mode": "special",
+        "note": "Animated ambient canvas + VT323/Share Tech Mono. Full token block in styles.css.",
+        "swatch": { "bg": "#020806", "panel": "#0a3a26", "accent": "#36ff7a", "text": "#b7ffce" }
+      },
+      "cockpit": {
+        "displayName": "cockpit",
+        "mode": "special",
+        "note": "Animated ambient canvas + Orbitron. Full token block in styles.css.",
+        "swatch": { "bg": "#04080f", "panel": "#0e3a5c", "accent": "#00d4ff", "text": "#ffaa00" }
+      },
+      "grimdark": {
+        "displayName": "grimdark",
+        "mode": "special",
+        "note": "Animated ambient canvas + Cinzel/Cormorant. Full token block in styles.css.",
+        "swatch": { "bg": "#0a0807", "panel": "#3a261c", "accent": "#c8a24a", "text": "#b8231a" }
+      }
+    },
+    "subsystems": {
+      "live": {
+        "displayName": "Live tab (vault-explorer subsystem)",
+        "rootClass": "pr-root",
+        "source": "frontend/src/live/ (ported from Praetorium); own themes/styles.css",
+        "northStar": "The Terminal Status Readout",
+        "note": "Not a second design system. Re-declares the same tokens (ink-slate page, carbon panels, Console Blue ≤10% accent, Inter + JetBrains Mono, flat-by-default, 120ms color/background motion) and reuses the main .a-rail nav classes. Two-voice contract is stricter: mono carries the brand prompt, nav, card titles, and every number; Inter carries prose only.",
+        "views": [
+          { "id": "console", "label": "Console", "purpose": "Agent run log — terminal-style readout streaming claude CLI events with a left rail of runs." },
+          { "id": "cockpit", "label": "Cockpit", "purpose": "Radial constellation HUD of sessions/agents. The one place a 48px display metric appears." },
+          { "id": "explorer", "label": "Explorer", "purpose": "Vault file explorer — files tree, map (links graph), and sessions list." }
+        ],
+        "popout": "The rail's pop-out button invokes the open_live_window Tauri command to detach Live into its own window; no-op in plain web/dev."
       }
     }
   },
@@ -202,13 +300,14 @@
   ],
   "narrative": {
     "northStar": "The Quiet Telemetry Bench",
-    "overview": "A personal workbench with instruments laid out — readouts, gauges, a small ledger — sitting calmly on the desk. The user glances down, reads what they need, looks back up. Multi-theme like a real cockpit panel (dark by default, with light, forge, forest skins for the same instruments), but the layout, density, and rules never shift. Themes are instrument finishes, not redesigns. The system rejects the SaaS-dashboard impulse to dramatize and the corporate-observability impulse to feel clinical. Voice: a knowledgeable peer showing you their own dashboard, not an enterprise vendor pitching one.",
+    "overview": "A personal workbench with instruments laid out — readouts, gauges, a small ledger — sitting calmly on the desk. The user glances down, reads what they need, looks back up. Multi-theme like a real cockpit panel (a 'bench' dark default plus 18 named finishes spanning dark, light, and three animated 'special' identities), but the layout, density, and rules never shift. Themes are instrument finishes, not redesigns. The system rejects the SaaS-dashboard impulse to dramatize and the corporate-observability impulse to feel clinical. Voice: a knowledgeable peer showing you their own dashboard, not an enterprise vendor pitching one.",
     "keyCharacteristics": [
       "Density-first, instrument-grade layout. 13px body, dense rows, mono numbers, tabular-nums everywhere costs appear.",
       "Flat-by-default surfaces. 1px borders carry the structure; shadows are reserved for floating layers.",
-      "Four-theme color system on a single shared scale: dark, light, forge, forest. Same tokens, swapped values.",
+      "Nineteen-theme color system on a single shared scale: 10 dark, 6 light, 3 animated special finishes. Same tokens, swapped values; layout never changes.",
       "Uppercase micro-labels (10px, 0.08em) for KPI captions and table headers — the instrument-panel signal.",
-      "Status colors used quietly. Not as decoration."
+      "Status colors used quietly. Not as decoration.",
+      "A Live tab (vault-explorer subsystem ported from Praetorium) reuses the same token contract applied to a terminal-readout surface with console / cockpit / explorer views."
     ],
     "rules": [
       { "name": "The One Voice Rule", "body": "Primary accent is used on ≤10% of any given screen — brand dot, links, primary button, active nav, one chart series. Its rarity is the point.", "section": "colors" },
@@ -216,7 +315,7 @@
       { "name": "The No-Gradient Rule", "body": "Decorative gradients are forbidden. Only the topbar's vertical fade is permitted, to soften the edge between sticky chrome and content.", "section": "colors" },
       { "name": "The Mono-for-Numbers Rule", "body": "Any number representing a quantity renders in JetBrains Mono with tabular-nums. Numbers in sans are wrong.", "section": "typography" },
       { "name": "The Uppercase-Micro-Label Rule", "body": "10px tier uppercase with 0.08em letter-spacing. Do not use uppercase for body. Do not raise above 11px while keeping uppercase.", "section": "typography" },
-      { "name": "The No-Hero-Type Rule", "body": "No font size above 24px in any view. The 22px KPI value is the apex.", "section": "typography" },
+      { "name": "The No-Hero-Type Rule", "body": "In the main dashboard, no font size above 24px in any view; the 22px KPI value is the apex. The Live Cockpit's 48px focal metric is the sole scoped exception, permitted only there.", "section": "typography" },
       { "name": "The Flat-By-Default Rule", "body": "Cards, KPIs, tables, tips, drawers carry no shadow. Border + background contrast does the work.", "section": "elevation" },
       { "name": "The Floating-Layer Exception", "body": "Shadows are reserved for surfaces that float above the document — modals and dropdown menus.", "section": "elevation" },
       { "name": "The One-Glow Rule", "body": "Glow effects forbidden except for the brand dot.", "section": "elevation" }
@@ -229,7 +328,7 @@
       "Do use 1px borders + carbon-panel on ink-slate to differentiate cards.",
       "Do keep the Opus/Sonnet/Haiku badge triple as the only place colored bg + border + text appear together.",
       "Do transition color and background over 120ms (100ms on table rows). No layout-property animation.",
-      "Do treat the four themes as four complete identities sharing one token scale."
+      "Do treat the themes as complete identities sharing one token scale."
     ],
     "donts": [
       "Don't use neon gradients, glowing AI sparkles, purple-on-black 'magical' treatment, gradient text, or animated mesh backgrounds.",
@@ -238,10 +337,10 @@
       "Don't use emoji, confetti, gamified language, or oversized red/green dollar figures.",
       "Don't add shadows to at-rest content surfaces.",
       "Don't use border-left or border-right >1px as a colored side-stripe accent.",
-      "Don't add a custom typeface above 24px.",
+      "Don't introduce hero text in the main dashboard. The Live Cockpit's 48px readout is the sole, scoped exception; do not generalize it.",
       "Don't use uppercase on anything other than the 10px label tier.",
       "Don't apply good/bad color tints to rows or backgrounds based on cost magnitude.",
-      "Don't introduce a fifth theme without owning it as a complete identity.",
+      "Don't introduce a new theme without owning it as a complete identity.",
       "Don't use #000 or #fff directly. Tinted neutrals only."
     ]
   }
