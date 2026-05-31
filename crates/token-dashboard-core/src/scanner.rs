@@ -711,6 +711,17 @@ pub fn scan_dir<P: AsRef<Path>, Q: AsRef<Path>>(
         eprintln!("auto-tag: {e}");
     }
 
+    // Refresh query-planner statistics when new rows landed. Stale/absent
+    // stats make SQLite drive the tag aggregate from `messages` (a full
+    // scan) instead of the small `session_tags` table. `analysis_limit`
+    // caps sampling so this stays cheap on large tables; best-effort —
+    // never fail a scan over planner stats.
+    if totals.messages > 0 {
+        if let Err(e) = conn.execute_batch("PRAGMA analysis_limit=400; PRAGMA optimize;") {
+            eprintln!("optimize: {e}");
+        }
+    }
+
     Ok(totals.finalize())
 }
 

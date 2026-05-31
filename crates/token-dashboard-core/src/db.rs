@@ -56,6 +56,12 @@ CREATE INDEX IF NOT EXISTS idx_messages_model     ON messages(model);
 CREATE INDEX IF NOT EXISTS idx_messages_msgid     ON messages(session_id, message_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread    ON messages(session_id, type, is_sidechain, timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_provider  ON messages(provider);
+-- Expression index on the UTC calendar date. The day/* and cache_stats/
+-- burn_rate queries filter `substr(timestamp,1,10) = ?` (often with
+-- `type = 'assistant'`); wrapping the column in substr() makes the plain
+-- timestamp index unusable, so without this they full-scan `messages`.
+-- The leading expression also serves date-only filters (e.g. day_totals).
+CREATE INDEX IF NOT EXISTS idx_messages_day ON messages(substr(timestamp, 1, 10), type);
 
 CREATE TABLE IF NOT EXISTS tool_calls (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_tools_session ON tool_calls(session_id);
 CREATE INDEX IF NOT EXISTS idx_tools_name    ON tool_calls(tool_name);
 CREATE INDEX IF NOT EXISTS idx_tools_target  ON tool_calls(target);
 CREATE INDEX IF NOT EXISTS idx_tools_use_id  ON tool_calls(session_id, use_id);
+CREATE INDEX IF NOT EXISTS idx_tools_day     ON tool_calls(substr(timestamp, 1, 10));
 
 CREATE TABLE IF NOT EXISTS plan (
   k TEXT PRIMARY KEY,
@@ -161,6 +168,22 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> rusqlite::Result<()> {
     migrate_add_provider(&conn)?;
     conn.execute_batch(SCHEMA)?;
     migrate_add_fts(&conn)?;
+    ensure_analyzed(&conn)?;
+    Ok(())
+}
+
+/// Run a one-time sampled `ANALYZE` on DBs that have never been analyzed, so
+/// the planner has statistics on first launch (existing DBs predate the
+/// scan-time `PRAGMA optimize`). Once `sqlite_stat1` exists this is a no-op;
+/// scans keep the stats fresh thereafter. Best-effort.
+fn ensure_analyzed(conn: &Connection) -> rusqlite::Result<()> {
+    if table_exists(conn, "sqlite_stat1")? {
+        return Ok(());
+    }
+    if !table_exists(conn, "messages")? {
+        return Ok(());
+    }
+    let _ = conn.execute_batch("PRAGMA analysis_limit=400; ANALYZE;");
     Ok(())
 }
 
@@ -210,9 +233,32 @@ pub fn open<P: AsRef<Path>>(path: P) -> rusqlite::Result<Connection> {
             | OpenFlags::SQLITE_OPEN_CREATE
             | OpenFlags::SQLITE_OPEN_URI,
     )?;
-    conn.busy_timeout(std::time::Duration::from_secs(30))?;
+    tune(&conn)?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     Ok(conn)
+}
+
+/// Apply the performance PRAGMAs shared by the read and write paths.
+///
+/// WAL lets the scanner (writer) and the dashboard reads proceed without
+/// blocking each other; `synchronous=NORMAL` is durable under WAL with far
+/// fewer fsyncs; `mmap_size`/`cache_size` keep the hot DB in mapped/cached
+/// pages so cold opens stay warm. `execute_batch` is used because some
+/// PRAGMAs (e.g. `journal_mode`) return a row, which `pragma_update` rejects.
+///
+/// `query_only` is deliberately *not* set: the `open_ro` read helper is also
+/// used by a few write paths (e.g. `budget_alerts` recording fired alerts),
+/// and the connection pool reuses these connections across both.
+pub fn tune(conn: &Connection) -> rusqlite::Result<()> {
+    conn.busy_timeout(std::time::Duration::from_secs(30))?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;\
+         PRAGMA synchronous=NORMAL;\
+         PRAGMA mmap_size=268435456;\
+         PRAGMA cache_size=-65536;\
+         PRAGMA temp_store=MEMORY;",
+    )?;
+    Ok(())
 }
 
 /// Add `messages.message_id` for streaming-snapshot dedup.
