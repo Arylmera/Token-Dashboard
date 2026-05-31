@@ -175,7 +175,9 @@ impl Deref for PooledConn {
     type Target = Connection;
     fn deref(&self) -> &Connection {
         // Always Some until drop; the Option only exists so Drop can move out.
-        self.conn.as_ref().expect("pooled connection already returned")
+        self.conn
+            .as_ref()
+            .expect("pooled connection already returned")
     }
 }
 
@@ -204,10 +206,7 @@ pub(crate) fn open_ro<P: AsRef<Path>>(db: P) -> rusqlite::Result<PooledConn> {
     }
     let c = Connection::open(db.as_ref())?;
     crate::db::tune(&c)?;
-    Ok(PooledConn {
-        conn: Some(c),
-        key,
-    })
+    Ok(PooledConn { conn: Some(c), key })
 }
 
 pub fn overview_totals<P: AsRef<Path>>(
