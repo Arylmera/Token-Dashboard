@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default permissions for the Token Dashboard tauri shell",
-  "windows": ["main", "widget", "setup-help"],
+  "windows": ["main", "widget", "setup-help", "live"],
   "remote": {
     "urls": ["http://127.0.0.1:*", "http://localhost:*"]
   },
@@ -24,6 +24,29 @@
     "core:window:allow-set-focus",
     "core:event:default",
     "core:tray:default",
-    "notification:default"
+    "notification:default",
+    "dialog:allow-open",
+    "allow-open-external",
+    "allow-open-widget",
+    "allow-open-setup-help",
+    "allow-close-widget",
+    "allow-is-widget-open",
+    "allow-show-main",
+    "allow-show-main-route",
+    "allow-set-glass",
+    "allow-open-live-window",
+    "allow-close-live-window",
+    "allow-is-live-window-open",
+    "allow-run-claude",
+    "allow-stop-claude",
+    "allow-read-vault-file",
+    "allow-vault-index",
+    "allow-vault-links",
+    "allow-list-sessions",
+    "allow-read-session",
+    "allow-list-all-sessions",
+    "allow-list-live-sessions",
+    "allow-watch-sessions",
+    "allow-app-cwd"
   ]
 }

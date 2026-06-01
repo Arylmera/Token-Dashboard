@@ -10,7 +10,10 @@
 //! Pricing-derived fields (cost_usd) are emitted as 0.0 placeholders here
 //! and filled in by the caller once the `pricing.json` port lands.
 
+use std::collections::HashMap;
+use std::ops::Deref;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
@@ -149,10 +152,61 @@ fn provider_clause_on(col: &str, filter: Option<&str>) -> (String, Vec<String>) 
     (clause, ids)
 }
 
-pub(crate) fn open_ro<P: AsRef<Path>>(db: P) -> rusqlite::Result<Connection> {
+/// Process-wide pool of tuned read-only connections, keyed by DB path.
+///
+/// A fresh `Connection::open` plus the PRAGMA batch (WAL, mmap, cache) costs
+/// real time, and the day view alone opens six connections per click.
+/// Reusing connections keeps that setup — and the page cache — warm.
+static READ_POOL: OnceLock<Mutex<HashMap<String, Vec<Connection>>>> = OnceLock::new();
+const MAX_POOLED_PER_PATH: usize = 8;
+
+fn read_pool() -> &'static Mutex<HashMap<String, Vec<Connection>>> {
+    READ_POOL.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// A checked-out read connection that returns itself to the pool on drop.
+/// `Deref`s to `Connection`, so callers use it exactly like one.
+pub(crate) struct PooledConn {
+    conn: Option<Connection>,
+    key: String,
+}
+
+impl Deref for PooledConn {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        // Always Some until drop; the Option only exists so Drop can move out.
+        self.conn
+            .as_ref()
+            .expect("pooled connection already returned")
+    }
+}
+
+impl Drop for PooledConn {
+    fn drop(&mut self) {
+        if let Some(conn) = self.conn.take() {
+            if let Ok(mut pool) = read_pool().lock() {
+                let slot = pool.entry(std::mem::take(&mut self.key)).or_default();
+                if slot.len() < MAX_POOLED_PER_PATH {
+                    slot.push(conn);
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn open_ro<P: AsRef<Path>>(db: P) -> rusqlite::Result<PooledConn> {
+    let key = db.as_ref().to_string_lossy().into_owned();
+    if let Ok(mut pool) = read_pool().lock() {
+        if let Some(conn) = pool.get_mut(&key).and_then(Vec::pop) {
+            return Ok(PooledConn {
+                conn: Some(conn),
+                key,
+            });
+        }
+    }
     let c = Connection::open(db.as_ref())?;
-    c.busy_timeout(std::time::Duration::from_secs(30))?;
-    Ok(c)
+    crate::db::tune(&c)?;
+    Ok(PooledConn { conn: Some(c), key })
 }
 
 pub fn overview_totals<P: AsRef<Path>>(

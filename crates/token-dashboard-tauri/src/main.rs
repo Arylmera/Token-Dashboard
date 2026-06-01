@@ -9,6 +9,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod live;
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,7 +26,7 @@ static WIDGET_SPAWNING: AtomicBool = AtomicBool::new(false);
 use tauri::{
     menu::{Menu, MenuEvent, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 use token_dashboard_cli::{
     app as build_router, spawn_remote_sync_loop, spawn_scan_loop, spawn_startup_oauth_sync,
@@ -553,7 +555,9 @@ fn spawn_widget_inner(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
     // widget mount via a hash fragment that `entry.jsx` reads. Avoids the
     // `/web/widget.html` path, which on some setups intermittently 404s
     // and surfaces a Chromium error page as a second window.
-    let url = format!("{base_url}/#widget");
+    // Query param (not a `#hash`) so the spawned window actually navigates —
+    // see spawn_live_window for the WebView2 fragment-navigation gotcha.
+    let url = format!("{base_url}/?w=widget");
     let parsed: tauri::Url = url.parse().expect("widget url parse");
     let glass_on = app
         .try_state::<GlassState>()
@@ -620,7 +624,7 @@ fn spawn_setup_help(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         let _ = existing.set_focus();
         return Ok(());
     }
-    let url = format!("{base_url}/#setup-help");
+    let url = format!("{base_url}/?w=setup-help");
     let parsed: tauri::Url = url.parse().expect("setup-help url parse");
     // Always opaque — the help text doesn't need acrylic and a transparent
     // surface let the dashboard underneath bleed through.
@@ -673,7 +677,7 @@ fn set_glass(app: AppHandle, on: bool) -> Result<(), String> {
     } else {
         tauri::utils::config::Color(0x0a, 0x0a, 0x0a, 0xff)
     };
-    for label in ["main", "widget"] {
+    for label in ["main", "widget", "live"] {
         if let Some(win) = app.get_webview_window(label) {
             let _ = win.set_background_color(Some(bg));
             apply_glass(&win, on);
@@ -708,6 +712,7 @@ fn show_main_route(app: AppHandle, route: String) -> Result<(), String> {
         "tips",
         "api",
         "settings",
+        "live",
     ];
     if !ALLOWED.contains(&route.as_str()) {
         return Err(format!("route not allowed: {route}"));
@@ -721,6 +726,96 @@ fn show_main_route(app: AppHandle, route: String) -> Result<(), String> {
         let _ = w.eval(&js);
     }
     Ok(())
+}
+
+/// Pop the Live command post out into its own window. Renders the same bundle
+/// at the `#live-window` fragment (entry.jsx mounts just the Live view, no
+/// nav rail). Same process as `main`, so the embedded server and every
+/// `live::*` Tauri command are reachable from it with no extra wiring — only
+/// the watcher's IPC `Channel` needs the event-bus shim on the JS side so
+/// events reach whichever host currently owns the view.
+fn spawn_live_window(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
+    // Pre-create the window HIDDEN if it doesn't exist yet. WebView2 only
+    // navigates windows created during setup() (before the event loop starts);
+    // a window spawned later from a command stays stuck at about:blank. So this
+    // is called once at startup to build the (hidden) window, and
+    // open_live_window simply reveals it. entry.jsx reads the `?w=live-window`
+    // query param to mount the Live view.
+    if app.get_webview_window("live").is_some() {
+        return Ok(());
+    }
+    let url = format!("{base_url}/?w=live-window");
+    let parsed: tauri::Url = url.parse().expect("live url parse");
+    let glass_on = app
+        .try_state::<GlassState>()
+        .and_then(|s| s.0.lock().ok().map(|g| *g))
+        .unwrap_or(false);
+    let bg = if glass_on {
+        tauri::utils::config::Color(0, 0, 0, 0)
+    } else {
+        tauri::utils::config::Color(0x0a, 0x0a, 0x0a, 0xff)
+    };
+    let builder = WebviewWindowBuilder::new(app, "live", WebviewUrl::External(parsed))
+        .title("Live — Token Dashboard")
+        .inner_size(1100.0, 760.0)
+        .min_inner_size(420.0, 320.0)
+        .decorations(false)
+        .resizable(true)
+        .center()
+        .background_color(bg)
+        .visible(false);
+    // Always transparent on Windows so glass/acrylic can be toggled at runtime —
+    // window_vibrancy requires transparent set at creation time and it can't be
+    // added later. When glass is off the opaque appearance comes from
+    // background_color above; the pre-create-at-startup path means this no longer
+    // risks the blank-window navigation bug.
+    #[cfg(target_os = "windows")]
+    let builder = builder.transparent(true);
+    let win = builder.build().map_err(|e| {
+        eprintln!("spawn_live_window: build failed: {e}");
+        e
+    })?;
+    if glass_on {
+        apply_glass(&win, true);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_live_window(app: AppHandle, base_url: tauri::State<'_, BaseUrl>) -> Result<(), String> {
+    // The Live window is pre-created (hidden) at startup; ensure it exists, then
+    // reveal it. Showing an existing window works from a command, whereas
+    // building+navigating one here leaves it stuck at about:blank.
+    spawn_live_window(&app, &base_url.0).map_err(|e| e.to_string())?;
+    if let Some(win) = app.get_webview_window("live") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+        if let Some(main) = app.get_webview_window("main") {
+            let _ = main.emit("live-window-opened", ());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn close_live_window(app: AppHandle) -> Result<(), String> {
+    // Hide (not close) so the navigated window survives for the next pop-out —
+    // a freshly rebuilt one would not navigate.
+    if let Some(win) = app.get_webview_window("live") {
+        win.hide().map_err(|e| e.to_string())?;
+        if let Some(main) = app.get_webview_window("main") {
+            let _ = main.emit("live-window-closed", ());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn is_live_window_open(app: AppHandle) -> bool {
+    app.get_webview_window("live")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false)
 }
 
 struct BaseUrl(String);
@@ -855,9 +950,16 @@ async fn main() {
             }
         }))
         .plugin(tauri_plugin_notification::init())
+        // Live command post (ported from Praetorium): `claude` is spawned via
+        // tokio::process (process.rs), not the shell plugin, so it can pin
+        // stdin to null. Only the dialog plugin is needed — it backs the vault
+        // / working-directory pickers in the Explorer and Console UI.
+        .plugin(tauri_plugin_dialog::init())
         .manage(BaseUrl(base_url.clone()))
         .manage(DbPath(db_path_for_state))
         .manage(GlassState(std::sync::Mutex::new(glass_enabled)))
+        .manage(live::process::RunRegistry::default())
+        .manage(live::session_watch::WatcherHandle::default())
         .invoke_handler(tauri::generate_handler![
             open_external,
             open_widget,
@@ -866,7 +968,21 @@ async fn main() {
             is_widget_open,
             show_main,
             show_main_route,
-            set_glass
+            set_glass,
+            open_live_window,
+            close_live_window,
+            is_live_window_open,
+            live::process::run_claude,
+            live::process::stop_claude,
+            live::vault::read_vault_file,
+            live::vault::vault_index,
+            live::vault::vault_links,
+            live::sessions::list_sessions,
+            live::sessions::read_session,
+            live::sessions::list_all_sessions,
+            live::session_watch::list_live_sessions,
+            live::session_watch::watch_sessions,
+            live::session_watch::app_cwd
         ])
         .setup({
             let load_url = load_url.clone();
@@ -894,6 +1010,11 @@ async fn main() {
                     apply_glass(&win, true);
                 }
                 let _ = win.set_focus();
+                // Pre-create the Live pop-out window (hidden) now, while we're
+                // still in setup() — WebView2 only navigates windows built before
+                // the event loop starts, so a window spawned later from a command
+                // would stay blank. open_live_window just reveals this one.
+                let _ = spawn_live_window(app.handle(), &base_url);
                 build_tray(app.handle(), &base_url)?;
                 spawn_tray_updater(app.handle().clone(), base_url.clone());
                 spawn_budget_alert_listener(app.handle().clone(), base_url.clone());

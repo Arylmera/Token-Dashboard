@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { DirectionA } from "./src/app.jsx";
 import { Widget } from "./src/widget.jsx";
 import { SetupHelpWindow } from "./src/setup-help.jsx";
+import { LiveWindow } from "./src/live/index.jsx";
 import "./src/api-client.js";
 
 // Tauri shell bridge. v3 used an Electron preload to expose `window.td`;
@@ -24,15 +25,29 @@ try {
   }
 } catch (_) {}
 
+// Spawned windows (widget / setup-help / live) are routed via a `?w=<name>`
+// query param rather than a `#hash`, because WebView2's initial navigation
+// no-ops on fragment-only URLs and leaves the window blank. The hash forms are
+// still accepted for backward compatibility.
+const winParam = () => {
+  try { return new URLSearchParams(window.location.search).get("w") || ""; }
+  catch (_) { return ""; }
+};
+
 const isWidget = () => {
   try {
-    if (window.location.hash === "#widget") return true;
+    if (winParam() === "widget" || window.location.hash === "#widget") return true;
     return /widget\.html?$/i.test(window.location.pathname);
   } catch (_) { return false; }
 };
 
 const isSetupHelp = () => {
-  try { return window.location.hash === "#setup-help"; }
+  try { return winParam() === "setup-help" || window.location.hash === "#setup-help"; }
+  catch (_) { return false; }
+};
+
+const isLiveWindow = () => {
+  try { return winParam() === "live-window" || window.location.hash === "#live-window"; }
   catch (_) { return false; }
 };
 
@@ -51,6 +66,11 @@ const Shell = () => (
     if (plat) document.body.classList.add(`platform-${plat}`);
   } catch (_) {}
   const root = createRoot(document.getElementById("root"));
+  if (isLiveWindow()) {
+    document.body.classList.add("td-live-window-body");
+    root.render(<LiveWindow />);
+    return;
+  }
   if (isSetupHelp()) {
     document.body.classList.add("td-setup-help-body");
     root.render(<SetupHelpWindow />);

@@ -96,17 +96,25 @@ pub(crate) async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, Str
         .await
         .map_err(|e| format!("join: {e}"))?
         .map_err(|e| format!("scan: {e}"))?;
-    // Best-effort: failure means no listeners attached.
-    let _ = s.events.send(serde_json::json!({
-        "type": "scan_complete",
-        "messages": stats.messages,
-        "tools": stats.tools,
-        "files": stats.files,
-        "sessions": stats.sessions,
-        "projects": stats.projects,
-        "days": stats.days,
-        "models": stats.models,
-    }));
+    // Only announce when the scan actually ingested rows. The background
+    // loop ticks every 10s; emitting unconditionally made every connected
+    // frontend refetch its entire endpoint registry every tick even when the
+    // user generated no new transcripts. SSE liveness is held up by the
+    // server's 15s keep-alive ping (see sse.rs), not this event, and when
+    // idle neither usage nor limits change (countdowns tick client-side), so
+    // skipping the refetch is safe. Best-effort: failure means no listeners.
+    if stats.messages > 0 || stats.tools > 0 {
+        let _ = s.events.send(serde_json::json!({
+            "type": "scan_complete",
+            "messages": stats.messages,
+            "tools": stats.tools,
+            "files": stats.files,
+            "sessions": stats.sessions,
+            "projects": stats.projects,
+            "days": stats.days,
+            "models": stats.models,
+        }));
+    }
     // Best-effort budget-threshold check. Failure must not abort the scan path.
     // `check` persists the fired state internally so subsequent calls won't re-fire
     // already-crossed thresholds within the same month.

@@ -24,6 +24,7 @@ export const TAB_MIN_LEVEL = {
   tags: 3,
   "token sink": 4,
   api: 4,
+  live: 2,
 };
 
 export const CARD_MIN_LEVEL = {

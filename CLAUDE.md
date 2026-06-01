@@ -23,8 +23,15 @@ crates/
                           Owns the /api/* surface and the SSE bus.
   token-dashboard-tauri/  Tauri 2 desktop shell. Links the cli as a
                           library and calls app(state) directly inside
-                          the tauri runtime — single process, no
-                          subprocess to spawn or kill.
+                          the tauri runtime — single process. The
+                          analytics surface spawns no subprocess. The
+                          src/live/ module (ported from Praetorium) is
+                          the one exception: it drives the `claude` CLI
+                          (process.rs) and watches ~/.claude/projects/
+                          (session_watch.rs), streaming events to the
+                          frontend over Tauri IPC channels.
+  praetorium-core/        Pure parser/vault library (no Tauri, no db,
+                          no async runtime) backing the Live feature.
 
 frontend/                 React 18 + esbuild (`entry.jsx` →
                           `frontend/dist/app.js`). The webview talks
@@ -55,7 +62,7 @@ The frontend bundle must exist at `frontend/dist/app.js` before `cargo run -p to
 - Root scope: `.dir-a-root` (everything is namespaced under it). Glass-mode toggle: `.dir-a-root.is-glass`.
 - Component classes: `.a-card`, `.a-kpi`, `.a-kpi-row`, `.a-strip`, `.a-strip-{left,mid,right}`, `.a-topbar`, `.a-table`, `.a-sticky-head`, `.a-glass-slider`, `.a-metric`, `.a-pre`.
 - Theme tokens (CSS vars): `--bg`, `--panel`, `--panel-2`, `--iron-border`, `--iron-border-2`, `--bone`, `--gull`, `--gull-2`, `--accent`, `--accent-2`, `--good`, `--pos`, `--warn`, `--bad`, `--grid-dot`.
-- Theme classes (14): `theme-paper`, `theme-forge`, `theme-forest`, `theme-dusk`, `theme-ocean`, `theme-linen`, `theme-matrix`, `theme-rose`, `theme-mint`, `theme-lilac`, `theme-bb-{dark,light}`, `theme-cyber-{dark,light}`. Defined as `.dir-a-root.theme-X { --bg:…; --panel:…; … }` blocks.
+- Themes (19, registered in `frontend/src/theme.js`, grouped Dark/Light/Special): default `bench` carries **no class**; the other 18 are classes. Dark: `theme-dim`, `theme-forge`, `theme-forest`, `theme-dusk`, `theme-ocean`, `theme-matrix`, `theme-rose`, `theme-bb-dark`, `theme-cyber-dark`. Light: `theme-paper`, `theme-linen`, `theme-mint`, `theme-lilac`, `theme-bb-light`, `theme-cyber-light`. Special (animated ambient canvas + custom fonts): `theme-terminal`, `theme-cockpit`, `theme-grimdark`. Defined as `.dir-a-root.theme-X { --bg:…; --panel:…; … }` blocks. Full design reference: [docs/DESIGN.md](docs/DESIGN.md) §2.
 
 **`frontend/src/routes/overview.jsx`** — single Overview tab, ~387 lines, cohesive.
 - Components (top→bottom): `KpiRow`, `ChartAxis`, `LimitWindow`, `BudgetBanner`, `PhaseSplitCard`, `LimitsCard`, `TopStrip`, `DailyCharts`, `ProjectsTable`, `ModelsCard`, `TopToolsCard`, `RecentSessions`, `Overview` (root).
@@ -91,3 +98,18 @@ cargo run --release -p token-dashboard-tauri
 ```
 
 For iterative frontend work, prefer `npm run dev` (esbuild `--watch` + sourcemap) over re-running `npm run build` on every change — it stays resident and rebuilds `dist/app.js` on save.
+
+## Releasing
+
+Branch model: **`develop`** is the working branch (always ahead); **`main`** is the released/stable branch (trails between releases). A release promotes develop→main — nothing else.
+
+To release version `X.Y.Z`:
+
+1. Bump the version in **4 spots** (keep in sync): `crates/token-dashboard-{core,cli,tauri}/Cargo.toml` and `crates/token-dashboard-tauri/tauri.conf.json`. (`Cargo.lock` is gitignored — only the 4 files commit.)
+2. Commit on `develop`: `chore(release): bump version to X.Y.Z`, push.
+3. Open a **`develop`→`main` PR** titled `Release vX.Y.Z`. Wait for CI green.
+4. **Merge with a merge-commit** (not squash/rebase) — the `main-merge-commit-only` ruleset enforces this. `gh pr merge <n> --merge`.
+
+**The merge IS the release. Never create or push a tag manually.** `.github/workflows/release-tauri.yml` has a `tag` job that fires on push to `main`, reads the version from `token-dashboard-tauri/Cargo.toml`, and auto-creates+pushes `vX.Y.Z` if it doesn't exist — which chains into the Win/macOS/Linux bundle builds, the GitHub Release, and winget/homebrew. Pre-tagging makes that job skip (`tagged=false`) and the main-push run won't build, so the release stalls. After it succeeds, `sync-main-to-develop` merges `main` back into `develop`.
+
+Full walkthrough: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#releasing).

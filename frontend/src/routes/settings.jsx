@@ -10,6 +10,7 @@ import { BackupCard } from "./settings/backup-card.jsx";
 import { SourcesCard } from "./settings/sources-card.jsx";
 import { RemoteSourcesCard } from "./settings/remote-sources-card.jsx";
 import { GlassCard } from "./settings/glass-card.jsx";
+import { LiveVaultCard } from "./settings/live-vault-card.jsx";
 import { WidgetCard } from "./settings/widget-card.jsx";
 import { ThresholdPicker } from "./budget/threshold-picker.jsx";
 import { DensityCard, DeveloperCard, AboutCard, Glossary, MultiProviderCard } from "./settings/misc-cards.jsx";
@@ -146,6 +147,10 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
         <BackupCard />
         <SourcesCard />
         <RemoteSourcesCard />
+      </SettingsGroup>
+
+      <SettingsGroup title="Live" description="the Live tab's Explorer vault">
+        <LiveVaultCard />
       </SettingsGroup>
 
       {(level >= 3 || showDev) && (

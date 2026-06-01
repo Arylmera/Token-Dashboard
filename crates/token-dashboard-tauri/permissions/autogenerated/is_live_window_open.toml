@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-is-live-window-open"
+description = "Enables the is_live_window_open command without any pre-configured scope."
+commands.allow = ["is_live_window_open"]
+
+[[permission]]
+identifier = "deny-is-live-window-open"
+description = "Denies the is_live_window_open command without any pre-configured scope."
+commands.deny = ["is_live_window_open"]

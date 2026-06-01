@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-label="Praetorium aquila-cog mark">
+  
+  <g>
+    <circle cx="32" cy="32" r="22"></circle>
+    <circle cx="32" cy="32" r="17"></circle>
+    <g>
+      <line x1="32" y1="6" x2="32" y2="10"></line>
+      <line x1="32" y1="54" x2="32" y2="58"></line>
+      <line x1="6" y1="32" x2="10" y2="32"></line>
+      <line x1="54" y1="32" x2="58" y2="32"></line>
+      <line x1="13.5" y1="13.5" x2="16.3" y2="16.3"></line>
+      <line x1="47.7" y1="47.7" x2="50.5" y2="50.5"></line>
+      <line x1="50.5" y1="13.5" x2="47.7" y2="16.3"></line>
+      <line x1="16.3" y1="47.7" x2="13.5" y2="50.5"></line>
+    </g>
+  </g>
+  
+  <g>
+    
+    <path d="M32 24 L20 28 L24 32 L20 36 L26 38 L23 42 L29 42"></path>
+    
+    <path d="M32 24 L44 28 L40 32 L44 36 L38 38 L41 42 L35 42"></path>
+    
+    <line x1="32" y1="22" x2="32" y2="44"></line>
+    
+    <circle cx="29" cy="22" r="1.6" fill="currentColor"></circle>
+    <circle cx="35" cy="22" r="1.6" fill="currentColor"></circle>
+  </g>
+</svg>

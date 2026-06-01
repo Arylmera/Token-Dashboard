@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-widget"
+description = "Enables the open_widget command without any pre-configured scope."
+commands.allow = ["open_widget"]
+
+[[permission]]
+identifier = "deny-open-widget"
+description = "Denies the open_widget command without any pre-configured scope."
+commands.deny = ["open_widget"]

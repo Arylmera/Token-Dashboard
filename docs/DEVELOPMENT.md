@@ -103,6 +103,83 @@ cd frontend && npm install && npm run build && cd ..
 cargo run --release -p token-dashboard-tauri
 ```
 
+## Releasing
+
+Token Dashboard uses a two-branch model:
+
+- **`develop`** — the working/integration branch. All feature and fix PRs
+  squash-merge here first, so it is always **ahead** of `main`.
+- **`main`** — the released/stable branch. It deliberately **trails**
+  `develop` and only catches up at release time. It should contain only
+  what has shipped.
+
+A release simply **promotes `develop` to `main`**. The CI does the rest.
+
+### Steps
+
+To release version `X.Y.Z`:
+
+1. **Bump the version in four places** (they must stay in sync):
+   - `crates/token-dashboard-core/Cargo.toml`
+   - `crates/token-dashboard-cli/Cargo.toml`
+   - `crates/token-dashboard-tauri/Cargo.toml`
+   - `crates/token-dashboard-tauri/tauri.conf.json`
+
+   `Cargo.lock` is gitignored, so only those four files appear in the
+   commit (`cargo update -p ...` refreshes the lock locally but it is
+   not tracked).
+
+2. Commit on `develop`:
+
+   ```bash
+   git commit -am "chore(release): bump version to X.Y.Z"
+   git push origin develop
+   ```
+
+3. Open a **`develop` → `main` pull request** titled `Release vX.Y.Z`.
+   Wait for CI (rust, frontend-tests, source-branch checks) to go green.
+
+4. **Merge it as a merge commit** — not squash, not rebase:
+
+   ```bash
+   gh pr merge <number> --merge
+   ```
+
+   The `main-merge-commit-only` branch ruleset blocks the other merge
+   methods, so merge-commits keep `develop`'s per-feature history as real
+   ancestors of `main`.
+
+### What happens automatically — do NOT tag manually
+
+The merge to `main` is the whole release. **Never create or push a
+`vX.Y.Z` tag by hand.** `.github/workflows/release-tauri.yml` runs a
+`tag` job on every push to `main` that:
+
+1. parses the version from `crates/token-dashboard-tauri/Cargo.toml`,
+2. checks whether `vX.Y.Z` already exists on the remote, and
+3. if not, creates and pushes the tag itself.
+
+Pushing the tag sets `tagged=true`, which chains into the build matrix
+(Windows `.msi`, macOS `.dmg`, Linux `.deb`/`.AppImage`), the GitHub
+Release (`softprops/action-gh-release`, with generated notes), and the
+winget + Homebrew tap updates.
+
+If you pre-create the tag, the `tag` job finds it already present and
+sets `tagged=false`. Because the main-push event's ref is
+`refs/heads/main` (not a tag), the build jobs then refuse to run from
+that workflow run — the release stalls. Let the workflow own the tag.
+
+After the release run succeeds, the `sync-main-to-develop` workflow
+merges `main` back into `develop` (the `chore(sync): merge main into
+develop` commits), and `develop` pulls ahead again with the next PR.
+
+### Verifying the local build before releasing
+
+See [Build from source](#build-from-source) and
+[Verifying changes](#verifying-changes) above — run the desktop shell
+and confirm the version chip / `GET /api/health` reports `X.Y.Z` before
+opening the release PR.
+
 ## Further reading
 
 - [docs/DESIGN.md](DESIGN.md) — UI and data-model design notes.

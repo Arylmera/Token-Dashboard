@@ -10,10 +10,10 @@ test("every nav item id has a power-level entry", () => {
   }
 });
 
-test("nav order matches the legacy topbar order", () => {
+test("nav order matches the topbar order", () => {
   assert.deepEqual(
     NAV_ITEMS.map((i) => i.id),
-    ["overview","budget","cache","prompts","sessions","calendar","tags","token sink","tips","api","settings"],
+    ["overview","budget","cache","prompts","sessions","calendar","tags","token sink","tips","api","live","settings"],
   );
 });
 

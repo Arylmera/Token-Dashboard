@@ -3,6 +3,7 @@ members = [
     "crates/token-dashboard-core",
     "crates/token-dashboard-cli",
     "crates/token-dashboard-tauri",
+    "crates/praetorium-core",
 ]
 resolver = "2"
 
