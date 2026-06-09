@@ -615,7 +615,7 @@ const DailyCharts = ({ totals }) => {
   );
 };
 
-const MODEL_COLORS = ["var(--bone)", "var(--accent)", "var(--gull)"];
+const MODEL_COLORS = ["var(--bone)", "var(--accent)", "var(--gull)", "var(--accent-2)"];
 const colorFor = (i) => MODEL_COLORS[i] || "var(--gull)";
 
 const ProjectsTable = ({ totals }) => {

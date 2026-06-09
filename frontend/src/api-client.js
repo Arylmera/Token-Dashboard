@@ -39,6 +39,7 @@ const shortModel = (m) => {
   if (!m) return "unknown";
   const s = m.toLowerCase();
   const major = (s.match(/\d+(?:[.-]\d+)?/) || [""])[0].replace("-", ".");
+  if (s.includes("fable")) return "Fable" + (major ? " " + major : "");
   if (s.includes("opus")) return "Opus" + (major ? " " + major : "");
   if (s.includes("sonnet")) return "Sonnet" + (major ? " " + major : "");
   if (s.includes("haiku")) return "Haiku" + (major ? " " + major : "");

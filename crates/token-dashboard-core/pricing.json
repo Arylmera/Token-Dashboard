@@ -1,5 +1,6 @@
 {
   "models": {
+    "claude-fable-5":      { "tier": "fable",  "input": 10.00, "output": 50.00, "cache_read": 1.00, "cache_create_5m": 12.50, "cache_create_1h": 20.00 },
     "claude-opus-4-8":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
     "claude-opus-4-7":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
     "claude-opus-4-6":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
@@ -22,11 +23,13 @@
     "gpt-5.4":             { "tier": "gpt-5",  "input":  1.25, "output": 10.00, "cache_read": 0.125, "cache_create_5m": 1.25, "cache_create_1h": 1.25 }
   },
   "tier_fallback": {
+    "fable":  { "input": 10.00, "output": 50.00, "cache_read": 1.00, "cache_create_5m": 12.50, "cache_create_1h": 20.00 },
     "opus":   { "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
     "sonnet": { "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
     "haiku":  { "input":  1.00, "output":  5.00, "cache_read": 0.10, "cache_create_5m":  1.25, "cache_create_1h":  2.00 }
   },
   "tier_weight": {
+    "fable":  10.0,
     "opus":   5.0,
     "sonnet": 1.0,
     "haiku":  0.33
