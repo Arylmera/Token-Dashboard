@@ -596,6 +596,7 @@ export function Console() {
                   style={{ flex: "0 0 auto", width: "auto", padding: "4px 8px", fontSize: 11, cursor: "pointer" }}
                 >
                   <option value="default">default</option>
+                  <option value="fable">fable</option>
                   <option value="opus">opus</option>
                   <option value="sonnet">sonnet</option>
                   <option value="haiku">haiku</option>

@@ -22,7 +22,8 @@ export const KPI = ({ label, value, sub, tone, delta, spark }) => (
 
 export const ModelBadge = ({ model }) => {
   const m = (model || "").toLowerCase();
-  const cls = m.includes("opus") ? "badge-opus"
+  const cls = m.includes("fable") ? "badge-fable"
+    : m.includes("opus") ? "badge-opus"
     : m.includes("sonnet") ? "badge-sonnet"
     : "badge-haiku";
   return <span className={`a-badge ${cls}`}>{model || "—"}</span>;

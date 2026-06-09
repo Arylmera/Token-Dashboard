@@ -144,7 +144,7 @@ fn strip_date_suffix(model: &str) -> &str {
 
 pub(crate) fn tier_from_name(model: &str) -> Option<&'static str> {
     let lower = model.to_lowercase();
-    ["opus", "sonnet", "haiku"]
+    ["fable", "opus", "sonnet", "haiku"]
         .into_iter()
         .find(|tier| lower.contains(tier))
 }
@@ -312,9 +312,28 @@ mod tests {
     #[test]
     fn embedded_loads() {
         let p = Pricing::embedded();
+        assert!(p.models.contains_key("claude-fable-5"));
         assert!(p.models.contains_key("claude-opus-4-8"));
         assert!(p.models.contains_key("claude-opus-4-7"));
+        assert!(p.tier_fallback.contains_key("fable"));
         assert!(p.tier_fallback.contains_key("sonnet"));
+        assert!(p.tier_weight.contains_key("fable"));
+    }
+
+    #[test]
+    fn cost_for_fable_uses_table() {
+        let p = Pricing::embedded();
+        let r = cost_for(
+            "claude-fable-5",
+            &Usage {
+                input_tokens: 1_000_000,
+                output_tokens: 1_000_000,
+                ..Default::default()
+            },
+            &p,
+        );
+        assert!(!r.estimated);
+        assert_eq!(r.usd, Some(60.0)); // $10/M input + $50/M output
     }
 
     #[test]
