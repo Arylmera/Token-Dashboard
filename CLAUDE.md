@@ -10,7 +10,7 @@ Inspired by [phuryn/claude-usage](https://github.com/phuryn/claude-usage) but di
 
 ## Status
 
-**4.0 line — Rust + Tauri.** The 3.x Python + Electron stack is no longer in the tree; existing 3.x users keep their installed builds, future development targets v4 only. Workspace builds clean on `cargo build --workspace`; 62 tests across `core` + `cli`. Tauri shell verified on Windows; macOS and Linux QA happens via the release-tauri pipeline.
+**5.0 line — Rust + Tauri.** The 3.x Python + Electron stack is no longer in the tree; existing 3.x users keep their installed builds, future development targets v5 only. Workspace builds clean on `cargo build --workspace`; 62 tests across `core` + `cli`. Tauri shell verified on Windows; macOS and Linux QA happens via the release-tauri pipeline.
 
 ## Architecture
 
