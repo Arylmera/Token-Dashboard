@@ -315,9 +315,26 @@ mod tests {
         assert!(p.models.contains_key("claude-fable-5"));
         assert!(p.models.contains_key("claude-opus-4-8"));
         assert!(p.models.contains_key("claude-opus-4-7"));
+        assert!(p.models.contains_key("claude-sonnet-5"));
         assert!(p.tier_fallback.contains_key("fable"));
         assert!(p.tier_fallback.contains_key("sonnet"));
         assert!(p.tier_weight.contains_key("fable"));
+    }
+
+    #[test]
+    fn cost_for_sonnet_5_uses_table() {
+        let p = Pricing::embedded();
+        let r = cost_for(
+            "claude-sonnet-5",
+            &Usage {
+                input_tokens: 1_000_000,
+                output_tokens: 1_000_000,
+                ..Default::default()
+            },
+            &p,
+        );
+        assert!(!r.estimated);
+        assert_eq!(r.usd, Some(18.0)); // $3/M input + $15/M output
     }
 
     #[test]
