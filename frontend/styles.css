@@ -789,6 +789,7 @@ body.td-setup-help-body #root { height: 100%; }
   content: ""; width: 8px; height: 8px;
   background: var(--gull);
 }
+.a-badge.badge-fable::before  { background: var(--accent-2); }
 .a-badge.badge-opus::before   { background: var(--bone); }
 .a-badge.badge-sonnet::before { background: var(--accent); }
 .a-badge.badge-haiku::before  { background: var(--gull); }
