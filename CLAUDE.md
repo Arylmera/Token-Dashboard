@@ -10,7 +10,7 @@ Inspired by [phuryn/claude-usage](https://github.com/phuryn/claude-usage) but di
 
 ## Status
 
-**5.0 line — Rust + Tauri.** The 3.x Python + Electron stack is no longer in the tree; existing 3.x users keep their installed builds, future development targets v5 only. Workspace builds clean on `cargo build --workspace`; 62 tests across `core` + `cli`. Tauri shell verified on Windows; macOS and Linux QA happens via the release-tauri pipeline.
+**5.0 line — Rust + Tauri.** The 3.x Python + Electron stack is no longer in the tree; existing 3.x users keep their installed builds, future development targets v5 only. Workspace builds clean on `cargo build --workspace`; ~180 tests across `core` + `cli` (run `cargo test --workspace` for the live count). Tauri shell verified on Windows; macOS and Linux QA happens via the release-tauri pipeline.
 
 ## Architecture
 
@@ -64,9 +64,9 @@ The frontend bundle must exist at `frontend/dist/app.js` before `cargo run -p to
 - Theme tokens (CSS vars): `--bg`, `--panel`, `--panel-2`, `--iron-border`, `--iron-border-2`, `--bone`, `--gull`, `--gull-2`, `--accent`, `--accent-2`, `--good`, `--pos`, `--warn`, `--bad`, `--grid-dot`.
 - Themes (19, registered in `frontend/src/theme.js`, grouped Dark/Light/Special): default `bench` carries **no class**; the other 18 are classes. Dark: `theme-dim`, `theme-forge`, `theme-forest`, `theme-dusk`, `theme-ocean`, `theme-matrix`, `theme-rose`, `theme-bb-dark`, `theme-cyber-dark`. Light: `theme-paper`, `theme-linen`, `theme-mint`, `theme-lilac`, `theme-bb-light`, `theme-cyber-light`. Special (animated ambient canvas + custom fonts): `theme-terminal`, `theme-cockpit`, `theme-grimdark`. Defined as `.dir-a-root.theme-X { --bg:…; --panel:…; … }` blocks. Full design reference: [docs/DESIGN.md](docs/DESIGN.md) §2.
 
-**`frontend/src/routes/overview.jsx`** — single Overview tab, ~387 lines, cohesive.
-- Components (top→bottom): `KpiRow`, `ChartAxis`, `LimitWindow`, `BudgetBanner`, `PhaseSplitCard`, `LimitsCard`, `TopStrip`, `DailyCharts`, `ProjectsTable`, `ModelsCard`, `TopToolsCard`, `RecentSessions`, `Overview` (root).
-- Helpers: `rangeDaysFromKey`, `toneFor`, `fmtResetIn`. Constants: `BUDGET_LABEL`, `PHASE_COLORS`, `MODEL_COLORS`.
+**`frontend/src/routes/overview.jsx`** — single Overview tab, ~880 lines (over the 600-line convention; split candidate).
+- Components (top→bottom): `KpiSpark`, `KpiRow`, `BudgetAlertBanner`, `BurnRateCard`, `ChartAxis`, `LimitWindow`, `BudgetBanner`, `PhaseSplitCard`, `LimitsCard`, `TopStrip`, `DailyCharts`, `ProjectsTable`, `ModelLeaderboard`, `ModelsCard`, `TopToolsCard`, `AnomalyCard`, `RecentSessions`, `Overview` (root).
+- Helpers: `rangeDaysFromKey`, `sparkOf`, `cacheHitOf`, `toneFor`, `fmtResetIn`, `fmtTokensShort`, `colorFor`. Constants: `BUDGET_LABEL`, `PHASE_COLORS`, `MODEL_COLORS`.
 - Data via `window.MOCK_DATA` (populated by `api-client.js`). Endpoints used: `/api/overview`, `/api/limits`, `/api/budget`, `/api/phase_split`.
 
 ## Customizing
