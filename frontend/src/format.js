@@ -1,5 +1,5 @@
-// Display formatters used by the React UI. Distinct from shared/format.js,
-// which serves the Electron tray with its own compact rules.
+// Display formatters used by the React UI. Some views (widget.jsx, charts.jsx)
+// keep local variants with deliberately different compact rules — don't merge.
 
 export const fmtCost = (n) => {
   const v = n || 0;

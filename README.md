@@ -20,7 +20,7 @@
 
 ## Install
 
-Pre-built installers ship for every `v4.*` tag —
+Pre-built installers ship for every release tag —
 [**latest release**](https://github.com/Arylmera/Token-Dashboard/releases/latest).
 
 ### Windows (.msi)

@@ -10,7 +10,7 @@
 //! The full assistant-message cost is attributed to whichever edit it
 //! produced — a message that runs 5 Reads and 1 Edit pays the same for
 //! that Edit as a message that only ran an Edit. This is intentionally
-//! coarse; see TODO 05 self-review notes.
+//! coarse.
 
 use rusqlite::{params, Connection};
 use serde::Serialize;

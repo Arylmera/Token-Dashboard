@@ -485,8 +485,23 @@ mod tests {
         drop(conn);
 
         let br = burn_rate(f.path(), 7).unwrap();
-        let expected_mtd = per_day * 5.0;
-        let expected_avg = expected_mtd / 7.0;
+        // Month-to-date counts only rows on/after the 1st of the current
+        // month (see mtd_cost), so near the start of a month fewer than all
+        // 5 seeded days qualify. Derive the in-month count with the same
+        // boundary the production query uses so this holds on any date
+        // (otherwise the test fails on the 1st, 2nd, 3rd, 4th of the month).
+        let month_start: String = {
+            let c = Connection::open_in_memory().unwrap();
+            c.query_row("SELECT strftime('%Y-%m-01', 'now')", [], |r| r.get(0))
+                .unwrap()
+        };
+        let in_month_days = (0..5)
+            .filter(|d| date_offset(-(*d as i64)) >= month_start)
+            .count() as f64;
+        let expected_mtd = per_day * in_month_days;
+        // avg_daily is the 7-day window average; all 5 rows fall in the
+        // window regardless of month, so it is month-agnostic.
+        let expected_avg = per_day * 5.0 / 7.0;
         let expected_days = (budget - expected_mtd) / expected_avg;
         let days = br.days_remaining.expect("days_remaining set");
         assert!(
