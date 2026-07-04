@@ -23,7 +23,15 @@ import { applyReduceMotion } from "./stores/settings.js";
 import { applyWatch, refreshMetas } from "./stores/session-store.js";
 import { watchSessions } from "./lib/sessions.js";
 import { useStore } from "./stores/use-store.js";
-import { applyThemeClass, themeIndexFromStorage, themeIndexFromId } from "../theme.js";
+import {
+  THEMES,
+  SPECIAL_THEME_IDS,
+  applyThemeClass,
+  themeIndexFromStorage,
+  themeIndexFromId,
+} from "../theme.js";
+import { AmbientLayer } from "../components/ambient-canvas.jsx";
+import { useCalmFx } from "../fx-pref.js";
 import { getTauriWindow } from "../tauri-window.js";
 
 const ROUTES = { console: Console, cockpit: Cockpit, explorer: Explorer };
@@ -166,13 +174,18 @@ export function LiveTab() {
 // localStorage is per-origin (Tauri picks a fresh port each launch), so seed
 // from it for an instant paint, then reconcile with the backend preference —
 // the same source of truth the main window uses.
-function applyLiveWindowTheme() {
-  applyThemeClass(themeIndexFromStorage());
+function applyLiveWindowTheme(onIndex) {
+  const seed = themeIndexFromStorage();
+  applyThemeClass(seed);
+  if (onIndex) onIndex(seed);
   fetch("/api/preferences", { cache: "no-store" })
     .then((r) => r.json())
     .then((d) => {
       const i = themeIndexFromId(d && d.theme);
-      if (i >= 0) applyThemeClass(i);
+      if (i >= 0) {
+        applyThemeClass(i);
+        if (onIndex) onIndex(i);
+      }
       // Mirror the main window's glass/acrylic: the backend applies the OS
       // vibrancy to the "live" window; this toggles the matching CSS layer
       // (translucent panels + frosted titlebar) when glass is enabled.
@@ -221,9 +234,19 @@ function LiveTitlebar() {
 // decoration-less.
 export function LiveWindow() {
   const [paletteOpen, setPaletteOpen] = usePalette();
-  useEffect(() => { applyLiveWindowTheme(); }, []);
+  const [themeIdx, setThemeIdx] = useState(-1);
+  const [calmFx] = useCalmFx();
+  useEffect(() => { applyLiveWindowTheme(setThemeIdx); }, []);
+  const themeCls = THEMES[themeIdx]?.cls || "";
+  const isSpecial = SPECIAL_THEME_IDS.has(THEMES[themeIdx]?.id);
+  // Mirror app.jsx: pause banner/scanline/blip CSS animations when calm-fx is on.
+  useEffect(() => {
+    const root = document.querySelector(".dir-a-root");
+    if (root) root.classList.toggle("is-calm-fx", isSpecial && calmFx);
+  }, [isSpecial, calmFx]);
   return (
     <div className="dir-a-root a-live-window">
+      <AmbientLayer themeCls={isSpecial && !calmFx ? themeCls : ""} />
       <LiveTitlebar />
       <div className="a-live-window-body">
         <LiveSurface />
