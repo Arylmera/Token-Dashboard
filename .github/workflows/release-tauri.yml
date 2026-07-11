@@ -77,23 +77,27 @@ jobs:
             label: windows
             artifact_glob: |
               target/release/bundle/msi/*.msi
+              target/release/bundle/msi/*.msi.sig
           - os: macos-14
             label: macos-arm64
             rust_target: aarch64-apple-darwin
             artifact_glob: |
               target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
               target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
+              target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
           - os: macos-14
             label: macos-x64
             rust_target: x86_64-apple-darwin
             artifact_glob: |
               target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
               target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
+              target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
           - os: ubuntu-22.04
             label: linux
             artifact_glob: |
               target/release/bundle/deb/*.deb
               target/release/bundle/appimage/*.AppImage
+              target/release/bundle/appimage/*.AppImage.sig
     steps:
       - uses: actions/checkout@v4
 
@@ -144,6 +148,15 @@ jobs:
       - name: Tauri build
         working-directory: crates/token-dashboard-tauri
         shell: bash
+        # The updater signing key lives in the TAURI_SIGNING_PRIVATE_KEY
+        # secret (keypair generated with `cargo tauri signer generate`; the
+        # matching pubkey is in tauri.conf.json). With createUpdaterArtifacts
+        # enabled the bundler refuses to build if the key is missing, so a
+        # release run without the secret fails loudly instead of shipping
+        # unsigned (= un-updatable) bundles.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         # bundle_dmg.sh on macos-14 (Apple Silicon) flakes intermittently
         # when hdiutil's attach/detach races with Spotlight indexing. Build
         # the .app first (cheap to redo), then retry the DMG bundle up to
@@ -193,6 +206,57 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+
+      - name: Generate latest.json (updater manifest)
+        env:
+          TAG: ${{ needs.tag.outputs.tag || inputs.tag || github.ref_name }}
+          REPO: ${{ github.repository }}
+        # tauri-plugin-updater in the app polls
+        # releases/latest/download/latest.json. The updater validates the
+        # WHOLE file before comparing versions, so fail loudly if any
+        # platform's artifact or .sig is missing rather than publish a
+        # manifest that breaks updates for everyone.
+        run: |
+          set -euo pipefail
+          base="https://github.com/$REPO/releases/download/$TAG"
+          # GitHub release assets get spaces replaced with dots
+          # ("Token Dashboard_x64.msi" -> "Token.Dashboard_x64.msi").
+          gh_name() { basename "$1" | tr ' ' '.'; }
+
+          msi=$(find dist -name '*.msi' | head -1)
+          appimage=$(find dist -name '*.AppImage' | head -1)
+          mac_arm=$(find dist -path '*aarch64*' -name '*.app.tar.gz' | head -1)
+          mac_x64=$(find dist -path '*x86_64*' -name '*.app.tar.gz' | head -1)
+          for f in "$msi" "$appimage" "$mac_arm" "$mac_x64"; do
+            if [ -z "$f" ] || [ ! -f "$f" ] || [ ! -f "$f.sig" ]; then
+              echo "missing updater artifact or signature: '$f'" >&2
+              find dist -maxdepth 4 -type f -print >&2
+              exit 1
+            fi
+          done
+
+          jq -n \
+            --arg version "${TAG#v}" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg win_url "$base/$(gh_name "$msi")" \
+            --arg win_sig "$(cat "$msi.sig")" \
+            --arg lin_url "$base/$(gh_name "$appimage")" \
+            --arg lin_sig "$(cat "$appimage.sig")" \
+            --arg arm_url "$base/$(gh_name "$mac_arm")" \
+            --arg arm_sig "$(cat "$mac_arm.sig")" \
+            --arg x64_url "$base/$(gh_name "$mac_x64")" \
+            --arg x64_sig "$(cat "$mac_x64.sig")" \
+            '{
+              version: $version,
+              pub_date: $pub_date,
+              platforms: {
+                "windows-x86_64": { url: $win_url, signature: $win_sig },
+                "linux-x86_64":   { url: $lin_url, signature: $lin_sig },
+                "darwin-aarch64": { url: $arm_url, signature: $arm_sig },
+                "darwin-x86_64":  { url: $x64_url, signature: $x64_sig }
+              }
+            }' > dist/latest.json
+          cat dist/latest.json
 
       - name: Create / update release
         uses: softprops/action-gh-release@v2

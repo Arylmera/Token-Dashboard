@@ -172,6 +172,7 @@ fn build_tray(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
     let widget_item = MenuItem::with_id(app, "widget", "Show Widget", true, None::<&str>)?;
     let scan_item = MenuItem::with_id(app, "scan", "Scan now", true, None::<&str>)?;
     let browser_item = MenuItem::with_id(app, "browser", "Open in Browser", true, None::<&str>)?;
+    let update_item = MenuItem::with_id(app, "update", "Check for Updates", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -180,6 +181,7 @@ fn build_tray(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
             &widget_item,
             &scan_item,
             &browser_item,
+            &update_item,
             &quit_item,
         ],
     )?;
@@ -215,6 +217,7 @@ fn build_tray(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
                     });
                 }
                 "browser" => open_browser(&url),
+                "update" => spawn_app_update_check(app.clone(), true),
                 "quit" => app.exit(0),
                 _ => {}
             }
@@ -403,6 +406,84 @@ fn handle_budget_alert(app: &AppHandle, v: &serde_json::Value) {
         };
         let _ = app.notification().builder().title(title).body(body).show();
     }
+}
+
+/// Check GitHub Releases for a newer version (via tauri-plugin-updater's
+/// latest.json endpoint). Prompts before installing. `report_no_update`
+/// distinguishes the manual tray click (always answer) from the silent
+/// startup check (only speak when there is something to do).
+fn spawn_app_update_check(app: AppHandle, report_no_update: bool) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+    use tauri_plugin_notification::NotificationExt;
+    use tauri_plugin_updater::UpdaterExt;
+    tauri::async_runtime::spawn(async move {
+        let update = match app.updater() {
+            Ok(u) => u.check().await,
+            Err(e) => Err(e),
+        };
+        match update {
+            Ok(Some(update)) => {
+                let version = update.version.clone();
+                let dialog_app = app.clone();
+                let install = tokio::task::spawn_blocking(move || {
+                    dialog_app
+                        .dialog()
+                        .message(format!(
+                            "Token Dashboard {version} is available. Install and restart?"
+                        ))
+                        .title("Update available")
+                        .buttons(MessageDialogButtons::OkCancelCustom(
+                            "Install".into(),
+                            "Later".into(),
+                        ))
+                        .blocking_show()
+                })
+                .await
+                .unwrap_or(false);
+                if !install {
+                    return;
+                }
+                match update.download_and_install(|_, _| {}, || {}).await {
+                    // On Windows the installer exits the app itself; restart()
+                    // covers macOS/Linux where the binary is swapped in place.
+                    Ok(()) => app.restart(),
+                    Err(e) => {
+                        eprintln!("update install failed: {e}");
+                        let _ = app
+                            .notification()
+                            .builder()
+                            .title("Token Dashboard update failed")
+                            .body(e.to_string())
+                            .show();
+                    }
+                }
+            }
+            Ok(None) => {
+                if report_no_update {
+                    let _ = app
+                        .notification()
+                        .builder()
+                        .title("Token Dashboard")
+                        .body(format!(
+                            "You're up to date (v{}).",
+                            app.package_info().version
+                        ))
+                        .show();
+                }
+            }
+            Err(e) => {
+                eprintln!("update check failed: {e}");
+                if report_no_update {
+                    let _ = app
+                        .notification()
+                        .builder()
+                        .title("Token Dashboard")
+                        .body(format!("Update check failed: {e}"))
+                        .show();
+                }
+            }
+        }
+    });
 }
 
 fn spawn_tray_updater(app: AppHandle, base_url: String) {
@@ -955,6 +1036,7 @@ async fn main() {
         // stdin to null. Only the dialog plugin is needed — it backs the vault
         // / working-directory pickers in the Explorer and Console UI.
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(BaseUrl(base_url.clone()))
         .manage(DbPath(db_path_for_state))
         .manage(GlassState(std::sync::Mutex::new(glass_enabled)))
@@ -1025,6 +1107,9 @@ async fn main() {
                 // the reconciler with a direct spawn here used to open
                 // two widget windows on launch.
                 spawn_widget_reconciler(app.handle().clone(), base_url.clone());
+                // Silent update check at startup; prompts only if a newer
+                // release exists.
+                spawn_app_update_check(app.handle().clone(), false);
                 Ok(())
             }
         })
