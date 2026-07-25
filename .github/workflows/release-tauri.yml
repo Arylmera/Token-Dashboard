@@ -81,6 +81,10 @@ jobs:
           - os: macos-14
             label: macos-arm64
             rust_target: aarch64-apple-darwin
+            # Both macOS legs bundle `Token Dashboard.app.tar.gz`. Release
+            # assets are a flat namespace, so they must be disambiguated
+            # before upload — see "Name the macOS updater archive" below.
+            updater_name: Token.Dashboard_aarch64.app.tar.gz
             artifact_glob: |
               target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
               target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
@@ -88,6 +92,7 @@ jobs:
           - os: macos-14
             label: macos-x64
             rust_target: x86_64-apple-darwin
+            updater_name: Token.Dashboard_x64.app.tar.gz
             artifact_glob: |
               target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
               target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
@@ -198,6 +203,29 @@ jobs:
             cargo tauri build $target_flag
           fi
 
+      # `productName` is the same on both macOS legs, so both produce
+      # `Token Dashboard.app.tar.gz`. GitHub release assets are flat, so the
+      # second upload would clobber the first, and the updater manifest could
+      # only ever derive ONE url for both arches. The arch cannot be recovered
+      # downstream either: upload-artifact@v4 rebases paths onto their common
+      # ancestor and strips the `<target>-apple-darwin` segment. So stamp the
+      # arch into the filename here, while we still know which leg we are.
+      - name: Name the macOS updater archive per arch
+        if: matrix.updater_name != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="target/${{ matrix.rust_target }}/release/bundle/macos"
+          src=$(find "$dir" -name '*.app.tar.gz' | head -1)
+          if [ -z "$src" ] || [ ! -f "$src.sig" ]; then
+            echo "no signed .app.tar.gz under $dir" >&2
+            ls -la "$dir" >&2 || true
+            exit 1
+          fi
+          mv "$src"     "$dir/${{ matrix.updater_name }}"
+          mv "$src.sig" "$dir/${{ matrix.updater_name }}.sig"
+          ls -la "$dir"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -222,51 +250,100 @@ jobs:
         with:
           path: dist
 
-      # NOTE: the latest.json (updater manifest) step is deliberately absent.
-      # It shipped with the tauri-plugin-updater work in 2abf6d7 and had never
-      # actually run — v5.1.3 was its first execution and it failed, revealing
-      # two defects that need fixing together before the manifest can be
-      # published:
-      #
-      #   1. It located the macOS bundles with `find dist -path '*aarch64*'`
-      #      and `'*x86_64*'`. upload-artifact@v4 rebases uploaded paths onto
-      #      their common ancestor, which strips the `<target>-apple-darwin`
-      #      segment, so those predicates can never match. Match on the matrix
-      #      label instead (`*macos-arm64*` / `*macos-x64*`).
-      #
-      #   2. Both macOS bundles are named `Token Dashboard.app.tar.gz`.
-      #      Release assets are a flat namespace, so the two collide on upload
-      #      AND `gh_name` yields the SAME url for darwin-aarch64 and
-      #      darwin-x86_64 — a manifest that looks fine and serves the wrong
-      #      architecture to half of macOS. Fixing (1) without (2) is worse
-      #      than shipping no manifest at all.
-      #
-      # Fixing (2) means renaming the archives per-arch before upload and
-      # pointing the manifest at the new names. That is its own change with
-      # its own validation loop, so it is deliberately NOT bundled into this
-      # release. Until it lands, the release carries installers only and the
-      # in-app updater stays inert.
+      - name: Generate latest.json (updater manifest)
+        env:
+          TAG: ${{ needs.tag.outputs.tag || inputs.tag || github.ref_name }}
+          REPO: ${{ github.repository }}
+        # tauri-plugin-updater in the app polls
+        # releases/latest/download/latest.json. The updater validates the
+        # WHOLE file before comparing versions, so fail loudly if any
+        # platform's artifact or .sig is missing rather than publish a
+        # manifest that breaks updates for everyone.
+        #
+        # The macOS archives are found by the arch-stamped names the build job
+        # gives them, NOT by a `*aarch64*` / `*x86_64*` path predicate. That
+        # predicate is what broke this step on its first real run (v5.1.3):
+        # upload-artifact@v4 rebases uploaded paths onto their common ancestor
+        # and strips the `<target>-apple-darwin` segment, so it could never
+        # match and both variables came out empty. Matching the name also
+        # fails CLOSED — if the rename step ever regresses, nothing matches
+        # and this step aborts, instead of quietly emitting two entries that
+        # point at the same colliding url.
+        run: |
+          set -euo pipefail
+          base="https://github.com/$REPO/releases/download/$TAG"
+          # GitHub release assets get spaces replaced with dots
+          # ("Token Dashboard_x64.msi" -> "Token.Dashboard_x64.msi").
+          gh_name() { basename "$1" | tr ' ' '.'; }
+
+          msi=$(find dist -name '*.msi' | head -1)
+          appimage=$(find dist -name '*.AppImage' | head -1)
+          mac_arm=$(find dist -name 'Token.Dashboard_aarch64.app.tar.gz' | head -1)
+          mac_x64=$(find dist -name 'Token.Dashboard_x64.app.tar.gz' | head -1)
+          for f in "$msi" "$appimage" "$mac_arm" "$mac_x64"; do
+            if [ -z "$f" ] || [ ! -f "$f" ] || [ ! -f "$f.sig" ]; then
+              echo "missing updater artifact or signature: '$f'" >&2
+              find dist -maxdepth 4 -type f -print >&2
+              exit 1
+            fi
+          done
+
+          jq -n \
+            --arg version "${TAG#v}" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg win_url "$base/$(gh_name "$msi")" \
+            --arg win_sig "$(cat "$msi.sig")" \
+            --arg lin_url "$base/$(gh_name "$appimage")" \
+            --arg lin_sig "$(cat "$appimage.sig")" \
+            --arg arm_url "$base/$(gh_name "$mac_arm")" \
+            --arg arm_sig "$(cat "$mac_arm.sig")" \
+            --arg x64_url "$base/$(gh_name "$mac_x64")" \
+            --arg x64_sig "$(cat "$mac_x64.sig")" \
+            '{
+              version: $version,
+              pub_date: $pub_date,
+              platforms: {
+                "windows-x86_64": { url: $win_url, signature: $win_sig },
+                "linux-x86_64":   { url: $lin_url, signature: $lin_sig },
+                "darwin-aarch64": { url: $arm_url, signature: $arm_sig },
+                "darwin-x86_64":  { url: $x64_url, signature: $x64_sig }
+              }
+            }' > dist/latest.json
+          cat dist/latest.json
 
       - name: Create / update release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.tag.outputs.tag || inputs.tag || github.ref_name }}
-          # Installers only. `dist/**/*` would also attach the updater
-          # artifacts, whose two macOS .app.tar.gz share a basename and would
-          # silently overwrite each other — see the note above.
+          # Installers + the updater artifacts they pair with. The two macOS
+          # .app.tar.gz no longer share a basename (the build job stamps the
+          # arch in), so nothing collides in the flat asset namespace.
+          # latest.json is listed explicitly — it is the one asset the
+          # in-app updater fetches by name.
           files: |
             dist/**/*.msi
             dist/**/*.dmg
             dist/**/*.deb
             dist/**/*.AppImage
+            dist/**/*.app.tar.gz
+            dist/**/*.sig
+            dist/latest.json
           fail_on_unmatched_files: false
           generate_release_notes: true
 
   winget:
     name: Submit to winget-pkgs
     needs: [tag, release]
+    # Package managers get real release tags only. A validation dispatch
+    # (e.g. `v5.1.4-validation`, used to exercise this workflow without
+    # cutting a release) satisfies every condition below, and this job would
+    # cheerfully publish that version — breaking `brew install` until the next
+    # real release overwrites the tap. Any tag carrying a `-` (validation
+    # runs, `-rc` pre-releases) is skipped.
     if: |
-      always() && needs.release.result == 'success' && (
+      always() && needs.release.result == 'success'
+      && !contains(needs.tag.outputs.tag || inputs.tag || github.ref_name, '-')
+      && (
         startsWith(github.ref, 'refs/tags/v4.')
         || needs.tag.outputs.tagged == 'true'
         || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
@@ -316,8 +393,16 @@ jobs:
   homebrew:
     name: Update Homebrew tap
     needs: [tag, release]
+    # Package managers get real release tags only. A validation dispatch
+    # (e.g. `v5.1.4-validation`, used to exercise this workflow without
+    # cutting a release) satisfies every condition below, and this job would
+    # cheerfully publish that version — breaking `brew install` until the next
+    # real release overwrites the tap. Any tag carrying a `-` (validation
+    # runs, `-rc` pre-releases) is skipped.
     if: |
-      always() && needs.release.result == 'success' && (
+      always() && needs.release.result == 'success'
+      && !contains(needs.tag.outputs.tag || inputs.tag || github.ref_name, '-')
+      && (
         startsWith(github.ref, 'refs/tags/v4.')
         || needs.tag.outputs.tagged == 'true'
         || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
