@@ -329,7 +329,7 @@ fn handle_event_msg(
         "token_count" => {
             if let Some(last) = payload
                 .get("info")
-                .and_then(|i| if i.is_null() { None } else { Some(i) })
+                .filter(|i| !i.is_null())
                 .and_then(|i| i.get("last_token_usage"))
             {
                 let u = Usage {
@@ -599,13 +599,12 @@ fn target_from_args(name: &str, args: &str) -> Option<String> {
     let val = v.get(key)?;
     let raw = if let Some(s) = val.as_str() {
         s.to_string()
-    } else if let Some(arr) = val.as_array() {
-        arr.iter()
+    } else {
+        val.as_array()?
+            .iter()
             .filter_map(|x| x.as_str())
             .collect::<Vec<_>>()
             .join(" ")
-    } else {
-        return None;
     };
     Some(raw.chars().take(500).collect())
 }
