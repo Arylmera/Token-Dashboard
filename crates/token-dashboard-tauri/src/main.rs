@@ -153,6 +153,7 @@ fn show_or_spawn_main(app: &AppHandle, base_url: &str) {
         .min_inner_size(380.0, 200.0)
         .background_color(bg)
         .decorations(false)
+        .shadow(true)
         .visible(true);
     #[cfg(target_os = "windows")]
     let builder = builder.transparent(true);
@@ -660,6 +661,7 @@ fn spawn_widget_inner(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(true)
+        .shadow(true)
         .background_color(bg)
         .visible(true);
     // window_vibrancy requires the window to be created with
@@ -716,6 +718,7 @@ fn spawn_setup_help(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         .min_inner_size(420.0, 320.0)
         .decorations(false)
         .resizable(true)
+        .shadow(true)
         .center()
         .background_color(opaque_bg)
         .visible(true);
@@ -842,6 +845,7 @@ fn spawn_live_window(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         .min_inner_size(420.0, 320.0)
         .decorations(false)
         .resizable(true)
+        .shadow(true)
         .center()
         .background_color(bg)
         .visible(false);
@@ -1082,6 +1086,11 @@ async fn main() {
                     .min_inner_size(380.0, 200.0)
                     .background_color(bg)
                     .decorations(false)
+                    // Windows: undecorated + shadow makes tao keep the DWM frame
+                    // insets, so the OS itself owns the resize border (native
+                    // 8px grab zone + corners + drop shadow) instead of the
+                    // 4px-wide fallback Tauri hit-tests inside the webview.
+                    .shadow(true)
                     .visible(true);
                 // See widget builder note: transparent must be set at
                 // creation time on Windows for acrylic to take effect.
