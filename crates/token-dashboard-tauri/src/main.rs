@@ -409,6 +409,15 @@ fn handle_budget_alert(app: &AppHandle, v: &serde_json::Value) {
     }
 }
 
+/// A cargo-built binary always sits under `target/{debug,release}/`; an
+/// installed one never does. Used to keep dev runs out of the update flow.
+fn is_dev_build() -> bool {
+    std::env::current_exe()
+        .ok()
+        .map(|p| p.components().any(|c| c.as_os_str() == "target"))
+        .unwrap_or(false)
+}
+
 /// Check GitHub Releases for a newer version (via tauri-plugin-updater's
 /// latest.json endpoint). Prompts before installing. `report_no_update`
 /// distinguishes the manual tray click (always answer) from the silent
@@ -423,6 +432,27 @@ fn spawn_app_update_check(app: AppHandle, report_no_update: bool) {
             Err(e) => Err(e),
         };
         match update {
+            // Validation tags (`v5.1.4-validation`) publish a latest.json too,
+            // so the updater offers a prerelease as if it were a release. Only
+            // plain versions are ever installable.
+            Ok(Some(update)) if update.version.contains('-') => {
+                eprintln!(
+                    "ignoring prerelease update {} (installed {})",
+                    update.version,
+                    app.package_info().version
+                );
+                if report_no_update {
+                    let _ = app
+                        .notification()
+                        .builder()
+                        .title("Token Dashboard")
+                        .body(format!(
+                            "You're up to date (v{}).",
+                            app.package_info().version
+                        ))
+                        .show();
+                }
+            }
             Ok(Some(update)) => {
                 let version = update.version.clone();
                 let dialog_app = app.clone();
@@ -1117,8 +1147,14 @@ async fn main() {
                 // two widget windows on launch.
                 spawn_widget_reconciler(app.handle().clone(), base_url.clone());
                 // Silent update check at startup; prompts only if a newer
-                // release exists.
-                spawn_app_update_check(app.handle().clone(), false);
+                // release exists. Dev runs skip it entirely — a local build is
+                // never the version the updater is talking about. The tray's
+                // "Check for Updates" still works on demand.
+                if is_dev_build() {
+                    eprintln!("dev build (running from target/) — skipping startup update check");
+                } else {
+                    spawn_app_update_check(app.handle().clone(), false);
+                }
                 Ok(())
             }
         })
