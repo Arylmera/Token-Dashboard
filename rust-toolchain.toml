@@ -1,0 +1,21 @@
+# Pins the toolchain for local dev AND CI so a green local
+# `cargo clippy --all-targets --workspace -- -D warnings` actually predicts a
+# green CI clippy.
+#
+# Why this exists: the workflows use `dtolnay/rust-toolchain@stable`, which
+# lints with whatever stable is current on the day the job runs. Without a pin
+# that drifts ahead of whatever the contributor last `rustup update`d, and new
+# clippy releases start failing CI on untouched, long-standing code. That is
+# what happened on the v5.1.3 release PR: local was 1.95.0, CI stable had moved
+# to 1.97.1, and two pre-existing lints in providers/codex.rs went red.
+#
+# rustup honours this file over the installed default, and installs the listed
+# components on first use — so the workflows need no change.
+#
+# To bump: raise `channel`, run the three verification commands from
+# CLAUDE.md ("Verifying changes"), and fix whatever new lints appear in the
+# same commit.
+
+[toolchain]
+channel = "1.97.1"
+components = ["clippy", "rustfmt"]
