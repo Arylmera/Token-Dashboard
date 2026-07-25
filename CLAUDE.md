@@ -115,6 +115,8 @@ To release version `X.Y.Z`:
 3. Open a **`develop`→`main` PR** titled `Release vX.Y.Z`. Wait for CI green.
 4. **Merge with a merge-commit** (not squash/rebase) — the `main-merge-commit-only` ruleset enforces this. `gh pr merge <n> --merge`.
 
+**Updater signing:** release builds sign updater artifacts with the `TAURI_SIGNING_PRIVATE_KEY` repo secret (keypair at `~/.tauri/token-dashboard.key`, pubkey embedded in `tauri.conf.json`); the release job publishes `latest.json`, which installed apps poll via `tauri-plugin-updater`. If the secret is missing the bundler fails loudly. Local `cargo tauri build` needs `TAURI_SIGNING_PRIVATE_KEY_PATH=~/.tauri/token-dashboard.key` (plain `cargo build`/`cargo run` are unaffected).
+
 **The merge IS the release. Never create or push a tag manually.** `.github/workflows/release-tauri.yml` has a `tag` job that fires on push to `main`, reads the version from `token-dashboard-tauri/Cargo.toml`, and auto-creates+pushes `vX.Y.Z` if it doesn't exist — which chains into the Win/macOS/Linux bundle builds, the GitHub Release, and winget/homebrew. Pre-tagging makes that job skip (`tagged=false`) and the main-push run won't build, so the release stalls. After it succeeds, `sync-main-to-develop` merges `main` back into `develop`.
 
 Full walkthrough: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#releasing).
