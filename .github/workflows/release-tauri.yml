@@ -1,13 +1,15 @@
 name: release-tauri
 
 on:
+  # No `tags:` trigger by design. A release is a develop→main merge; the `tag`
+  # job below creates the tag and the rest of the chain keys off its `tagged`
+  # output. Re-running against an existing tag goes through workflow_dispatch.
   push:
     branches: [main]
-    tags: ["v4.*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to attach artifacts to (e.g. v4.0.0-rc.1)"
+        description: "Release tag to attach artifacts to (e.g. v5.1.3)"
         required: true
 
 env:
@@ -58,8 +60,7 @@ jobs:
     needs: [tag]
     if: |
       always() && (
-        startsWith(github.ref, 'refs/tags/v4.')
-        || github.event_name == 'workflow_dispatch'
+        github.event_name == 'workflow_dispatch'
         || needs.tag.outputs.tagged == 'true'
       )
     runs-on: ${{ matrix.os }}
@@ -239,8 +240,7 @@ jobs:
     runs-on: ubuntu-22.04
     if: |
       always() && needs.build.result == 'success' && (
-        startsWith(github.ref, 'refs/tags/v4.')
-        || needs.tag.outputs.tagged == 'true'
+        needs.tag.outputs.tagged == 'true'
         || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
       )
     permissions:
@@ -344,8 +344,7 @@ jobs:
       always() && needs.release.result == 'success'
       && !contains(needs.tag.outputs.tag || inputs.tag || github.ref_name, '-')
       && (
-        startsWith(github.ref, 'refs/tags/v4.')
-        || needs.tag.outputs.tagged == 'true'
+        needs.tag.outputs.tagged == 'true'
         || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
       )
     runs-on: windows-latest
@@ -403,8 +402,7 @@ jobs:
       always() && needs.release.result == 'success'
       && !contains(needs.tag.outputs.tag || inputs.tag || github.ref_name, '-')
       && (
-        startsWith(github.ref, 'refs/tags/v4.')
-        || needs.tag.outputs.tagged == 'true'
+        needs.tag.outputs.tagged == 'true'
         || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
       )
     runs-on: ubuntu-22.04
