@@ -210,9 +210,9 @@ function applyLiveWindowTheme(onIndex) {
 function LiveTitlebar() {
   const act = (fn) => () => { const w = getTauriWindow(); if (w) fn(w); };
   return (
-    <div className="a-live-titlebar">
-      <span className="a-live-titlebar-title" data-tauri-drag-region>Live · Token Dashboard</span>
-      <div className="a-live-titlebar-drag" data-tauri-drag-region />
+    <div className="a-live-titlebar" data-tauri-drag-region="deep">
+      <span className="a-live-titlebar-title">Live · Token Dashboard</span>
+      <div className="a-live-titlebar-drag" />
       <div className="a-live-wincontrols">
         <button className="a-live-winbtn" aria-label="Minimize" onClick={act((w) => w.minimize())}>
           <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="4.5" width="8" height="1" fill="currentColor" /></svg>

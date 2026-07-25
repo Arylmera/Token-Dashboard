@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { NAV_ITEMS } from "../nav-items.js";
 import { getThemedCopy } from "../themed-copy.js";
 import { tabVisible } from "../levels.js";
-import { getTauriWindow } from "../tauri-window.js";
 
 // Three rail modes the head button cycles through:
 //   hover  — collapsed, expands while the pointer is over the rail
@@ -29,15 +28,9 @@ export const NavRail = ({ tab, setTab, level = 1, themeId }) => {
   const expanded = mode === "open" || (mode === "hover" && hovering);
   const items = NAV_ITEMS.filter((it) => tabVisible(level, it.id));
 
-  const win = getTauriWindow();
   const selectMode = (m) => { setMode(m); writeMode(m); };
   const toggleOpenClosed = () => selectMode(expanded ? "closed" : "open");
   const pick = (id) => { setTab(id); setDrawerOpen(false); };
-  const startWindowDrag = (e) => {
-    if (e.button !== 0 || !win) return;
-    if (e.target.closest("button")) return;
-    win.startDragging();
-  };
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -83,7 +76,7 @@ export const NavRail = ({ tab, setTab, level = 1, themeId }) => {
         onMouseEnter={() => setHovering(true)}
         onMouseLeave={() => setHovering(false)}
       >
-        <div className="a-rail-head" data-tauri-drag-region onMouseDown={startWindowDrag}>
+        <div className="a-rail-head" data-tauri-drag-region="deep">
           <button className="a-rail-pin" data-tauri-drag-region="false"
                   aria-label={expanded ? "Collapse sidebar" : "Open sidebar"} title={expanded ? "Collapse" : "Open"} onClick={toggleOpenClosed}>
             <svg width="16" height="16" viewBox="0 0 18 18"><path d="M2 5h14M2 9h14M2 13h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>

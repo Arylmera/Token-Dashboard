@@ -545,8 +545,8 @@ export const Widget = () => {
   useGlassSync(prefs, rootRef);
 
   return (
-    <div className={`td-w-root dir-a-root${compact ? " is-compact" : ""}`} ref={rootRef} data-tauri-drag-region>
-      <div className="td-w-head" data-tauri-drag-region>
+    <div className={`td-w-root dir-a-root${compact ? " is-compact" : ""}`} ref={rootRef} data-tauri-drag-region="deep">
+      <div className="td-w-head">
         <span className="td-w-brand">
           <span className="a-brand-dot" />
           <span className="td-w-brand-text">token dashboard</span>

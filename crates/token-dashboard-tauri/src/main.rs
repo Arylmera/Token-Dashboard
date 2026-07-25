@@ -153,6 +153,7 @@ fn show_or_spawn_main(app: &AppHandle, base_url: &str) {
         .min_inner_size(380.0, 200.0)
         .background_color(bg)
         .decorations(false)
+        .shadow(true)
         .visible(true);
     #[cfg(target_os = "windows")]
     let builder = builder.transparent(true);
@@ -408,6 +409,15 @@ fn handle_budget_alert(app: &AppHandle, v: &serde_json::Value) {
     }
 }
 
+/// A cargo-built binary always sits under `target/{debug,release}/`; an
+/// installed one never does. Used to keep dev runs out of the update flow.
+fn is_dev_build() -> bool {
+    std::env::current_exe()
+        .ok()
+        .map(|p| p.components().any(|c| c.as_os_str() == "target"))
+        .unwrap_or(false)
+}
+
 /// Check GitHub Releases for a newer version (via tauri-plugin-updater's
 /// latest.json endpoint). Prompts before installing. `report_no_update`
 /// distinguishes the manual tray click (always answer) from the silent
@@ -422,6 +432,27 @@ fn spawn_app_update_check(app: AppHandle, report_no_update: bool) {
             Err(e) => Err(e),
         };
         match update {
+            // Validation tags (`v5.1.4-validation`) publish a latest.json too,
+            // so the updater offers a prerelease as if it were a release. Only
+            // plain versions are ever installable.
+            Ok(Some(update)) if update.version.contains('-') => {
+                eprintln!(
+                    "ignoring prerelease update {} (installed {})",
+                    update.version,
+                    app.package_info().version
+                );
+                if report_no_update {
+                    let _ = app
+                        .notification()
+                        .builder()
+                        .title("Token Dashboard")
+                        .body(format!(
+                            "You're up to date (v{}).",
+                            app.package_info().version
+                        ))
+                        .show();
+                }
+            }
             Ok(Some(update)) => {
                 let version = update.version.clone();
                 let dialog_app = app.clone();
@@ -660,6 +691,7 @@ fn spawn_widget_inner(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(true)
+        .shadow(true)
         .background_color(bg)
         .visible(true);
     // window_vibrancy requires the window to be created with
@@ -716,6 +748,7 @@ fn spawn_setup_help(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         .min_inner_size(420.0, 320.0)
         .decorations(false)
         .resizable(true)
+        .shadow(true)
         .center()
         .background_color(opaque_bg)
         .visible(true);
@@ -842,6 +875,7 @@ fn spawn_live_window(app: &AppHandle, base_url: &str) -> tauri::Result<()> {
         .min_inner_size(420.0, 320.0)
         .decorations(false)
         .resizable(true)
+        .shadow(true)
         .center()
         .background_color(bg)
         .visible(false);
@@ -1082,6 +1116,11 @@ async fn main() {
                     .min_inner_size(380.0, 200.0)
                     .background_color(bg)
                     .decorations(false)
+                    // Windows: undecorated + shadow makes tao keep the DWM frame
+                    // insets, so the OS itself owns the resize border (native
+                    // 8px grab zone + corners + drop shadow) instead of the
+                    // 4px-wide fallback Tauri hit-tests inside the webview.
+                    .shadow(true)
                     .visible(true);
                 // See widget builder note: transparent must be set at
                 // creation time on Windows for acrylic to take effect.
@@ -1108,8 +1147,14 @@ async fn main() {
                 // two widget windows on launch.
                 spawn_widget_reconciler(app.handle().clone(), base_url.clone());
                 // Silent update check at startup; prompts only if a newer
-                // release exists.
-                spawn_app_update_check(app.handle().clone(), false);
+                // release exists. Dev runs skip it entirely — a local build is
+                // never the version the updater is talking about. The tray's
+                // "Check for Updates" still works on demand.
+                if is_dev_build() {
+                    eprintln!("dev build (running from target/) — skipping startup update check");
+                } else {
+                    spawn_app_update_check(app.handle().clone(), false);
+                }
                 Ok(())
             }
         })
