@@ -18,7 +18,7 @@ scoop install token-dashboard
 
 ## Updating per release
 
-On every `v4.*` tag:
+On every release tag:
 
 1. Compute the MSI SHA-256:
 
