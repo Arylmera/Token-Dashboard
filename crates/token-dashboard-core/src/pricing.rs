@@ -313,6 +313,7 @@ mod tests {
     fn embedded_loads() {
         let p = Pricing::embedded();
         assert!(p.models.contains_key("claude-fable-5"));
+        assert!(p.models.contains_key("claude-opus-5"));
         assert!(p.models.contains_key("claude-opus-4-8"));
         assert!(p.models.contains_key("claude-opus-4-7"));
         assert!(p.models.contains_key("claude-sonnet-5"));
@@ -351,6 +352,30 @@ mod tests {
         );
         assert!(!r.estimated);
         assert_eq!(r.usd, Some(60.0)); // $10/M input + $50/M output
+    }
+
+    #[test]
+    fn cost_for_opus_5_uses_table() {
+        let p = Pricing::embedded();
+        // Bare id and the dated-snapshot form transcripts may carry.
+        for model in ["claude-opus-5", "claude-opus-5-20260601"] {
+            let r = cost_for(
+                model,
+                &Usage {
+                    input_tokens: 1_000_000,
+                    output_tokens: 1_000_000,
+                    cache_read_tokens: 1_000_000,
+                    cache_create_5m_tokens: 1_000_000,
+                    cache_create_1h_tokens: 1_000_000,
+                },
+                &p,
+            );
+            // Not estimated: proves the exact row matched, not the opus
+            // tier fallback (which carries identical rates).
+            assert!(!r.estimated, "{model}: should resolve to exact rates");
+            // $5 in + $25 out + $0.50 cache read + $6.25 5m + $10 1h
+            assert_eq!(r.usd, Some(46.75), "{model}");
+        }
     }
 
     #[test]
