@@ -105,6 +105,21 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
+      # rust-toolchain.toml pins the compiler, and rustup treats
+      # `<version>-<host>` as a DIFFERENT install from `stable-<host>` even
+      # when the two resolve to the same version. The target the action just
+      # added landed on `stable`, so the pinned toolchain cargo actually uses
+      # cannot see it — which broke the macos-x64 leg of v5.1.3 with
+      # "Target x86_64-apple-darwin is not installed". Add it to the active
+      # toolchain instead: rustup resolves rust-toolchain.toml from the repo
+      # working directory, so this hits the pinned one.
+      - name: Add cross-compilation target to the pinned toolchain
+        if: matrix.rust_target != ''
+        run: |
+          rustup show active-toolchain
+          rustup target add ${{ matrix.rust_target }}
+          rustup target list --installed
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
