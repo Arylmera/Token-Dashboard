@@ -13,7 +13,11 @@ use token_dashboard_cli::{
 };
 use token_dashboard_core::{default_db_path, Pricing};
 
-const SCAN_INTERVAL: Duration = Duration::from_secs(10);
+/// Backstop cadence only — the transcript watcher (`watch.rs`) is what
+/// keeps the dashboard live. Kept well above the cost of one pass: on a
+/// large history a scan takes tens of seconds, so the old 10s tick meant
+/// a permanently scanning process.
+const SCAN_INTERVAL: Duration = Duration::from_secs(120);
 /// How long startup waits on the first scan before serving anyway.
 const STARTUP_SCAN_BUDGET: Duration = Duration::from_secs(3);
 /// Default cadence for the viewer-side remote-source pull. 5 minutes is

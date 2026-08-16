@@ -2,6 +2,19 @@ import React from "react";
 import { D } from "../../data-store.js";
 import { fmtCost } from "../../format.js";
 
+/// Scanning runs unattended, so a broken scan looks exactly like a quiet
+/// day — same numbers, no complaint. Say it out loud instead.
+export const ScanErrorBanner = () => {
+  const msg = D.scanError;
+  if (!msg) return null;
+  return (
+    <div className="a-banner tone-bad">
+      <strong>Scan failing — figures are frozen at the last good scan</strong>
+      <span className="a-banner-detail"> · {msg}</span>
+    </div>
+  );
+};
+
 export const BudgetAlertBanner = () => {
   const a = D.budgetAlerts;
   if (!a) return null;

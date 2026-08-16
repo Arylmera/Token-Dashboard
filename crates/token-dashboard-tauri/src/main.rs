@@ -35,7 +35,10 @@ use token_dashboard_cli::{
 use token_dashboard_core::{default_db_path, Pricing};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
-const SCAN_INTERVAL: Duration = Duration::from_secs(10);
+/// Backstop only: `cli::watch` drives freshness off transcript writes.
+/// A pass over a large history costs tens of seconds, so a short tick
+/// left the process scanning around the clock.
+const SCAN_INTERVAL: Duration = Duration::from_secs(120);
 /// Ceiling on how long the window waits for the first scan. Past it the
 /// UI opens and the scan lands via SSE (see `cli::scan_once`).
 const STARTUP_SCAN_BUDGET: Duration = Duration::from_secs(3);
