@@ -29,13 +29,16 @@ use tauri::{
     AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 use token_dashboard_cli::{
-    app as build_router, spawn_remote_sync_loop, spawn_scan_loop, spawn_startup_oauth_sync,
-    AppState,
+    app as build_router, spawn_remote_sync_loop, spawn_scan_loop, spawn_share_if_enabled,
+    spawn_startup_oauth_sync, AppState,
 };
 use token_dashboard_core::{default_db_path, Pricing};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const SCAN_INTERVAL: Duration = Duration::from_secs(10);
+/// Ceiling on how long the window waits for the first scan. Past it the
+/// UI opens and the scan lands via SSE (see `cli::scan_once`).
+const STARTUP_SCAN_BUDGET: Duration = Duration::from_secs(3);
 /// Cadence for the read-only multi-machine sync fan-out — see
 /// `docs/todo/11-multi-machine-sync.md`. Strictly machine-to-machine
 /// (user-owned); the manual "Sync now" button covers immediate refresh.
@@ -1027,9 +1030,20 @@ async fn main() {
     let db_path_for_state = db_path.clone();
 
     let state = AppState::new(db_path, Pricing::embedded(), projects_dir);
+    // Ingest before the webview exists, so the first load can't paint a
+    // stale (often $0) dashboard while the scan is still pending.
+    token_dashboard_cli::scan_once(state.clone(), STARTUP_SCAN_BUDGET).await;
+    // Transcript writes drive the scan directly; SCAN_INTERVAL is the
+    // fallback for filesystems where notify can't deliver events.
+    if let Err(e) =
+        token_dashboard_cli::spawn_scan_watcher(state.clone(), token_dashboard_cli::WATCH_DEBOUNCE)
+    {
+        eprintln!("transcript watcher unavailable, polling only: {e}");
+    }
     spawn_scan_loop(state.clone(), SCAN_INTERVAL);
     spawn_startup_oauth_sync(state.clone());
     spawn_remote_sync_loop(state.clone(), REMOTE_SYNC_INTERVAL);
+    spawn_share_if_enabled(state.clone());
     let router = build_router(state);
 
     let server = tokio::spawn(async move {

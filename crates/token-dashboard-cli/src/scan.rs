@@ -92,10 +92,15 @@ pub(crate) async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>
 pub(crate) async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, String> {
     let db = s.db_path.clone();
     let proj = s.projects_dir.clone();
-    let stats = tokio::task::spawn_blocking(move || scan_dir(proj.as_ref(), db.as_ref()))
-        .await
-        .map_err(|e| format!("join: {e}"))?
-        .map_err(|e| format!("scan: {e}"))?;
+    let lock = s.scan_lock.clone();
+    let stats = {
+        // One scan at a time, whichever path asked for it.
+        let _guard = lock.lock().await;
+        tokio::task::spawn_blocking(move || scan_dir(proj.as_ref(), db.as_ref()))
+            .await
+            .map_err(|e| format!("join: {e}"))?
+            .map_err(|e| format!("scan: {e}"))?
+    };
     // Only announce when the scan actually ingested rows. The background
     // loop ticks every 10s; emitting unconditionally made every connected
     // frontend refetch its entire endpoint registry every tick even when the
@@ -161,6 +166,31 @@ pub(crate) async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, Str
         maybe_activity_oauth_sync(state_for_hook, stats_for_hook).await;
     });
     Ok(stats)
+}
+
+/// Run one scan at startup, before anything can serve `/api/*`.
+/// Without it the first frontend load reads a database that stops at
+/// the previous run's last scan — the dashboard opens on $0 and only
+/// self-corrects on the next scan that ingests rows (which never comes
+/// while the user is idle, since `run_scan_and_broadcast` stays silent
+/// on an empty delta).
+///
+/// Waited on rather than spawned, so the initial fetch can't win the
+/// race — but only up to `budget`. A warm database finishes in well
+/// under a second; a cold one (first launch, months of transcripts) can
+/// take minutes, and holding the window back that long is worse than
+/// the stale numbers this fixes. On timeout the scan keeps running and
+/// its `scan_complete` refreshes the page in place.
+pub async fn scan_once(state: AppState, budget: Duration) {
+    let task = tokio::spawn(async move {
+        if let Err(e) = run_scan_and_broadcast(state).await {
+            tracing::warn!(error = %e, "startup scan failed");
+        }
+    });
+    // `timeout` drops its own future only — the spawned task runs on.
+    if tokio::time::timeout(budget, task).await.is_err() {
+        tracing::info!("startup scan exceeded its budget; continuing in background");
+    }
 }
 
 /// Spawn a tokio task that runs `scan_dir` every `interval` and

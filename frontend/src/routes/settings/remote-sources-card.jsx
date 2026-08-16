@@ -12,7 +12,141 @@ const fmtAgo = (ts) => {
   return `${Math.floor(h / 24)}d ago`;
 };
 
-const SECRET_PLACEHOLDER = "set on host via TOKEN_DASHBOARD_SYNC_TOKEN";
+const SECRET_PLACEHOLDER = "token from the host's Share card (or TOKEN_DASHBOARD_SYNC_TOKEN)";
+
+const genToken = () => {
+  const buf = new Uint8Array(24);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
+};
+
+/**
+ * Host-side of the multi-machine sync: a toggle that binds a second
+ * listener on 0.0.0.0:<port> exposing only /api/sync/snapshot, gated by
+ * the token below. Viewer machines add this machine's LAN IP + port in
+ * their own "Remote machines" card.
+ */
+export const ShareHostCard = () => {
+  const [cfg, setCfg] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    fetch("/api/sync/host")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`status ${r.status}`))))
+      .then((c) => { setCfg(c); setError(null); })
+      .catch((e) => setError(e.message || "fetch failed"));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const save = async (next) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/sync/host", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      if (r.ok) {
+        setCfg(await r.json());
+      } else {
+        const body = await r.json().catch(() => ({}));
+        setError(body.error || r.statusText);
+        load();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!cfg) {
+    return (
+      <section className="a-card">
+        <div className="a-card-head"><h2>Share this machine</h2></div>
+        <div className="a-hint" style={{ padding: "0 16px 12px" }}>
+          {error ? `Failed to load: ${error}` : "Loading…"}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="a-card">
+      <div className="a-card-head">
+        <h2>Share this machine</h2>
+        <span className="a-card-meta">
+          {cfg.listening
+            ? `sharing on port ${cfg.port} — reachable from your LAN`
+            : "off — this machine is not reachable by other dashboards"}
+        </span>
+      </div>
+      <div className="a-hint" style={{ padding: "0 16px 8px" }}>
+        Serves a read-only usage snapshot to other Token Dashboard installs on
+        your network. Only <code>/api/sync/snapshot</code> is exposed, and only
+        with the token below. On the viewer machine, add{" "}
+        <code>http://&lt;this-machine-ip&gt;:{cfg.port}</code> + this token
+        under <em>Remote machines</em>. First start may raise a firewall
+        prompt — allow it on private networks, or the port stays unreachable.
+      </div>
+      <div className="a-remote-add">
+        <input
+          type="number"
+          min="1"
+          max="65535"
+          placeholder="port"
+          value={cfg.port}
+          onChange={(e) => setCfg((c) => ({ ...c, port: Number(e.target.value) }))}
+          disabled={busy}
+          style={{ maxWidth: 100 }}
+        />
+        <input
+          type="text"
+          placeholder="token (required)"
+          value={cfg.token || ""}
+          onChange={(e) => setCfg((c) => ({ ...c, token: e.target.value }))}
+          disabled={busy}
+        />
+        <button
+          type="button"
+          className="a-page-btn"
+          disabled={busy}
+          onClick={() => setCfg((c) => ({ ...c, token: genToken() }))}
+        >
+          Generate
+        </button>
+        <button
+          type="button"
+          className="a-page-btn"
+          disabled={busy || (!cfg.enabled && !(cfg.token || "").trim())}
+          onClick={() =>
+            save({ enabled: !cfg.enabled, port: cfg.port, token: cfg.token || null })
+          }
+        >
+          {busy ? "…" : cfg.enabled ? "Stop sharing" : "Start sharing"}
+        </button>
+        {cfg.enabled && (
+          <button
+            type="button"
+            className="a-page-btn"
+            disabled={busy}
+            onClick={() =>
+              save({ enabled: true, port: cfg.port, token: cfg.token || null })
+            }
+          >
+            Apply
+          </button>
+        )}
+      </div>
+      {error && (
+        <div className="a-hint tone-bad" style={{ padding: "0 16px 12px" }}>
+          {error}
+        </div>
+      )}
+    </section>
+  );
+};
 
 /**
  * Manage remote-machine read-only sync sources. The host shares its DB via
@@ -194,9 +328,10 @@ export const RemoteSourcesCard = () => {
       </div>
       {showHelp && <SetupInstructionsModal onClose={() => setShowHelp(false)} />}
       <div className="a-hint" style={{ padding: "0 16px 8px" }}>
-        Host side: another Token Dashboard install must export{" "}
-        <code>TOKEN_DASHBOARD_SYNC_TOKEN</code> before launching; that's the
-        bearer the viewer machines must send back. This machine auto-pulls
+        Host side: on the other machine, enable <em>Share this machine</em> in
+        its Settings (or export <code>TOKEN_DASHBOARD_SYNC_TOKEN</code> for the
+        headless CLI) and paste its token here. Include the port in the URL,
+        e.g. <code>http://192.168.1.42:8080</code>. This machine auto-pulls
         every 5 minutes — use <em>Sync now</em> below for an immediate refresh.
       </div>
       <form onSubmit={add} className="a-remote-add">

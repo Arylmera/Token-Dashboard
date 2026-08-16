@@ -18,6 +18,16 @@ pub struct AppState {
     /// publishers (scan loop, settings POSTs) push JSON values onto this
     /// channel and every connected client gets one fan-out copy.
     pub events: broadcast::Sender<serde_json::Value>,
+    /// Serializes `scan_dir`. Three paths trigger scans — the poll loop,
+    /// the transcript watcher, and `/api/scan` — and on a large history a
+    /// pass takes tens of seconds. Overlapping passes fight over the same
+    /// sqlite writer and stack up on the blocking pool, so every scan
+    /// takes this first.
+    pub scan_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Running "share this machine" listener (0.0.0.0 sync host), if
+    /// any. `sync_host::apply_share_config` aborts and replaces it when
+    /// the preference changes.
+    pub share: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl AppState {
@@ -30,6 +40,8 @@ impl AppState {
             pricing: Arc::new(pricing),
             projects_dir: Arc::new(projects_dir),
             events: tx,
+            scan_lock: Arc::new(tokio::sync::Mutex::new(())),
+            share: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 }

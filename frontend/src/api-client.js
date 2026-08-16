@@ -622,6 +622,7 @@ const POLL_FALLBACK_MS = 15_000;
 const MAX_CONSECUTIVE_FAILURES = 3;
 
 let _streamSource = null;
+let _hadStream = false;
 let _firstFrameTimer = null;
 let _consecutiveFailures = 0;
 let _pollingFallbackTimer = null;
@@ -701,6 +702,15 @@ function _connectStream() {
   _streamSource.addEventListener("hello", () => {
     cancelWatchdog();
     _consecutiveFailures = 0;
+    // Events published while the stream was down are gone — the bus has no
+    // replay for a client that wasn't subscribed. Resync on every *re*open
+    // so a dropped connection can't leave the page frozen on stale numbers.
+    // Skipped on the first hello: the page's own bootstrap already ran
+    // loadAll(), and the server scans before it serves anything.
+    if (_hadStream) {
+      loadAll().catch((e) => console.warn("loadAll reconnect", e));
+    }
+    _hadStream = true;
   });
   // Real events. Tauri shell's bus emits typed events; the EventSource
   // default `message` channel only receives events without a `type`
