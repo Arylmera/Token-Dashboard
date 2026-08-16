@@ -1126,6 +1126,30 @@ async fn day_endpoint_empty_day_is_ok_and_zeroed() {
         .is_empty());
 }
 
+/// Enabling "share this machine" without a token must fail *and* leave
+/// the preference off. A stored `enabled=true` with no listener would
+/// show the Settings card as sharing when nothing is bound.
+#[tokio::test]
+async fn sync_host_enable_without_token_rolls_back() {
+    let fx = setup_with_jsonl(&[]);
+    let (status, body) = get_json(&fx.state, "/api/sync/host").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["enabled"], json!(false));
+    assert_eq!(body["listening"], json!(false));
+
+    let (status, _) = post_json(
+        &fx.state,
+        "/api/sync/host",
+        &json!({"enabled": true, "port": 8099}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "token is mandatory");
+
+    let (_, body) = get_json(&fx.state, "/api/sync/host").await;
+    assert_eq!(body["enabled"], json!(false), "toggle must roll back");
+    assert_eq!(body["port"], json!(8099), "port edit still persists");
+}
+
 #[tokio::test]
 async fn day_endpoint_rejects_bad_date() {
     let fx = setup_with_jsonl(&[]);

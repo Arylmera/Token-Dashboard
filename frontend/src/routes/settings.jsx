@@ -8,7 +8,7 @@ import { LimitsCard } from "./settings/limits-card.jsx";
 import { BudgetCard } from "./settings/budget-card.jsx";
 import { BackupCard } from "./settings/backup-card.jsx";
 import { SourcesCard } from "./settings/sources-card.jsx";
-import { RemoteSourcesCard } from "./settings/remote-sources-card.jsx";
+import { RemoteSourcesCard, ShareHostCard } from "./settings/remote-sources-card.jsx";
 import { GlassCard } from "./settings/glass-card.jsx";
 import { LiveVaultCard } from "./settings/live-vault-card.jsx";
 import { WidgetCard } from "./settings/widget-card.jsx";
@@ -147,6 +147,7 @@ export const Settings = ({ themeIdx, onPickTheme }) => {
         <BackupCard />
         <SourcesCard />
         <RemoteSourcesCard />
+        <ShareHostCard />
       </SettingsGroup>
 
       <SettingsGroup title="Live" description="the Live tab's Explorer vault">

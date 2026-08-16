@@ -84,6 +84,37 @@ pub(crate) async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>
     Ok(Json(stats.into()))
 }
 
+/// Track whether scanning is healthy and publish the transitions, so a
+/// failing scan reaches the user instead of only the log. Scans are
+/// unattended: without this the dashboard keeps serving whatever it
+/// ingested last, looking merely quiet rather than broken. Only edges
+/// are published (`message` set on breakage, `null` on recovery) — a
+/// scan that keeps failing every tick shouldn't spam the bus.
+async fn publish_scan_health(
+    s: &AppState,
+    outcome: Result<ScanStats, String>,
+) -> Result<ScanStats, String> {
+    let mut last = s.scan_error.lock().await;
+    match &outcome {
+        Ok(_) => {
+            if last.take().is_some() {
+                let _ = s
+                    .events
+                    .send(serde_json::json!({"type": "scan_error", "message": null}));
+            }
+        }
+        Err(e) => {
+            if last.as_deref() != Some(e.as_str()) {
+                *last = Some(e.clone());
+                let _ = s
+                    .events
+                    .send(serde_json::json!({"type": "scan_error", "message": e}));
+            }
+        }
+    }
+    outcome
+}
+
 /// Run `scan_dir` once and publish a `scan_complete` SSE event with the
 /// rich hint (sessions/projects/days/models) the frontend dispatcher
 /// uses to decide which endpoints to refetch. Shared between the
@@ -92,10 +123,16 @@ pub(crate) async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>
 pub(crate) async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, String> {
     let db = s.db_path.clone();
     let proj = s.projects_dir.clone();
-    let stats = tokio::task::spawn_blocking(move || scan_dir(proj.as_ref(), db.as_ref()))
-        .await
-        .map_err(|e| format!("join: {e}"))?
-        .map_err(|e| format!("scan: {e}"))?;
+    let lock = s.scan_lock.clone();
+    let outcome = {
+        // One scan at a time, whichever path asked for it.
+        let _guard = lock.lock().await;
+        tokio::task::spawn_blocking(move || scan_dir(proj.as_ref(), db.as_ref()))
+            .await
+            .map_err(|e| format!("join: {e}"))
+            .and_then(|r| r.map_err(|e| format!("scan: {e}")))
+    };
+    let stats = publish_scan_health(&s, outcome).await?;
     // Only announce when the scan actually ingested rows. The background
     // loop ticks every 10s; emitting unconditionally made every connected
     // frontend refetch its entire endpoint registry every tick even when the
@@ -163,6 +200,31 @@ pub(crate) async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, Str
     Ok(stats)
 }
 
+/// Run one scan at startup, before anything can serve `/api/*`.
+/// Without it the first frontend load reads a database that stops at
+/// the previous run's last scan — the dashboard opens on $0 and only
+/// self-corrects on the next scan that ingests rows (which never comes
+/// while the user is idle, since `run_scan_and_broadcast` stays silent
+/// on an empty delta).
+///
+/// Waited on rather than spawned, so the initial fetch can't win the
+/// race — but only up to `budget`. A warm database finishes in well
+/// under a second; a cold one (first launch, months of transcripts) can
+/// take minutes, and holding the window back that long is worse than
+/// the stale numbers this fixes. On timeout the scan keeps running and
+/// its `scan_complete` refreshes the page in place.
+pub async fn scan_once(state: AppState, budget: Duration) {
+    let task = tokio::spawn(async move {
+        if let Err(e) = run_scan_and_broadcast(state).await {
+            tracing::warn!(error = %e, "startup scan failed");
+        }
+    });
+    // `timeout` drops its own future only — the spawned task runs on.
+    if tokio::time::timeout(budget, task).await.is_err() {
+        tracing::info!("startup scan exceeded its budget; continuing in background");
+    }
+}
+
 /// Spawn a tokio task that runs `scan_dir` every `interval` and
 /// broadcasts the result so both the embedded backend and any connected
 /// frontend stay live without manual refresh. Both binaries (headless
@@ -180,4 +242,41 @@ pub fn spawn_scan_loop(state: AppState, interval: Duration) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use token_dashboard_core::Pricing;
+
+    fn state() -> AppState {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let db = tmp.path().join("t.db");
+        token_dashboard_core::init_db(&db).unwrap();
+        AppState::new(db, Pricing::embedded(), tmp.path().to_path_buf())
+    }
+
+    /// Only edges reach the bus: first failure, then recovery. A scan
+    /// that keeps failing must not republish on every tick.
+    #[tokio::test]
+    async fn scan_health_publishes_edges_only() {
+        let s = state();
+        let mut rx = s.events.subscribe();
+
+        let _ = publish_scan_health(&s, Err("scan: disk on fire".into())).await;
+        let ev = rx.try_recv().expect("failure announced");
+        assert_eq!(ev["type"], "scan_error");
+        assert_eq!(ev["message"], "scan: disk on fire");
+
+        let _ = publish_scan_health(&s, Err("scan: disk on fire".into())).await;
+        assert!(rx.try_recv().is_err(), "same failure must stay quiet");
+
+        let _ = publish_scan_health(&s, Ok(ScanStats::default())).await;
+        let ev = rx.try_recv().expect("recovery announced");
+        assert_eq!(ev["type"], "scan_error");
+        assert!(ev["message"].is_null(), "null clears the banner");
+
+        let _ = publish_scan_health(&s, Ok(ScanStats::default())).await;
+        assert!(rx.try_recv().is_err(), "healthy scans stay quiet");
+    }
 }

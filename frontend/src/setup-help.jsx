@@ -29,21 +29,28 @@ export const SetupHelpContent = ({ onClose }) => (
       <ol>
         <li>Install Token Dashboard and let it scan once so the local DB exists.</li>
         <li>
-          Pick a secret bearer token (any random string, e.g.
-          <code> openssl rand -hex 32</code>) and export it before launching:
+          In the host's <strong>Settings → Share this machine</strong> card:
+          generate (or paste) a token, pick a port, click <em>Start sharing</em>.
+          That binds a LAN-reachable listener exposing only the snapshot
+          endpoint. The desktop app's main server stays loopback-only —
+          launching it without this toggle shares nothing.
         </li>
       </ol>
+      <p>
+        Headless alternative (CLI server, no GUI): export the token and bind
+        the LAN interface explicitly —
+      </p>
       <pre className="a-pre">{`# macOS / Linux
 export TOKEN_DASHBOARD_SYNC_TOKEN="paste-your-secret-here"
-token-dashboard            # or launch the Tauri app
+HOST=0.0.0.0 PORT=8080 token-dashboard
 
 # Windows PowerShell
 $env:TOKEN_DASHBOARD_SYNC_TOKEN = "paste-your-secret-here"
-token-dashboard.exe`}</pre>
+$env:HOST = "0.0.0.0"; token-dashboard.exe`}</pre>
       <ol start={3}>
         <li>
           Make the host reachable from the viewer:
-          same LAN → use the host's LAN IP and port <code>8080</code>;
+          same LAN → use the host's LAN IP and the port from the Share card;
           remote network → SSH port-forward or a Tailscale/WireGuard tunnel.
           Never expose the port directly to the public internet.
         </li>
@@ -95,9 +102,9 @@ let snap: Snapshot = req.call()?.into_json()?;`}</pre>
         <li>
           <strong>Auth on the host.</strong> The host's
           <code> /api/sync/snapshot </code> handler reads
-          <code> Authorization: Bearer … </code> and compares it to
-          <code> TOKEN_DASHBOARD_SYNC_TOKEN </code> from the host's env
-          (constant-time compare). Missing or mismatched → <code>401</code>.
+          <code> Authorization: Bearer … </code> and accepts either the
+          Share-card token or <code>TOKEN_DASHBOARD_SYNC_TOKEN</code> from the
+          host's env. Missing or mismatched → <code>401</code>.
         </li>
         <li>
           <strong>Merge.</strong> The JSON deserialises into
@@ -130,7 +137,7 @@ let snap: Snapshot = req.call()?.into_json()?;`}</pre>
       <h4>Notes</h4>
       <ul>
         <li><strong>One-way + read-only.</strong> The host is unaware of viewers; nothing flows back upstream.</li>
-        <li><strong>Manual triggers only.</strong> There's no background pull — click <em>sync</em> when you want fresh rows. Disable a source to pause it without losing the bearer.</li>
+        <li><strong>Auto + manual pulls.</strong> The viewer re-pulls every enabled source every 5 minutes; click <em>sync</em> for an immediate refresh. Disable a source to pause it without losing the bearer.</li>
         <li><strong>Token storage.</strong> Bearer tokens live in the viewer's local SQLite (<code>~/.claude/token-dashboard.db</code>, <code>remote_sources</code> table) and are stripped from API responses so they never round-trip to the UI.</li>
         <li><strong>Rotation.</strong> Restart the host with a new <code>TOKEN_DASHBOARD_SYNC_TOKEN</code> and update the entry here (delete + re-add). Old viewers start failing immediately; the new token is picked up on the next manual sync.</li>
         <li><strong>Two viewers, same host.</strong> Fine — both pull the same snapshot independently; dedup keys keep each viewer's DB consistent.</li>

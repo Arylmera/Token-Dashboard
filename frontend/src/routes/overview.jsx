@@ -6,7 +6,7 @@ import { StripSpark } from "../components/charts.jsx";
 import { CountUp } from "../components/count-up.jsx";
 import { getThemedCopy } from "../themed-copy.js";
 import { cardVisible } from "../levels.js";
-import { BudgetAlertBanner, BudgetBanner } from "./overview/banners.jsx";
+import { BudgetAlertBanner, BudgetBanner, ScanErrorBanner } from "./overview/banners.jsx";
 import { BurnRateCard } from "./overview/burn-rate.jsx";
 import { LimitsCard } from "./overview/limits.jsx";
 import { PhaseSplitCard } from "./overview/phase-split.jsx";
@@ -123,6 +123,8 @@ export const Overview = ({ themeId, level = 1 }) => {
   const showPhaseRow = show("phaseSplit") || show("topTools");
   return (
     <div className="a-route">
+      {/* Not gated by power level: stale-because-broken must reach every user. */}
+      <ScanErrorBanner />
       {show("topStrip") && <TopStrip totals={totals} burn={burn} />}
       {show("budgetAlertBanner") && <BudgetAlertBanner />}
       {show("budgetBanner") && <BudgetBanner budget={D.budget} />}

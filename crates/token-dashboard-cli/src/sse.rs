@@ -58,7 +58,15 @@ pub(crate) async fn stream(
     State(s): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = s.events.subscribe();
-    let hello = futures::stream::once(async { Ok(Event::default().event("hello").data("{}")) });
+    // `scan_error` rides along on the greeting: a page that loads while
+    // scanning is already broken would otherwise see nothing until the
+    // next transition, which for a persistent failure never comes.
+    let scan_error = s.scan_error.lock().await.clone();
+    let hello = futures::stream::once(async move {
+        Ok(Event::default()
+            .event("hello")
+            .data(serde_json::json!({ "scan_error": scan_error }).to_string()))
+    });
     let live = BroadcastStream::new(rx).filter_map(|res| async move {
         match res {
             Ok(payload) => Some(Ok(Event::default()

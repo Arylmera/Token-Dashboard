@@ -231,6 +231,7 @@ function _rebuildMockData(range) {
     budgetAlerts:  c.budgetAlerts || null,
     toolCosts:     c.toolCosts || { tools: [], mcp_servers: [], total_cost_usd: 0, days: 30 },
     anomalies:     Array.isArray(c.anomalies) ? c.anomalies : [],
+    scanError:     c.scanError || null,
   };
   // Notify subscribers that MOCK_DATA was mutated. React components read
   // through a Proxy so they need an external nudge to re-render after
@@ -622,6 +623,7 @@ const POLL_FALLBACK_MS = 15_000;
 const MAX_CONSECUTIVE_FAILURES = 3;
 
 let _streamSource = null;
+let _hadStream = false;
 let _firstFrameTimer = null;
 let _consecutiveFailures = 0;
 let _pollingFallbackTimer = null;
@@ -655,6 +657,12 @@ function _onPayload(payload) {
       // notably the "days"-triggered overviewToday/overviewYday/daily/
       // hourlyRaw set, which would otherwise never refresh after init.
       loadDelta(payload).catch((e) => console.warn("loadDelta scan", e));
+      break;
+    case "scan_error":
+      // `message: null` means scanning recovered. Kept out of the fetch
+      // registry — it's server state pushed to us, not an endpoint.
+      _cache.scanError = payload.message || null;
+      _rebuildMockData(currentRange);
       break;
     case "preferences":
     case "plan":
@@ -698,14 +706,41 @@ function _connectStream() {
     }
   };
 
-  _streamSource.addEventListener("hello", () => {
+  _streamSource.addEventListener("hello", (ev) => {
     cancelWatchdog();
     _consecutiveFailures = 0;
+    // The greeting carries current scan health, so a page opening into an
+    // already-broken scanner says so instead of waiting for a transition.
+    try {
+      const greet = JSON.parse(ev.data || "{}");
+      if ((greet.scan_error || null) !== (_cache.scanError || null)) {
+        _cache.scanError = greet.scan_error || null;
+        _rebuildMockData(currentRange);
+      }
+    } catch (_) {}
+    // Events published while the stream was down are gone — the bus has no
+    // replay for a client that wasn't subscribed. Resync on every *re*open
+    // so a dropped connection can't leave the page frozen on stale numbers.
+    // Skipped on the first hello: the page's own bootstrap already ran
+    // loadAll(), and the server scans before it serves anything.
+    if (_hadStream) {
+      loadAll().catch((e) => console.warn("loadAll reconnect", e));
+    }
+    _hadStream = true;
   });
   // Real events. Tauri shell's bus emits typed events; the EventSource
   // default `message` channel only receives events without a `type`
   // field, so we listen to specific names.
-  ["scan_complete", "preferences", "plan", "sources", "tags", "limits_refreshed", "lagged"].forEach(
+  [
+    "scan_complete",
+    "scan_error",
+    "preferences",
+    "plan",
+    "sources",
+    "tags",
+    "limits_refreshed",
+    "lagged",
+  ].forEach(
     (name) => {
       _streamSource.addEventListener(name, (ev) => {
         cancelWatchdog();
