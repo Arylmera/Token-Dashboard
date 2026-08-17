@@ -148,6 +148,29 @@ fn fresh_db_has_provider_column_on_all_tables() {
     }
 }
 
+/// The scanner deletes a message's tool rows once per ingested record.
+/// Unindexed that DELETE scans all of `tool_calls`, which is what made a
+/// backlog take tens of minutes to drain. Assert the planner picks an
+/// index — a plain `SCAN tool_calls` is the regression.
+#[test]
+fn tool_delete_by_message_uuid_uses_an_index() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.db");
+    init_db(&db).unwrap();
+    let c = Connection::open(&db).unwrap();
+    let plan: String = c
+        .query_row(
+            "EXPLAIN QUERY PLAN DELETE FROM tool_calls WHERE message_uuid='u1'",
+            [],
+            |r| r.get(3),
+        )
+        .unwrap();
+    assert!(
+        plan.contains("USING INDEX"),
+        "unindexed tool_calls delete: {plan}"
+    );
+}
+
 #[test]
 fn open_returns_usable_connection() {
     // Python equivalent asserts `c.execute("SELECT 1 AS one")[0]["one"] == 1`.

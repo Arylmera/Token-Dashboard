@@ -81,6 +81,11 @@ CREATE INDEX IF NOT EXISTS idx_tools_name    ON tool_calls(tool_name);
 CREATE INDEX IF NOT EXISTS idx_tools_target  ON tool_calls(target);
 CREATE INDEX IF NOT EXISTS idx_tools_use_id  ON tool_calls(session_id, use_id);
 CREATE INDEX IF NOT EXISTS idx_tools_day     ON tool_calls(substr(timestamp, 1, 10));
+-- The scanner deletes a message's tool rows before re-inserting them, once
+-- per ingested record. Without this index that DELETE scans the whole
+-- table, so ingest slows to a crawl as history grows and a backlog never
+-- clears within a session.
+CREATE INDEX IF NOT EXISTS idx_tools_msg_uuid ON tool_calls(message_uuid);
 
 CREATE TABLE IF NOT EXISTS plan (
   k TEXT PRIMARY KEY,
