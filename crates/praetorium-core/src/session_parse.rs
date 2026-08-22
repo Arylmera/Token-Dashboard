@@ -199,6 +199,15 @@ pub fn tail_new(content: &str, offset: usize) -> (Vec<String>, usize) {
     if offset >= content.len() {
         return (vec![], content.len());
     }
+    // `offset` is a BYTE offset and callers may compute it arithmetically (the
+    // watcher seeds a bounded replay at `len - REPLAY_MAX_BYTES`), so it can
+    // land inside a multi-byte character. Slicing there would panic, so nudge
+    // forward to the next boundary — at most three bytes, and the partial line
+    // it lands in is dropped by the caller's JSON parse anyway.
+    let mut offset = offset;
+    while !content.is_char_boundary(offset) {
+        offset += 1;
+    }
     let fresh = &content[offset..];
     match fresh.rfind('\n') {
         Some(idx) => {
@@ -327,5 +336,15 @@ mod tests {
         let (l3, off3) = tail_new("a\nb\nccc\n", off2);
         assert_eq!(l3, vec!["ccc".to_string()]);
         assert_eq!(off3, 8);
+    }
+
+    #[test]
+    fn tail_survives_an_offset_inside_a_multibyte_char() {
+        // 'é' is two bytes, so offset 1 is NOT a character boundary. The bounded
+        // startup replay computes its offset arithmetically and lands here.
+        let content = "éa\nbb\n";
+        let (lines, off) = tail_new(content, 1);
+        assert_eq!(off, content.len());
+        assert_eq!(lines, vec!["a".to_string(), "bb".to_string()]);
     }
 }
