@@ -59,26 +59,50 @@ export async function refreshMetas() {
   metasStore.set(new Map(list.map((m) => [m.id, m])));
 }
 
-export function applyWatch(e, opts) {
-  if (e.type !== "session") return;
-  if (opts?.external && isOwned(e.data.sessionId)) return; // owned run is source of truth
-  const { sessionId, project, repo, event, agentRef } = e.data;
+/** Apply a burst of watch events as ONE commit per store. The watcher emits an
+ *  event per appended transcript line; committing per event re-rendered the
+ *  whole console that many times per frame. */
+export function applyWatchBatch(events, opts) {
+  const relevant = events.filter(
+    (e) => e.type === "session" && !(opts?.external && isOwned(e.data.sessionId)), // owned run is source of truth
+  );
+  if (relevant.length === 0) return;
+
   sessionsStore.set((prev) => {
     const next = new Map(prev);
-    const cur = next.get(sessionId) ?? { project, repo: repo ?? undefined, lines: [] };
-    cur.project = cur.project ?? project;
-    cur.repo = cur.repo ?? repo ?? undefined;
-    if (event.kind === "turn") {
-      cur.lines = [...cur.lines.slice(-499), { agentRef, role: event.data.role, text: truncateText(event.data.text) }];
+    for (const e of relevant) {
+      const { sessionId, project, repo, event, agentRef } = e.data;
+      const cur = next.get(sessionId) ?? { project, repo: repo ?? undefined, lines: [] };
+      cur.project = cur.project ?? project;
+      cur.repo = cur.repo ?? repo ?? undefined;
+      if (event.kind === "turn") {
+        cur.lines = [...cur.lines.slice(-499), { agentRef, role: event.data.role, text: truncateText(event.data.text) }];
+      }
+      next.set(sessionId, cur);
     }
-    next.set(sessionId, cur);
     return next;
   });
-  if (event.kind === "subagentSpawn") {
-    subagentTypesStore.set((prev) => new Map(prev).set(`${sessionId}:${event.data.toolUseId}`, event.data.subagentType || "agent"));
+
+  const spawns = relevant.filter((e) => e.data.event.kind === "subagentSpawn");
+  if (spawns.length > 0) {
+    subagentTypesStore.set((prev) => {
+      const next = new Map(prev);
+      for (const { data: { sessionId, event } } of spawns) {
+        next.set(`${sessionId}:${event.data.toolUseId}`, event.data.subagentType || "agent");
+      }
+      return next;
+    });
   }
-  graphStore.set((g) => reduceWatch(g, e));
-  // Stamp arrival time here (live-only scope): the insights store has no Rust timestamps.
-  insightsStore.set((i) => reduceInsights(i, e, Date.now()));
-  if (activeIdStore.get() === null) activeIdStore.set(sessionId);
+
+  graphStore.set((g) => relevant.reduce(reduceWatch, g));
+  // Stamp arrival time here (live-only scope): the insights store has no Rust
+  // timestamps. One stamp for the batch — they arrived in the same frame.
+  const now = Date.now();
+  insightsStore.set((i) => relevant.reduce((acc, e) => reduceInsights(acc, e, now), i));
+
+  if (activeIdStore.get() === null) activeIdStore.set(relevant[0].data.sessionId);
+}
+
+export function applyWatch(e, opts) {
+  applyWatchBatch([e], opts);
 }
