@@ -72,3 +72,62 @@ test("applyWatch: remains a working single-event wrapper", () => {
   applyWatch(turnEvent("solo", sid));
   assert.equal(sessionsStore.get().get(sid).lines.at(-1).text, "solo");
 });
+
+import { pruneSessions, MAX_LIVE_SESSIONS, setActiveId } from "./session-store.js";
+
+test("pruneSessions: keeps the most recently touched sessions up to the cap", () => {
+  for (const id of sessionsStore.get().keys()) clearSession(id);
+  for (let i = 0; i < MAX_LIVE_SESSIONS + 5; i++) {
+    applyWatch(turnEvent("x", `prune-${i}`));
+  }
+  pruneSessions();
+  const ids = [...sessionsStore.get().keys()];
+  assert.equal(ids.length, MAX_LIVE_SESSIONS);
+  // The oldest-touched must be gone and the newest-touched must survive.
+  assert.ok(!ids.includes("prune-0"));
+  assert.ok(ids.includes(`prune-${MAX_LIVE_SESSIONS + 4}`));
+});
+
+test("pruneSessions: never evicts the active session", () => {
+  for (const id of sessionsStore.get().keys()) clearSession(id);
+  applyWatch(turnEvent("x", "sticky"));
+  for (let i = 0; i < MAX_LIVE_SESSIONS + 5; i++) {
+    applyWatch(turnEvent("x", `flood-${i}`));
+  }
+  setActiveId("sticky");
+  pruneSessions();
+  assert.ok(sessionsStore.get().has("sticky"), "the focused session must survive pruning");
+  assert.equal(sessionsStore.get().size, MAX_LIVE_SESSIONS);
+});
+
+test("pruneSessions: is a no-op below the cap", () => {
+  for (const id of sessionsStore.get().keys()) clearSession(id);
+  applyWatch(turnEvent("x", "only-one"));
+  let notifications = 0;
+  const unsub = sessionsStore.subscribe(() => { notifications++; });
+  pruneSessions();
+  unsub();
+  assert.equal(notifications, 0, "pruning below the cap must not commit");
+  assert.equal(sessionsStore.get().size, 1);
+});
+
+import { setOwnershipProbe, ensureSession } from "./session-store.js";
+
+test("pruneSessions: never evicts a locally-owned session", () => {
+  for (const id of sessionsStore.get().keys()) clearSession(id);
+  setOwnershipProbe((id) => id === "mine");
+  // Seeded by the Console's NEW button: it lives in sessionsStore but no watch
+  // event ever touches it, so pure recency ranking would evict it first.
+  ensureSession("mine", "p");
+  for (let i = 0; i < MAX_LIVE_SESSIONS + 5; i++) applyWatch(turnEvent("x", `own-${i}`));
+  pruneSessions();
+  setOwnershipProbe(() => false);
+  assert.ok(sessionsStore.get().has("mine"), "a local run must survive pruning");
+  assert.equal(sessionsStore.get().size, MAX_LIVE_SESSIONS);
+});
+
+test("MAX_LIVE_SESSIONS: is a small absolute bound", () => {
+  // The prune tests above size their floods FROM the constant, so they stay
+  // green at any cap. This is the assertion that actually bounds retention.
+  assert.ok(MAX_LIVE_SESSIONS <= 32, `cap must stay small, got ${MAX_LIVE_SESSIONS}`);
+});

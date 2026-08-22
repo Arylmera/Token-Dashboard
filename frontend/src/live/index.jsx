@@ -20,7 +20,7 @@ import { LiveRail } from "./components/view-switcher.jsx";
 
 import { viewStore } from "./stores/view-store.js";
 import { applyReduceMotion } from "./stores/settings.js";
-import { applyWatchBatch, refreshMetas } from "./stores/session-store.js";
+import { applyWatchBatch, pruneSessions, refreshMetas } from "./stores/session-store.js";
 import { watchSessions } from "./lib/sessions.js";
 import { createBatcher } from "./lib/batch.js";
 import { useStore } from "./stores/use-store.js";
@@ -59,7 +59,7 @@ function startLiveWatcher() {
   // Coalesce a burst of watch events into one commit per animation frame so the
   // console renders at most once per frame regardless of transcript write rate.
   const pushWatch = createBatcher(
-    (events) => applyWatchBatch(events, { external: true }),
+    (events) => { applyWatchBatch(events, { external: true }); pruneSessions(); },
     (cb) => requestAnimationFrame(cb),
   );
   // Fire-and-forget: not in a Tauri window during plain web/dev → no-op.
