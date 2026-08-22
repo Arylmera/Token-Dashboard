@@ -115,16 +115,29 @@ fn now_ms() -> u64 {
 }
 const LIVE_WINDOW_MS: u64 = 60_000;
 
+/// A live session's transcript routinely reaches several megabytes. Replaying it
+/// from byte 0 pushes every historical line through the JS reducers at startup,
+/// so only the tail is reconstructed.
+const REPLAY_MAX_BYTES: usize = 262_144;
+// `replay_is_bounded_to_the_tail_for_large_live_files` sizes its file FROM the
+// constant, so it stays green however far the window is raised. This is what
+// actually bounds the replay, and it fails the build rather than a test.
+const _: () = assert!(REPLAY_MAX_BYTES <= 1 << 20);
+
 /// Decide how to seed a session file's read offset at startup.
-/// Live files (modified within the live window) replay from the start so an
+/// Live files (modified within the live window) replay their tail so an
 /// already-running session is reconstructed; everything else jumps to EOF.
+#[derive(Debug)]
 enum Seed {
-    Replay,
+    /// Replay from this byte offset. May land mid-line and mid-character;
+    /// `tail_new` nudges to a character boundary and the partial first line
+    /// fails to parse as JSON, so `parse_transcript_line` drops it.
+    Replay(usize),
     SkipTo(usize),
 }
 fn seed_for(len: usize, age_ms: u64) -> Seed {
     if age_ms <= LIVE_WINDOW_MS {
-        Seed::Replay
+        Seed::Replay(len.saturating_sub(REPLAY_MAX_BYTES))
     } else {
         Seed::SkipTo(len)
     }
@@ -262,9 +275,9 @@ pub fn watch_sessions(app: tauri::AppHandle, on_event: Channel<WatchEvent>) -> R
     use notify::{EventKind, RecursiveMode, Watcher};
     let root = projects_root();
     let ch = Arc::new(on_event);
-    // Seed read offsets: live files (active within LIVE_WINDOW_MS) replay from
-    // the start so already-running sessions are reconstructed; everything else
-    // jumps to EOF and streams only NEW activity.
+    // Seed read offsets: live files (active within LIVE_WINDOW_MS) replay their
+    // last REPLAY_MAX_BYTES so already-running sessions are reconstructed;
+    // everything else jumps to EOF and streams only NEW activity.
     let offsets: Arc<Mutex<HashMap<PathBuf, usize>>> = Arc::new(Mutex::new(HashMap::new()));
     let mut to_backfill: Vec<PathBuf> = Vec::new();
     let mut seed = |p: PathBuf, meta: &std::fs::Metadata| {
@@ -277,8 +290,8 @@ pub fn watch_sessions(app: tauri::AppHandle, on_event: Channel<WatchEvent>) -> R
             .unwrap_or(0);
         let age = now_ms().saturating_sub(mtime);
         match seed_for(len, age) {
-            Seed::Replay => {
-                offsets.lock().unwrap().insert(p.clone(), 0);
+            Seed::Replay(start) => {
+                offsets.lock().unwrap().insert(p.clone(), start);
                 to_backfill.push(p);
             }
             Seed::SkipTo(off) => {
@@ -352,11 +365,36 @@ mod tests {
 
     #[test]
     fn live_files_replay_others_skip_to_eof() {
-        assert!(matches!(seed_for(100, 0), Seed::Replay));
-        assert!(matches!(seed_for(100, LIVE_WINDOW_MS), Seed::Replay));
+        assert!(matches!(seed_for(100, 0), Seed::Replay(_)));
+        assert!(matches!(seed_for(100, LIVE_WINDOW_MS), Seed::Replay(_)));
         assert!(matches!(
             seed_for(100, LIVE_WINDOW_MS + 1),
             Seed::SkipTo(100)
+        ));
+    }
+
+    #[test]
+    fn replay_starts_at_zero_for_small_live_files() {
+        assert!(matches!(seed_for(1_000, 0), Seed::Replay(0)));
+    }
+
+    #[test]
+    fn replay_is_bounded_to_the_tail_for_large_live_files() {
+        let len = REPLAY_MAX_BYTES + 500_000;
+        match seed_for(len, 0) {
+            Seed::Replay(off) => {
+                assert_eq!(off, len - REPLAY_MAX_BYTES);
+                assert!(len - off <= REPLAY_MAX_BYTES);
+            }
+            other => panic!("expected bounded Replay, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stale_files_still_skip_to_eof() {
+        assert!(matches!(
+            seed_for(9_000_000, LIVE_WINDOW_MS + 1),
+            Seed::SkipTo(9_000_000)
         ));
     }
 
