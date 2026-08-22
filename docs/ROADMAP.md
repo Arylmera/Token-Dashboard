@@ -119,3 +119,62 @@ to launch without `xattr -d com.apple.quarantine`. Adding signing
 needs a Windows codesigning cert and an Apple Developer account, plus
 secrets management in `release-tauri.yml`. Out of scope until there's
 a clear user-volume justification.
+
+### OpenTelemetry ingestion
+
+**Status: investigated, not built.** Captured 2026-08-22 so the
+analysis isn't redone from scratch.
+
+Claude Code can export OTel metrics + logs (see
+[monitoring-usage](https://code.claude.com/docs/en/monitoring-usage)).
+Everything below is *additive* — signals the JSONL transcripts in
+`~/.claude/projects/` simply do not contain.
+
+| Signal | What it unlocks |
+|---|---|
+| `claude_code.lines_of_code.count` (`type`: added/removed) | $ per line produced, not just $ per prompt |
+| `claude_code.commit.count`, `claude_code.pull_request.count` | Outcome metrics — cost per commit / per PR |
+| `claude_code.code_edit_tool.decision` + event `claude_code.tool_decision` | Rejection rate per tool with `source` (user, hook, config) — the real friction indicator |
+| event `claude_code.tool_result` (`success`, `duration_ms`, `tool_result_size_bytes`) | Per-tool latency, failure rate, and **which tool inflates context in bytes** |
+| `claude_code.active_time.total` (`type`: user/cli) | Cost per *active* hour; idle vs working. Only guessable from timestamp gaps today |
+| events `claude_code.api_error` / `api_refusal` (`status_code`, `attempt`, `duration_ms`) | 429s, overloads, retries — invisible in JSONL |
+| attributes `speed`, `effort`, `query_source` on cost/token metrics | Cost split by fast-mode, effort tier, main vs subagent |
+| attributes `skill.name`, `plugin.name`, `agent.name`, `mcp_server.name` | First-class attribution; the Skills view is heuristic today |
+| event `claude_code.mcp_server_connection` | MCP health: failed connects, handshake duration |
+| event `claude_code.permission_mode_changed` | Actual plan/auto mode usage |
+
+**Ingestion sketch (no collector, no OTel crate).** Claude Code speaks
+`http/json` OTLP, so two axum routes that accept JSON and write to an
+`otel_events` table are enough (~200 lines, zero new dependencies):
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_LOGS_EXPORTER=otlp
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+```
+
+Stays fully local — data never leaves the machine, and it is opt-in
+because the user sets the env vars themselves.
+
+**Constraints, in priority order.**
+
+1. **Fixed port needed.** The Tauri shell binds a free port at random,
+   so the OTLP listener has to be a *second*, fixed listener (4318 by
+   default) or the env var has nowhere to point.
+2. **No backfill.** Only sessions started after the env vars are set
+   are covered. OTel supplements the scanner, never replaces it.
+3. **Never dedup cost/tokens against JSONL.** The transcripts stay the
+   single source of truth for tokens and cost; OTel feeds *new* panels
+   only. Joining the two invites double counting.
+4. **Leave prompts redacted.** Do not document or suggest
+   `OTEL_LOG_USER_PROMPTS=1` / `OTEL_LOG_ASSISTANT_RESPONSES=1`.
+5. **Metrics are 60s delta aggregates** — coarse. The value is in the
+   events (5s export interval), not the metrics.
+
+Best value/effort slice if this is ever picked up: `tool_result`
+(size + failures + latency per tool) and `api_error` (retries/429).
+Two cards and one table.
+
+Sized at **M**.
