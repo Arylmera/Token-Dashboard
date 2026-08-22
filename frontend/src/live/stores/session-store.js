@@ -2,6 +2,7 @@ import { createStore } from "./create-store.js";
 import { reduceWatch, emptyGraph, clearSession as clearGraphSession } from "../lib/graph.js";
 import { reduceInsights, emptyInsights } from "../lib/insightsStore.js";
 import { listLiveSessions } from "../lib/sessions.js";
+import { truncateText } from "../lib/truncate.js";
 
 export const sessionsStore = createStore(new Map());
 export const graphStore = createStore(emptyGraph());
@@ -68,7 +69,7 @@ export function applyWatch(e, opts) {
     cur.project = cur.project ?? project;
     cur.repo = cur.repo ?? repo ?? undefined;
     if (event.kind === "turn") {
-      cur.lines = [...cur.lines.slice(-499), { agentRef, role: event.data.role, text: event.data.text }];
+      cur.lines = [...cur.lines.slice(-499), { agentRef, role: event.data.role, text: truncateText(event.data.text) }];
     }
     next.set(sessionId, cur);
     return next;
