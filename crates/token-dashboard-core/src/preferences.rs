@@ -299,6 +299,53 @@ pub fn set_glass_opacity<P: AsRef<Path>>(db: P, v: i64) -> rusqlite::Result<i64>
     Ok(n)
 }
 
+/// --- multi-machine sync host mode -----------------------------------
+///
+/// When enabled, the app binds a second listener on `0.0.0.0:<port>`
+/// serving only `/api/sync/snapshot`, gated by the stored token. This
+/// is the GUI counterpart of running the headless CLI with
+/// `HOST=0.0.0.0` + `TOKEN_DASHBOARD_SYNC_TOKEN` — the env var keeps
+/// working and is accepted alongside the stored token.
+pub const DEFAULT_SYNC_SHARE_PORT: i64 = 8080;
+
+pub fn get_sync_share_enabled<P: AsRef<Path>>(db: P) -> rusqlite::Result<bool> {
+    get_bool(db, "sync_share_enabled", false)
+}
+pub fn set_sync_share_enabled<P: AsRef<Path>>(db: P, v: bool) -> rusqlite::Result<bool> {
+    set_bool(db, "sync_share_enabled", v)
+}
+
+pub fn get_sync_share_port<P: AsRef<Path>>(db: P) -> rusqlite::Result<i64> {
+    Ok(read_str(db, "sync_share_port")?
+        .and_then(|s| s.parse::<i64>().ok())
+        .filter(|n| (1..=65535).contains(n))
+        .unwrap_or(DEFAULT_SYNC_SHARE_PORT))
+}
+pub fn set_sync_share_port<P: AsRef<Path>>(db: P, v: i64) -> rusqlite::Result<i64> {
+    let n = v.clamp(1, 65535);
+    write_str(db, "sync_share_port", &n.to_string())?;
+    Ok(n)
+}
+
+pub fn get_sync_share_token<P: AsRef<Path>>(db: P) -> rusqlite::Result<Option<String>> {
+    Ok(read_str(db, "sync_share_token")?.filter(|s| !s.trim().is_empty()))
+}
+pub fn set_sync_share_token<P: AsRef<Path>>(
+    db: P,
+    raw: Option<&str>,
+) -> rusqlite::Result<Option<String>> {
+    match raw.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(v) => {
+            write_str(db, "sync_share_token", v)?;
+            Ok(Some(v.to_string()))
+        }
+        None => {
+            delete_key(db, "sync_share_token")?;
+            Ok(None)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Budgets {
     pub daily: Option<f64>,

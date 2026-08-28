@@ -8,11 +8,18 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use token_dashboard_cli::{
-    app, spawn_remote_sync_loop, spawn_scan_loop, spawn_startup_oauth_sync, AppState,
+    app, scan_once, spawn_remote_sync_loop, spawn_scan_loop, spawn_scan_watcher,
+    spawn_share_if_enabled, spawn_startup_oauth_sync, AppState, WATCH_DEBOUNCE,
 };
 use token_dashboard_core::{default_db_path, Pricing};
 
-const SCAN_INTERVAL: Duration = Duration::from_secs(10);
+/// Backstop cadence only — the transcript watcher (`watch.rs`) is what
+/// keeps the dashboard live. Kept well above the cost of one pass: on a
+/// large history a scan takes tens of seconds, so the old 10s tick meant
+/// a permanently scanning process.
+const SCAN_INTERVAL: Duration = Duration::from_secs(120);
+/// How long startup waits on the first scan before serving anyway.
+const STARTUP_SCAN_BUDGET: Duration = Duration::from_secs(3);
 /// Default cadence for the viewer-side remote-source pull. 5 minutes is
 /// the same order of magnitude as the user's typical "switch laptops"
 /// gap; the manual "Sync now" button in Settings covers immediate refresh.
@@ -66,9 +73,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("listening on http://{addr}");
 
+    scan_once(state.clone(), STARTUP_SCAN_BUDGET).await;
+    if let Err(e) = spawn_scan_watcher(state.clone(), WATCH_DEBOUNCE) {
+        tracing::warn!(error = %e, "transcript watcher unavailable; polling only");
+    }
     spawn_scan_loop(state.clone(), SCAN_INTERVAL);
     spawn_startup_oauth_sync(state.clone());
     spawn_remote_sync_loop(state.clone(), REMOTE_SYNC_INTERVAL);
+    spawn_share_if_enabled(state.clone());
 
     axum::serve(listener, app(state))
         .with_graceful_shutdown(shutdown_signal())

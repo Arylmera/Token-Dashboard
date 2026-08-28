@@ -2544,27 +2544,124 @@ pub(crate) async fn sync_snapshot_handler(
     headers: axum::http::HeaderMap,
     Query(q): Query<SnapshotQuery>,
 ) -> Result<Json<token_dashboard_core::sync_snapshot::Snapshot>, ApiError> {
-    let expected = std::env::var("TOKEN_DASHBOARD_SYNC_TOKEN").ok();
-    if expected.as_deref().unwrap_or("").is_empty() {
-        return Err(ApiError {
-            status: StatusCode::SERVICE_UNAVAILABLE,
-            msg: "sync disabled — set TOKEN_DASHBOARD_SYNC_TOKEN to share this DB".into(),
-        });
-    }
     let provided = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "));
-    if provided != expected.as_deref() {
-        return Err(ApiError {
-            status: StatusCode::UNAUTHORIZED,
-            msg: "bearer token mismatch".into(),
-        });
-    }
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(str::to_string);
     let path = s.db_path.clone();
     let since = q.since;
-    blocking(move || token_dashboard_core::sync_snapshot::build(path.as_ref(), since.as_deref()))
-        .await
+    let out = tokio::task::spawn_blocking(move || {
+        // Two accepted tokens: the env var (headless CLI path) and the
+        // stored preference when "share this machine" is on (GUI path).
+        let env_tok = std::env::var("TOKEN_DASHBOARD_SYNC_TOKEN")
+            .ok()
+            .filter(|t| !t.is_empty());
+        let share_tok =
+            match token_dashboard_core::preferences::get_sync_share_enabled(path.as_ref()) {
+                Ok(true) => token_dashboard_core::preferences::get_sync_share_token(path.as_ref())
+                    .unwrap_or(None),
+                _ => None,
+            };
+        let accepted: Vec<String> = [env_tok, share_tok].into_iter().flatten().collect();
+        if accepted.is_empty() {
+            return Err(ApiError {
+                status: StatusCode::SERVICE_UNAVAILABLE,
+                msg: "sync disabled — enable sharing in Settings or set \
+                      TOKEN_DASHBOARD_SYNC_TOKEN"
+                    .into(),
+            });
+        }
+        match provided {
+            Some(ref p) if accepted.iter().any(|t| t == p) => {}
+            _ => {
+                return Err(ApiError {
+                    status: StatusCode::UNAUTHORIZED,
+                    msg: "bearer token mismatch".into(),
+                });
+            }
+        }
+        token_dashboard_core::sync_snapshot::build(path.as_ref(), since.as_deref())
+            .map_err(|e| ApiError::internal(format!("db: {e}")))
+    })
+    .await
+    .map_err(|e| ApiError::internal(format!("join: {e}")))??;
+    Ok(Json(out))
+}
+
+// --- "share this machine" host-mode config (Settings card) ---------------
+
+#[derive(serde::Serialize)]
+pub(crate) struct SyncHostStatus {
+    pub(crate) enabled: bool,
+    pub(crate) port: i64,
+    /// Returned in clear: this route is only reachable on the loopback
+    /// server (the share listener exposes /api/sync/snapshot alone), and
+    /// the owner needs to copy the token to the viewer machine.
+    pub(crate) token: Option<String>,
+    pub(crate) listening: bool,
+}
+
+pub(crate) async fn sync_host_get(
+    State(s): State<AppState>,
+) -> Result<Json<SyncHostStatus>, ApiError> {
+    let listening = s.share.lock().await.is_some();
+    let path = s.db_path.clone();
+    blocking(move || {
+        Ok::<_, rusqlite::Error>(SyncHostStatus {
+            enabled: token_dashboard_core::preferences::get_sync_share_enabled(path.as_ref())?,
+            port: token_dashboard_core::preferences::get_sync_share_port(path.as_ref())?,
+            token: token_dashboard_core::preferences::get_sync_share_token(path.as_ref())?,
+            listening,
+        })
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+pub(crate) struct SyncHostBody {
+    pub(crate) enabled: bool,
+    pub(crate) port: Option<i64>,
+    /// Omitted / empty keeps the stored token.
+    pub(crate) token: Option<String>,
+}
+
+pub(crate) async fn sync_host_post(
+    State(s): State<AppState>,
+    Json(body): Json<SyncHostBody>,
+) -> Result<Json<SyncHostStatus>, ApiError> {
+    let path = s.db_path.clone();
+    blocking_unit(move || {
+        token_dashboard_core::preferences::set_sync_share_enabled(path.as_ref(), body.enabled)?;
+        if let Some(p) = body.port {
+            token_dashboard_core::preferences::set_sync_share_port(path.as_ref(), p)?;
+        }
+        if let Some(t) = body
+            .token
+            .as_deref()
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+        {
+            token_dashboard_core::preferences::set_sync_share_token(path.as_ref(), Some(t))?;
+        }
+        Ok::<_, rusqlite::Error>(())
+    })
+    .await?;
+    if let Err(msg) = crate::sync_host::apply_share_config(&s).await {
+        // Roll the toggle back so the stored state matches reality —
+        // the listener is not running.
+        let path = s.db_path.clone();
+        let _ = blocking_unit(move || {
+            token_dashboard_core::preferences::set_sync_share_enabled(path.as_ref(), false)
+                .map(|_| ())
+        })
+        .await;
+        return Err(ApiError {
+            status: StatusCode::BAD_REQUEST,
+            msg,
+        });
+    }
+    sync_host_get(State(s)).await
 }
 
 #[derive(Deserialize)]
@@ -2660,6 +2757,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/tool-costs", get(tool_costs_handler))
         .route("/api/verbosity", get(verbosity_handler))
         .route("/api/sync/snapshot", get(sync_snapshot_handler))
+        .route("/api/sync/host", get(sync_host_get).post(sync_host_post))
         .route(
             "/api/remote-sources",
             get(remote_sources_list).post(remote_sources_add),
