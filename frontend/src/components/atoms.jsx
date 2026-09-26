@@ -22,7 +22,7 @@ export const KPI = ({ label, value, sub, tone, delta, spark }) => (
 
 export const ModelBadge = ({ model }) => {
   const m = (model || "").toLowerCase();
-  const cls = m.includes("fable") ? "badge-fable"
+  const cls = m.includes("fable") || m.includes("mythos") ? "badge-fable"
     : m.includes("opus") ? "badge-opus"
     : m.includes("sonnet") ? "badge-sonnet"
     : "badge-haiku";

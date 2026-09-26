@@ -335,7 +335,26 @@ mod tests {
             &p,
         );
         assert!(!r.estimated);
-        assert_eq!(r.usd, Some(18.0)); // $3/M input + $15/M output
+        assert_eq!(r.usd, Some(12.0)); // $2/M input + $10/M output
+    }
+
+    #[test]
+    fn cost_for_new_models_use_table() {
+        let p = Pricing::embedded();
+        let usage = Usage {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            ..Default::default()
+        };
+        for (model, usd) in [
+            ("claude-opus-5-5", 24.0),   // $4 + $20
+            ("claude-fable-5-1", 60.0),  // $10 + $50
+            ("claude-mythos-5-1", 60.0), // no tier in name: must hit the row
+        ] {
+            let r = cost_for(model, &usage, &p);
+            assert!(!r.estimated, "{model}");
+            assert_eq!(r.usd, Some(usd), "{model}");
+        }
     }
 
     #[test]
