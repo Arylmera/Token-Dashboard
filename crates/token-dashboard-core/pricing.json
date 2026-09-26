@@ -1,6 +1,9 @@
 {
   "models": {
+    "claude-fable-5-1":    { "tier": "fable",  "input": 10.00, "output": 50.00, "cache_read": 0.25, "cache_create_5m": 12.50, "cache_create_1h": 20.00 },
+    "claude-mythos-5-1":   { "tier": "fable",  "input": 10.00, "output": 50.00, "cache_read": 1.00, "cache_create_5m": 12.50, "cache_create_1h": 20.00 },
     "claude-fable-5":      { "tier": "fable",  "input": 10.00, "output": 50.00, "cache_read": 1.00, "cache_create_5m": 12.50, "cache_create_1h": 20.00 },
+    "claude-opus-5-5":     { "tier": "opus",   "input":  4.00, "output": 20.00, "cache_read": 0.20, "cache_create_5m":  5.00, "cache_create_1h":  8.00 },
     "claude-opus-5":       { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
     "claude-opus-4-8":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
     "claude-opus-4-7":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
@@ -8,7 +11,7 @@
     "claude-opus-4-5":     { "tier": "opus",   "input":  5.00, "output": 25.00, "cache_read": 0.50, "cache_create_5m":  6.25, "cache_create_1h": 10.00 },
     "claude-opus-4-1":     { "tier": "opus",   "input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_create_5m": 18.75, "cache_create_1h": 30.00 },
     "claude-opus-4":       { "tier": "opus",   "input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_create_5m": 18.75, "cache_create_1h": 30.00 },
-    "claude-sonnet-5":     { "tier": "sonnet", "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
+    "claude-sonnet-5":     { "tier": "sonnet", "input":  2.00, "output": 10.00, "cache_read": 0.20, "cache_create_5m":  2.50, "cache_create_1h":  4.00 },
     "claude-sonnet-4-6":   { "tier": "sonnet", "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
     "claude-sonnet-4-5":   { "tier": "sonnet", "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
     "claude-sonnet-4":     { "tier": "sonnet", "input":  3.00, "output": 15.00, "cache_read": 0.30, "cache_create_5m":  3.75, "cache_create_1h":  6.00 },
