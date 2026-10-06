@@ -166,6 +166,20 @@ jobs:
         with:
           tool: tauri-cli
 
+      # tauri-bundler downloads AppRun into ~/.cache/tauri with mode 0770 and
+      # fs::copy keeps that mode, so the AppImage ships AppRun.wrapped without
+      # the world-exec bit. Any sandbox that runs it as another uid (firejail,
+      # the appimage.github.io catalog test) gets "Permission denied". The
+      # bundler only downloads when the file is missing, so seed it 0755.
+      # Same URL the bundler uses (linuxdeploy.rs, prepare_tools).
+      - name: Seed AppRun with world-exec permissions (linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          mkdir -p ~/.cache/tauri
+          curl -fsSL -o ~/.cache/tauri/AppRun-x86_64 \
+            https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
+          chmod 0755 ~/.cache/tauri/AppRun-x86_64
+
       - name: Tauri build
         working-directory: crates/token-dashboard-tauri
         shell: bash
@@ -203,6 +217,21 @@ jobs:
           else
             cargo tauri build $target_flag
           fi
+
+      - name: Check AppImage file permissions (linux)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          set -euo pipefail
+          img=$(find target/release/bundle/appimage -name '*.AppImage' | head -1)
+          cd "$RUNNER_TEMP"
+          "$GITHUB_WORKSPACE/$img" --appimage-extract >/dev/null
+          bad=$(find squashfs-root -type f -perm -u=x ! -perm -o=x)
+          if [ -n "$bad" ]; then
+            echo "executables missing world-exec bit:" >&2
+            ls -la $bad >&2
+            exit 1
+          fi
+          rm -rf squashfs-root
 
       # `productName` is the same on both macOS legs, so both produce
       # `Token Dashboard.app.tar.gz`. GitHub release assets are flat, so the
@@ -386,7 +415,6 @@ jobs:
           installers-regex: 'Token\.Dashboard_.*_x64_en-US\.msi$'
           release-tag: ${{ steps.v.outputs.tag }}
           token: ${{ secrets.WINGET_TOKEN }}
-          max-versions-to-keep: 5
           fork-user: Arylmera
 
   homebrew:
