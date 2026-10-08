@@ -176,7 +176,7 @@ export const PricingTable = ({ readOnly = false } = {}) => {
             </tr>
           </thead>
           <tbody>
-            {Object.entries(effective).filter(([, r]) => !r.legacy).map(([id, r]) => {
+            {Object.entries(effective).map(([id, r]) => {
               const isOverridden = !!overrides[id];
               const def = defaults[id] || {};
               return (
