@@ -27,10 +27,6 @@ pub const PRICING_FIELDS: &[&str] = &[
 pub struct ModelRates {
     #[serde(default)]
     pub tier: Option<String>,
-    /// Retired model: still priced (old transcripts keep exact costs) but
-    /// hidden from the Settings pricing table.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub legacy: bool,
     pub input: f64,
     pub output: f64,
     pub cache_read: f64,
@@ -356,7 +352,7 @@ mod tests {
             ("claude-mythos-5-1", 60.0), // no tier in name: must hit the row
             ("claude-mythos-5", 60.0),
             ("claude-sonnet-5-5", 12.0), // $2 + $10
-            ("claude-opus-4-1", 90.0),   // legacy: hidden in Settings, still priced
+            ("claude-haiku-5-5", 0.6),   // $0.10 + $0.50
         ] {
             let r = cost_for(model, &usage, &p);
             assert!(!r.estimated, "{model}");
