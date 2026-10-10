@@ -25,6 +25,28 @@ try {
   }
 } catch (_) {}
 
+// Pause looping animations (pulses, scanlines, blinking carets) while the
+// window is unfocused: on a glass window they kept the GPU + renderer
+// processes at ~65% of a core, and WebView2 never flips document.hidden for
+// a background window. One-shot entrances are left alone so content that
+// fades in from opacity 0 always finishes, even in a never-focused widget.
+const _looping = (a) => a.effect && a.effect.getComputedTiming().iterations === Infinity;
+let _focused = document.hasFocus();
+const _setFocused = (f) => {
+  _focused = f;
+  for (const a of document.getAnimations()) if (_looping(a)) (f ? a.play() : a.pause());
+};
+window.addEventListener("blur", () => _setFocused(false));
+window.addEventListener("focus", () => _setFocused(true));
+// Native focus too: the DOM events can lag when the window is minimized.
+try {
+  window.__TAURI__.window.getCurrentWindow().onFocusChanged((e) => _setFocused(!!e.payload)).catch(() => {});
+} catch (_) {}
+// Loops that start while unfocused (e.g. the fresh-data pulse after a scan).
+document.addEventListener("animationstart", (e) => {
+  if (!_focused) for (const a of e.target.getAnimations({ subtree: true })) if (_looping(a)) a.pause();
+}, true);
+
 // Spawned windows (widget / setup-help / live) are routed via a `?w=<name>`
 // query param rather than a `#hash`, because WebView2's initial navigation
 // no-ops on fragment-only URLs and leaves the window blank. The hash forms are
