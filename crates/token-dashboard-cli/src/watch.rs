@@ -22,6 +22,14 @@ use crate::state::AppState;
 /// succession; waiting a beat turns that burst into one scan.
 pub const WATCH_DEBOUNCE: Duration = Duration::from_millis(400);
 
+/// Floor between watch-triggered scans. Active Claude sessions write every
+/// few seconds and each ingesting scan makes every connected frontend
+/// refetch its full endpoint set (seconds of full-table aggregates on a
+/// large history), so an uncapped watcher kept several cores busy. The
+/// first write after a quiet spell still lands within `WATCH_DEBOUNCE`;
+/// writes during the gap re-arm the permit and land at its end.
+const WATCH_MIN_GAP: Duration = Duration::from_secs(15);
+
 fn is_transcript(p: &Path) -> bool {
     p.extension().and_then(|e| e.to_str()) == Some("jsonl")
 }
@@ -73,6 +81,7 @@ pub fn spawn_scan_watcher(state: AppState, debounce: Duration) -> Result<(), Str
             if let Err(e) = run_scan_and_broadcast(state.clone()).await {
                 tracing::warn!(error = %e, "watch-triggered scan failed");
             }
+            tokio::time::sleep(WATCH_MIN_GAP).await;
         }
     });
     Ok(())
