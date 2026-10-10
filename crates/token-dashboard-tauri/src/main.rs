@@ -290,10 +290,6 @@ fn apply_glass(win: &tauri::WebviewWindow, on: bool) {
     }
 }
 
-/// Spawn a tokio task that refreshes the tray tooltip every 5s with the
-/// currently-selected badge metric. The `badge_metric` preference picks
-/// which value to show (tokens, cost, burn, 5h, weekly); /api/overview
-/// provides the raw numbers.
 /// Reconcile the widget window with the `widget_open` preference.
 /// The frontend toggles open/close by writing the flag through
 /// /api/preferences, so the tauri shell doesn't depend on the
@@ -523,9 +519,15 @@ fn spawn_app_update_check(app: AppHandle, report_no_update: bool) {
     });
 }
 
+/// Spawn a tokio task that refreshes the tray tooltip every 60s with the
+/// currently-selected badge metric. The `badge_metric` preference picks
+/// which value to show (tokens, cost, burn, 5h, weekly); /api/overview
+/// provides the raw numbers. All-time /api/overview is two full scans of
+/// `messages` (~3s on a large history), so a 5s tick kept most of a core
+/// busy around the clock for a tooltip nobody is hovering.
 fn spawn_tray_updater(app: AppHandle, base_url: String) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
         loop {
             interval.tick().await;
             let prefs_url = format!("{base_url}/api/preferences");

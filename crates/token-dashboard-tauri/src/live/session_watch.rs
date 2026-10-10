@@ -1,6 +1,7 @@
-use praetorium_core::session_parse::{parse_transcript_line, tail_new, SessionEvent};
+use praetorium_core::session_parse::{parse_transcript_line, SessionEvent};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
@@ -115,6 +116,17 @@ fn now_ms() -> u64 {
 }
 const LIVE_WINDOW_MS: u64 = 60_000;
 
+/// First `f` hit scanning `path` line by line. Stops reading at the hit, so
+/// header-ish fields (cwd, first prompt) cost a few lines, not the whole
+/// multi-megabyte transcript.
+fn first_line_match<T>(path: &Path, mut f: impl FnMut(&str) -> Option<T>) -> Option<T> {
+    let file = std::fs::File::open(path).ok()?;
+    BufReader::new(file)
+        .lines()
+        .map_while(Result::ok)
+        .find_map(|l| f(&l))
+}
+
 /// A live session's transcript routinely reaches several megabytes. Replaying it
 /// from byte 0 pushes every historical line through the JS reducers at startup,
 /// so only the tail is reconstructed.
@@ -130,8 +142,8 @@ const _: () = assert!(REPLAY_MAX_BYTES <= 1 << 20);
 #[derive(Debug)]
 enum Seed {
     /// Replay from this byte offset. May land mid-line and mid-character;
-    /// `tail_new` nudges to a character boundary and the partial first line
-    /// fails to parse as JSON, so `parse_transcript_line` drops it.
+    /// the partial first line fails to parse as JSON, so
+    /// `parse_transcript_line` drops it.
     Replay(usize),
     SkipTo(usize),
 }
@@ -182,27 +194,24 @@ pub fn list_live_sessions() -> Result<Vec<SessionMeta>, String> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("")
                 .to_string();
-            let content = std::fs::read_to_string(&path).unwrap_or_default();
-            let cwd_full = content.lines().find_map(line_cwd);
+            let cwd_full = first_line_match(&path, line_cwd);
             let cwd_basename = cwd_full.as_deref().map(basename);
             let friendly_project = cwd_basename.unwrap_or_else(|| project.clone());
-            let title = content
-                .lines()
-                .find_map(|l| {
-                    parse_transcript_line(l).into_iter().find_map(|e| {
-                        if let SessionEvent::Turn { role, text } = e {
-                            if role == "user" {
-                                Some(text)
-                            } else {
-                                None
-                            }
+            let title = first_line_match(&path, |l| {
+                parse_transcript_line(l).into_iter().find_map(|e| {
+                    if let SessionEvent::Turn { role, text } = e {
+                        if role == "user" {
+                            Some(text)
                         } else {
                             None
                         }
-                    })
+                    } else {
+                        None
+                    }
                 })
-                .map(|t| t.chars().take(80).collect::<String>())
-                .unwrap_or_else(|| id.clone());
+            })
+            .map(|t| t.chars().take(80).collect::<String>())
+            .unwrap_or_else(|| id.clone());
             let state = if age <= LIVE_WINDOW_MS {
                 "live"
             } else {
@@ -236,27 +245,51 @@ pub struct WatchState(pub Mutex<HashMap<PathBuf, usize>>);
 #[derive(Default)]
 pub struct WatcherHandle(pub Mutex<Option<notify::RecommendedWatcher>>);
 
+/// Complete lines appended to `path` after byte `offset`, plus the offset to
+/// resume from. Reads only the new bytes: transcripts reach tens of megabytes
+/// and every appended line fires a watch event, so re-reading the whole file
+/// each time kept a core busy whenever Claude was working. A trailing partial
+/// line stays for the next call; an `offset` past EOF (file truncated or
+/// replaced) restarts at 0. `offset` may land mid-line (bounded replay seed):
+/// that fragment fails the caller's JSON parse and is dropped.
+fn read_appended(path: &Path, offset: usize) -> Option<(Vec<String>, usize)> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len() as usize;
+    let start = if offset > len { 0 } else { offset };
+    let mut fresh = Vec::new();
+    file.seek(SeekFrom::Start(start as u64)).ok()?;
+    file.read_to_end(&mut fresh).ok()?;
+    let Some(idx) = fresh.iter().rposition(|&b| b == b'\n') else {
+        return Some((vec![], start));
+    };
+    let lines = String::from_utf8_lossy(&fresh[..=idx])
+        .lines()
+        .map(str::to_string)
+        .collect();
+    Some((lines, start + idx + 1))
+}
+
 fn pump(path: &Path, offsets: &Mutex<HashMap<PathBuf, usize>>, ch: &Arc<Channel<WatchEvent>>) {
     let Some(session_id) = session_id_for(path) else {
         return;
     };
     let agent_ref = agent_ref_for(path);
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(_) => return,
+    let mut map = offsets.lock().unwrap();
+    let off = *map.get(path).unwrap_or(&0);
+    let Some((lines, new_off)) = read_appended(path, off) else {
+        return;
     };
-    let cwd = content.lines().find_map(line_cwd);
+    map.insert(path.to_path_buf(), new_off);
+    drop(map);
+    if lines.is_empty() {
+        return;
+    }
+    let cwd = first_line_match(path, line_cwd);
     let project = cwd
         .as_deref()
         .map(basename)
         .unwrap_or_else(|| project_for(path));
     let repo = cwd.as_deref().and_then(repo_for_cwd);
-    let mut map = offsets.lock().unwrap();
-    let off = *map.get(path).unwrap_or(&0);
-    let start = if off > content.len() { 0 } else { off };
-    let (lines, new_off) = tail_new(&content, start);
-    map.insert(path.to_path_buf(), new_off);
-    drop(map);
     for line in lines {
         for event in parse_transcript_line(&line) {
             let _ = ch.send(WatchEvent::Session {
@@ -362,6 +395,23 @@ pub fn watch_sessions(app: tauri::AppHandle, on_event: Channel<WatchEvent>) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_appended_returns_only_new_complete_lines() {
+        let p = std::env::temp_dir().join(format!("td-read-appended-{}.jsonl", std::process::id()));
+        std::fs::write(&p, "a\nb\nccc").unwrap();
+        let (l, off) = read_appended(&p, 0).unwrap();
+        assert_eq!((l, off), (vec!["a".to_string(), "b".to_string()], 4));
+        // Partial line held back until its newline lands.
+        assert_eq!(read_appended(&p, off).unwrap(), (vec![], 4));
+        std::fs::write(&p, "a\nb\nccc\nd\n").unwrap();
+        let (l, off) = read_appended(&p, off).unwrap();
+        assert_eq!((l, off), (vec!["ccc".to_string(), "d".to_string()], 10));
+        // Truncated file: offset past EOF restarts from 0.
+        std::fs::write(&p, "x\n").unwrap();
+        assert_eq!(read_appended(&p, off).unwrap(), (vec!["x".to_string()], 2));
+        let _ = std::fs::remove_file(&p);
+    }
 
     #[test]
     fn live_files_replay_others_skip_to_eof() {
