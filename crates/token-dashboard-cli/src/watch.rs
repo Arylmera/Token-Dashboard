@@ -24,11 +24,11 @@ pub const WATCH_DEBOUNCE: Duration = Duration::from_millis(400);
 
 /// Floor between watch-triggered scans. Active Claude sessions write every
 /// few seconds and each ingesting scan makes every connected frontend
-/// refetch its full endpoint set (seconds of full-table aggregates on a
-/// large history), so an uncapped watcher kept several cores busy. The
+/// refetch its full endpoint set (~35s of full-table aggregates on a
+/// 1M-message history), so an uncapped watcher kept several cores busy. The
 /// first write after a quiet spell still lands within `WATCH_DEBOUNCE`;
 /// writes during the gap re-arm the permit and land at its end.
-const WATCH_MIN_GAP: Duration = Duration::from_secs(15);
+const WATCH_MIN_GAP: Duration = Duration::from_secs(60);
 
 fn is_transcript(p: &Path) -> bool {
     p.extension().and_then(|e| e.to_str()) == Some("jsonl")
