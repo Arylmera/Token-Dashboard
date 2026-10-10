@@ -25,6 +25,13 @@ try {
   }
 } catch (_) {}
 
+// Pause CSS animations while the window is unfocused (see html.td-blurred in
+// styles.css): WebView2 never flips document.hidden for a background window.
+const _syncBlur = () => document.documentElement.classList.toggle("td-blurred", !document.hasFocus());
+window.addEventListener("blur", _syncBlur);
+window.addEventListener("focus", _syncBlur);
+_syncBlur();
+
 // Spawned windows (widget / setup-help / live) are routed via a `?w=<name>`
 // query param rather than a `#hash`, because WebView2's initial navigation
 // no-ops on fragment-only URLs and leaves the window blank. The hash forms are

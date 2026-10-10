@@ -2542,6 +2542,16 @@ html:has(body.td-widget-body)::-webkit-scrollbar { width: 0; height: 0; display:
   .dir-a-root .a-skel { animation: none !important; }
 }
 
+/* Window unfocused (entry.jsx toggles the class on blur/focus). The infinite
+   pulses and scanline cost ~65% of a core in the GPU + renderer processes
+   on a glass window, and WebView2 keeps reporting the page visible when the
+   window is behind others, hidden or minimized, so focus is the only signal. */
+html.td-blurred *,
+html.td-blurred *::before,
+html.td-blurred *::after {
+  animation-play-state: paused !important;
+}
+
 /* ============================================================
    Special Themes (Terminal / Cockpit / Grimdark)
    Add-on theme block. These themes layer extra ornament (ambient

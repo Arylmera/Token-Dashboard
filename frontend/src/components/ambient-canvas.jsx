@@ -29,8 +29,9 @@ function mountAmbient(canvas) {
   let rafId = 0;
 
   function loop(t) {
-    // Pause work when the tab is hidden — nothing to animate off-screen.
-    if (anim && !document.hidden) anim.tick(t - startT);
+    // Pause work when the tab is hidden or the window unfocused — WebView2
+    // keeps document.hidden false for background windows.
+    if (anim && !document.hidden && document.hasFocus()) anim.tick(t - startT);
     rafId = requestAnimationFrame(loop);
   }
   rafId = requestAnimationFrame(loop);
