@@ -795,4 +795,8 @@ function _activatePollingFallback(reason) {
 
 // Kick off the stream connection after the initial data load resolves
 // — we don't want the first frame to land before the page renders.
-window.DATA_READY.finally(() => _connectStream());
+// The Live pop-out never reads MOCK_DATA, and it is pre-created hidden at
+// startup, so subscribing there re-ran every dashboard query on each scan
+// for nothing (~40% of all /api traffic).
+const _isLiveWindow = new URLSearchParams(window.location.search).get("w") === "live-window";
+if (!_isLiveWindow) window.DATA_READY.finally(() => _connectStream());
