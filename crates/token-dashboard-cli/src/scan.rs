@@ -131,9 +131,12 @@ pub(crate) async fn run_scan_and_broadcast(
     let outcome = {
         // One scan at a time, whichever path asked for it.
         let _guard = lock.lock().await;
-        tokio::task::spawn_blocking(move || match paths {
-            Some(p) => token_dashboard_core::scan_paths(proj.as_ref(), db.as_ref(), &p),
-            None => scan_dir(proj.as_ref(), db.as_ref()),
+        tokio::task::spawn_blocking(move || {
+            crate::errors::background_priority();
+            match paths {
+                Some(p) => token_dashboard_core::scan_paths(proj.as_ref(), db.as_ref(), &p),
+                None => scan_dir(proj.as_ref(), db.as_ref()),
+            }
         })
         .await
         .map_err(|e| format!("join: {e}"))
