@@ -78,7 +78,7 @@ impl From<ScanStats> for ScanResponse {
 }
 
 pub(crate) async fn scan(State(s): State<AppState>) -> Result<Json<ScanResponse>, ApiError> {
-    let stats = run_scan_and_broadcast(s)
+    let stats = run_scan_and_broadcast(s, None)
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(stats.into()))
@@ -119,18 +119,28 @@ async fn publish_scan_health(
 /// rich hint (sessions/projects/days/models) the frontend dispatcher
 /// uses to decide which endpoints to refetch. Shared between the
 /// `/api/scan` route and the periodic background loop so both code paths
-/// emit identical events.
-pub(crate) async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, String> {
+/// emit identical events. `paths` limits the scan to those files (the
+/// watcher's changed set); `None` walks the whole projects directory.
+pub(crate) async fn run_scan_and_broadcast(
+    s: AppState,
+    paths: Option<Vec<PathBuf>>,
+) -> Result<ScanStats, String> {
     let db = s.db_path.clone();
     let proj = s.projects_dir.clone();
     let lock = s.scan_lock.clone();
     let outcome = {
         // One scan at a time, whichever path asked for it.
         let _guard = lock.lock().await;
-        tokio::task::spawn_blocking(move || scan_dir(proj.as_ref(), db.as_ref()))
-            .await
-            .map_err(|e| format!("join: {e}"))
-            .and_then(|r| r.map_err(|e| format!("scan: {e}")))
+        tokio::task::spawn_blocking(move || {
+            crate::errors::background_priority();
+            match paths {
+                Some(p) => token_dashboard_core::scan_paths(proj.as_ref(), db.as_ref(), &p),
+                None => scan_dir(proj.as_ref(), db.as_ref()),
+            }
+        })
+        .await
+        .map_err(|e| format!("join: {e}"))
+        .and_then(|r| r.map_err(|e| format!("scan: {e}")))
     };
     let stats = publish_scan_health(&s, outcome).await?;
     // Only announce when the scan actually ingested rows. The background
@@ -215,7 +225,7 @@ pub(crate) async fn run_scan_and_broadcast(s: AppState) -> Result<ScanStats, Str
 /// its `scan_complete` refreshes the page in place.
 pub async fn scan_once(state: AppState, budget: Duration) {
     let task = tokio::spawn(async move {
-        if let Err(e) = run_scan_and_broadcast(state).await {
+        if let Err(e) = run_scan_and_broadcast(state, None).await {
             tracing::warn!(error = %e, "startup scan failed");
         }
     });
@@ -237,7 +247,7 @@ pub fn spawn_scan_loop(state: AppState, interval: Duration) {
         ticker.tick().await;
         loop {
             ticker.tick().await;
-            if let Err(e) = run_scan_and_broadcast(state.clone()).await {
+            if let Err(e) = run_scan_and_broadcast(state.clone(), None).await {
                 tracing::warn!(error = %e, "background scan failed");
             }
         }

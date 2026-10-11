@@ -113,6 +113,10 @@ const withProvider = (url) => {
 //   fallback() — only for endpoints that may legitimately 404 / error; called on fetch failure
 //
 // loadAll runs every entry. (Tasks 4–5 add loadDelta + loadStatic.)
+// Long-window reports (30d, closed past windows, tips): refetched on a scan
+// at most this often. Range changes, reloads and midnight still refetch them.
+const SLOW_MS = 10 * 60_000;
+
 const REG = [
   { key: "overviewAll",   trigger: "any",   url: () => withProvider("/api/overview") },
   { key: "overview30",    trigger: "days",  windowSince: () => isoDaysAgo(30), url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(30))}`) },
@@ -129,11 +133,11 @@ const REG = [
   { key: "topSessionsRaw", trigger: "sessions", url: () => withProvider(`/api/sessions?order=cost&limit=50`), fallback: () => [] },
   { key: "skills",        trigger: "any",   url: ({ rangeSince, rangeUntil }) => withProvider(`/api/skills${rangeQuery(rangeSince, rangeUntil)}`) },
   { key: "byModel",       trigger: "models", url: ({ rangeSince, rangeUntil }) => withProvider(`/api/by-model${rangeQuery(rangeSince, rangeUntil)}`) },
-  { key: "modelEfficiency", trigger: "models", url: () => "/api/model_efficiency?days=30", fallback: () => [] },
-  { key: "toolCosts",     trigger: "any",   url: () => "/api/tool-costs?days=30", fallback: () => ({ tools: [], mcp_servers: [], total_cost_usd: 0, days: 30 }) },
-  { key: "cacheStats",    trigger: "days",  url: () => "/api/cache-stats?days=30", fallback: () => ({ days: [], avg_7d: 0, avg_30d: 0 }) },
+  { key: "modelEfficiency", minAgeMs: SLOW_MS, trigger: "models", url: () => "/api/model_efficiency?days=30", fallback: () => [] },
+  { key: "toolCosts",     minAgeMs: SLOW_MS, trigger: "any",   url: () => "/api/tool-costs?days=30", fallback: () => ({ tools: [], mcp_servers: [], total_cost_usd: 0, days: 30 }) },
+  { key: "cacheStats",    minAgeMs: SLOW_MS, trigger: "days",  url: () => "/api/cache-stats?days=30", fallback: () => ({ days: [], avg_7d: 0, avg_30d: 0 }) },
   { key: "burnRate",      trigger: "days",  url: () => "/api/burn-rate?window_days=7", fallback: () => null },
-  { key: "anomalies",     trigger: "sessions", url: () => "/api/anomalies?days=30&k=3", fallback: () => [] },
+  { key: "anomalies",     minAgeMs: SLOW_MS, trigger: "sessions", url: () => "/api/anomalies?days=30&k=3", fallback: () => [] },
   { key: "prompts",       trigger: "sessions", url: ({ rangeSince, rangeUntil, promptQuery }) => {
       const parts = [];
       if (rangeSince) parts.push(`since=${encodeURIComponent(rangeSince)}`);
@@ -145,10 +149,10 @@ const REG = [
   { key: "hourlyRaw",     trigger: "days",  windowSince: () => isoDaysAgo(1), url: () => withProvider("/api/hourly?hours=24"), fallback: () => [] },
   { key: "activityRaw",   trigger: "any",   url: () => withProvider("/api/activity?days=7"), fallback: () => [] },
   { key: "recentPromptsRaw", trigger: "sessions", url: () => withProvider("/api/prompts?sort=recent&limit=5"), fallback: () => [] },
-  { key: "prevWeekOv",    trigger: "days",  windowSince: () => isoDaysAgo(14), url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(14))}&until=${encodeURIComponent(isoDaysAgo(7))}`), fallback: () => ({}) },
-  { key: "prevMonthOv",   trigger: "days",  windowSince: () => isoDaysAgo(60), url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(60))}&until=${encodeURIComponent(isoDaysAgo(30))}`), fallback: () => ({}) },
+  { key: "prevWeekOv",    minAgeMs: SLOW_MS, trigger: "days",  windowSince: () => isoDaysAgo(14), url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(14))}&until=${encodeURIComponent(isoDaysAgo(7))}`), fallback: () => ({}) },
+  { key: "prevMonthOv",   minAgeMs: SLOW_MS, trigger: "days",  windowSince: () => isoDaysAgo(60), url: () => withProvider(`/api/overview?since=${encodeURIComponent(isoDaysAgo(60))}&until=${encodeURIComponent(isoDaysAgo(30))}`), fallback: () => ({}) },
   { key: "skillsToday",   trigger: "days",  windowSince: () => isoDaysAgo(0), url: () => withProvider(`/api/skills?since=${encodeURIComponent(isoDaysAgo(0))}`), fallback: () => [] },
-  { key: "tips",          trigger: "any",   url: () => "/api/tips", fallback: () => [] },
+  { key: "tips",          minAgeMs: SLOW_MS, trigger: "any",   url: () => "/api/tips", fallback: () => [] },
   { key: "planResp",      trigger: "static", url: () => "/api/plan",   fallback: () => ({ plan: "max" }) },
   { key: "limitsResp",    trigger: "static", url: () => "/api/limits", fallback: () => null },
   { key: "budgetResp",    trigger: "static", url: () => "/api/budget", fallback: () => null },
@@ -159,6 +163,7 @@ const REG = [
 ];
 
 const _cache = {};   // last-known raw value per key, mutated by _fetchKeys
+const _fetchedAt = {};   // epoch ms of each key's last successful fetch
 
 async function _fetchKeys(keys, ctx) {
   const tasks = keys.map(async (k) => {
@@ -166,6 +171,7 @@ async function _fetchKeys(keys, ctx) {
     try {
       const v = await j(entry.url(ctx));
       _cache[k] = v;
+      _fetchedAt[k] = Date.now();
     } catch (err) {
       if (entry.fallback) _cache[k] = entry.fallback();
       else throw err;
@@ -267,7 +273,7 @@ async function setPromptQuery(q) {
 async function loadDelta(hint) {
   const r = currentRange;
   const ctx = _ctx(r);
-  const keys = pickEntries(REG, hint || {}, ctx.rangeSince);
+  const keys = pickEntries(REG, hint || {}, ctx.rangeSince, _fetchedAt);
   if (keys.length === 0) return;          // nothing in our view changed
   await _fetchKeys(keys, ctx);
   _rebuildMockData(r);
