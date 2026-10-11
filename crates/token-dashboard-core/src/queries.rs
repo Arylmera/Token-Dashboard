@@ -679,10 +679,14 @@ pub fn expensive_prompts<P: AsRef<Path>>(
     q: Option<&str>,
     provider: Option<&str>,
 ) -> rusqlite::Result<Vec<ExpensivePromptRow>> {
-    let order = if sort == "recent" {
-        "u.timestamp DESC"
+    // Newest-first walks the timestamp index and stops at LIMIT. SQLite
+    // 3.53 otherwise reaches `u` through a skip-scan and sorts every
+    // prompt (~0.4s instead of <1ms on a 1M-message history), and the
+    // widget asks for the 5 latest on every scan.
+    let (order, u_index) = if sort == "recent" {
+        ("u.timestamp DESC", "INDEXED BY idx_messages_timestamp")
     } else {
-        "billable_tokens DESC"
+        ("billable_tokens DESC", "")
     };
     let (rng, mut args) = range_clause(since, until, "u.timestamp");
     // Filter on the assistant turn's provider — that's where the cost
