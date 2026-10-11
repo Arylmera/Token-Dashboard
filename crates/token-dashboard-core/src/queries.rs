@@ -15,6 +15,7 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
+use crate::rollup::Source;
 use rusqlite::{Connection, Row};
 use serde::{Deserialize, Serialize};
 
@@ -215,18 +216,21 @@ pub fn overview_totals<P: AsRef<Path>>(
     until: Option<&str>,
     provider: Option<&str>,
 ) -> rusqlite::Result<OverviewTotals> {
-    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (src, since, until) = Source::for_range(since, until);
+    let (rng, mut args) = range_clause(since, until, src.ts);
     let (prov, prov_args) = provider_clause(provider);
     args.extend(prov_args);
     let sql = format!(
         "SELECT COUNT(DISTINCT session_id) AS sessions, \
-                SUM(CASE WHEN type='user' THEN 1 ELSE 0 END) AS turns, \
+                SUM(CASE WHEN type='user' THEN {n} ELSE 0 END) AS turns, \
                 COALESCE(SUM(input_tokens),0)            AS input_tokens, \
                 COALESCE(SUM(output_tokens),0)           AS output_tokens, \
                 COALESCE(SUM(cache_read_tokens),0)       AS cache_read_tokens, \
                 COALESCE(SUM(cache_create_5m_tokens),0)  AS cache_create_5m_tokens, \
                 COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens \
-         FROM messages WHERE 1=1 {rng}{prov}"
+         FROM {table} WHERE 1=1 {rng}{prov}",
+        n = src.n,
+        table = src.table,
     );
     let c = open_ro(db)?;
     let totals = c.query_row(&sql, rusqlite::params_from_iter(args.iter()), |r| {
@@ -254,21 +258,25 @@ pub fn model_breakdown<P: AsRef<Path>>(
     until: Option<&str>,
     provider: Option<&str>,
 ) -> rusqlite::Result<Vec<ModelRow>> {
-    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (src, since, until) = Source::for_range(since, until);
+    let (rng, mut args) = range_clause(since, until, src.ts);
     let (prov, prov_args) = provider_clause(provider);
     args.extend(prov_args);
     let sql = format!(
-        "SELECT COALESCE(model, 'unknown') AS model, \
-                COUNT(*) AS turns, \
+        "SELECT COALESCE({model}, 'unknown') AS model, \
+                SUM({n}) AS turns, \
                 COALESCE(SUM(input_tokens),0)            AS input_tokens, \
                 COALESCE(SUM(output_tokens),0)           AS output_tokens, \
                 COALESCE(SUM(cache_read_tokens),0)       AS cache_read_tokens, \
                 COALESCE(SUM(cache_create_5m_tokens),0)  AS cache_create_5m_tokens, \
                 COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens \
-         FROM messages \
+         FROM {table} \
          WHERE type='assistant' {rng}{prov} \
-         GROUP BY model \
-         ORDER BY (input_tokens + output_tokens + cache_create_5m_tokens + cache_create_1h_tokens) DESC"
+         GROUP BY {model} \
+         ORDER BY (input_tokens + output_tokens + cache_create_5m_tokens + cache_create_1h_tokens) DESC",
+        model = src.model,
+        n = src.n,
+        table = src.table,
     );
     let c = open_ro(db)?;
     let mut stmt = c.prepare(&sql)?;
@@ -292,23 +300,27 @@ pub fn project_summary<P: AsRef<Path>>(
     until: Option<&str>,
     provider: Option<&str>,
 ) -> rusqlite::Result<Vec<ProjectRow>> {
-    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (src, since, until) = Source::for_range(since, until);
+    let (rng, mut args) = range_clause(since, until, src.ts);
     let (prov, prov_args) = provider_clause(provider);
     args.extend(prov_args);
     let sql = format!(
         "SELECT project_slug, \
                 COUNT(DISTINCT session_id) AS sessions, \
-                SUM(CASE WHEN type='user' THEN 1 ELSE 0 END) AS turns, \
+                SUM(CASE WHEN type='user' THEN {n} ELSE 0 END) AS turns, \
                 COALESCE(SUM(input_tokens), 0)  AS input_tokens, \
                 COALESCE(SUM(output_tokens), 0) AS output_tokens, \
                 COALESCE(SUM(input_tokens),0)+COALESCE(SUM(output_tokens),0) \
                   +COALESCE(SUM(cache_create_5m_tokens),0)+COALESCE(SUM(cache_create_1h_tokens),0) AS billable_tokens, \
                 COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens, \
-                MAX(timestamp) AS last_active \
-         FROM messages \
+                MAX({last_ts}) AS last_active \
+         FROM {table} \
          WHERE 1=1 {rng}{prov} \
          GROUP BY project_slug \
-         ORDER BY billable_tokens DESC"
+         ORDER BY billable_tokens DESC",
+        n = src.n,
+        last_ts = src.last_ts,
+        table = src.table,
     );
     let c = open_ro(db)?;
     let mut stmt = c.prepare(&sql)?;
@@ -371,20 +383,23 @@ pub fn daily_token_breakdown<P: AsRef<Path>>(
     until: Option<&str>,
     provider: Option<&str>,
 ) -> rusqlite::Result<Vec<DailyRow>> {
-    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (src, since, until) = Source::for_range(since, until);
+    let (rng, mut args) = range_clause(since, until, src.ts);
     let (prov, prov_args) = provider_clause(provider);
     args.extend(prov_args);
     let sql = format!(
-        "SELECT substr(timestamp, 1, 10) AS day, \
+        "SELECT substr({ts}, 1, 10) AS day, \
                 COALESCE(SUM(input_tokens),0)      AS input_tokens, \
                 COALESCE(SUM(output_tokens),0)     AS output_tokens, \
                 COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens, \
                 COALESCE(SUM(cache_create_5m_tokens),0) \
                   + COALESCE(SUM(cache_create_1h_tokens),0) AS cache_create_tokens \
-         FROM messages \
-         WHERE timestamp IS NOT NULL {rng}{prov} \
+         FROM {table} \
+         WHERE {ts} IS NOT NULL {rng}{prov} \
          GROUP BY day \
-         ORDER BY day ASC"
+         ORDER BY day ASC",
+        ts = src.ts,
+        table = src.table,
     );
     let c = open_ro(db)?;
     let mut stmt = c.prepare(&sql)?;
@@ -417,16 +432,20 @@ pub fn daily_model_breakdown<P: AsRef<Path>>(
     until: Option<&str>,
     provider: Option<&str>,
 ) -> rusqlite::Result<Vec<DailyModelRow>> {
-    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (src, since, until) = Source::for_range(since, until);
+    let (rng, mut args) = range_clause(since, until, src.ts);
     let (prov, prov_args) = provider_clause(provider);
     args.extend(prov_args);
     let sql = format!(
-        "SELECT substr(timestamp, 1, 10) AS day, COALESCE(model, '(unknown)') AS model, \
+        "SELECT substr({ts}, 1, 10) AS day, COALESCE({model}, '(unknown)') AS model, \
                 COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), \
                 COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_create_5m_tokens),0), \
                 COALESCE(SUM(cache_create_1h_tokens),0) \
-         FROM messages WHERE type = 'assistant' AND timestamp IS NOT NULL {rng}{prov} \
-         GROUP BY day, model ORDER BY day ASC"
+         FROM {table} WHERE type = 'assistant' AND {ts} IS NOT NULL {rng}{prov} \
+         GROUP BY day, {model} ORDER BY day ASC, model ASC",
+        ts = src.ts,
+        model = src.model,
+        table = src.table,
     );
     let c = open_ro(db)?;
     let mut stmt = c.prepare(&sql)?;
@@ -664,10 +683,14 @@ pub fn expensive_prompts<P: AsRef<Path>>(
     q: Option<&str>,
     provider: Option<&str>,
 ) -> rusqlite::Result<Vec<ExpensivePromptRow>> {
-    let order = if sort == "recent" {
-        "u.timestamp DESC"
+    // Newest-first walks the timestamp index and stops at LIMIT. SQLite
+    // 3.53 otherwise reaches `u` through a skip-scan and sorts every
+    // prompt (~0.4s instead of <1ms on a 1M-message history), and the
+    // widget asks for the 5 latest on every scan.
+    let (order, u_index) = if sort == "recent" {
+        ("u.timestamp DESC", "INDEXED BY idx_messages_timestamp")
     } else {
-        "billable_tokens DESC"
+        ("billable_tokens DESC", "")
     };
     let (rng, mut args) = range_clause(since, until, "u.timestamp");
     // Filter on the assistant turn's provider — that's where the cost
@@ -697,7 +720,7 @@ pub fn expensive_prompts<P: AsRef<Path>>(
                 COALESCE(a.cache_create_5m_tokens,0) AS cache_create_5m_tokens, \
                 COALESCE(a.cache_create_1h_tokens,0) AS cache_create_1h_tokens, \
                 COALESCE(a.cache_read_tokens,0) AS cache_read_tokens \
-           FROM messages u \
+           FROM messages u {u_index} \
            JOIN messages a \
              ON a.session_id = u.session_id \
             AND a.type = 'assistant' \
@@ -861,7 +884,8 @@ pub fn recent_sessions<P: AsRef<Path>>(
     tag: Option<&str>,
     provider: Option<&str>,
 ) -> rusqlite::Result<Vec<SessionRow>> {
-    let (rng, args) = range_clause(since, until, "timestamp");
+    let (src, since, until) = Source::for_range(since, until);
+    let (rng, args) = range_clause(since, until, src.ts);
     let (prov, prov_args) = provider_clause_on("m.provider", provider);
     let (tag_join, tag_filter) = if tag.is_some() {
         (
@@ -875,18 +899,22 @@ pub fn recent_sessions<P: AsRef<Path>>(
     // base WHERE uses unprefixed `timestamp` to mirror the python query.
     let sql = format!(
         "SELECT m.session_id AS session_id, m.project_slug AS project_slug, \
-                MIN(m.timestamp) AS started, MAX(m.timestamp) AS ended, \
-                SUM(CASE WHEN m.type='user' THEN 1 ELSE 0 END) AS turns, \
+                MIN(m.{first_ts}) AS started, MAX(m.{last_ts}) AS ended, \
+                SUM(CASE WHEN m.type='user' THEN {n} ELSE 0 END) AS turns, \
                 COALESCE(SUM(m.input_tokens),0)+COALESCE(SUM(m.output_tokens),0) \
                 +COALESCE(SUM(m.cache_read_tokens),0) \
                 +COALESCE(SUM(m.cache_create_5m_tokens),0) \
                 +COALESCE(SUM(m.cache_create_1h_tokens),0) AS tokens \
-         FROM messages m \
+         FROM {table} m \
          {tag_join} \
          WHERE 1=1 {rng} {tag_filter}{prov} \
          GROUP BY m.session_id \
          ORDER BY ended DESC \
-         LIMIT ?"
+         LIMIT ?",
+        first_ts = src.first_ts,
+        last_ts = src.last_ts,
+        n = src.n,
+        table = src.table,
     );
 
     // Build a single owned-string param vector. The trailing `limit`

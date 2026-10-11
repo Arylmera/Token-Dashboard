@@ -168,11 +168,16 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> rusqlite::Result<()> {
         let _ = std::fs::create_dir_all(parent);
     }
     let conn = Connection::open(path)?;
+    // The rollup migration takes a write lock for its backfill; wait out a
+    // closing previous instance (updater relaunch) or a CLI sharing the DB
+    // instead of failing startup on SQLITE_BUSY.
+    conn.busy_timeout(std::time::Duration::from_secs(30))?;
     migrate_add_message_id(&conn)?;
     migrate_add_tool_use_id(&conn)?;
     migrate_add_provider(&conn)?;
     conn.execute_batch(SCHEMA)?;
     migrate_add_fts(&conn)?;
+    crate::rollup::migrate(&conn)?;
     ensure_analyzed(&conn)?;
     Ok(())
 }
@@ -251,6 +256,10 @@ pub fn open<P: AsRef<Path>>(path: P) -> rusqlite::Result<Connection> {
 /// pages so cold opens stay warm. `execute_batch` is used because some
 /// PRAGMAs (e.g. `journal_mode`) return a row, which `pragma_update` rejects.
 ///
+/// `recursive_triggers` makes `INSERT OR REPLACE` fire the DELETE triggers
+/// for the row it replaces; without it the scanner's re-ingests skipped
+/// them, double counting in `usage_hourly` and leaving stale FTS entries.
+///
 /// `query_only` is deliberately *not* set: the `open_ro` read helper is also
 /// used by a few write paths (e.g. `budget_alerts` recording fired alerts),
 /// and the connection pool reuses these connections across both.
@@ -261,7 +270,8 @@ pub fn tune(conn: &Connection) -> rusqlite::Result<()> {
          PRAGMA synchronous=NORMAL;\
          PRAGMA mmap_size=268435456;\
          PRAGMA cache_size=-65536;\
-         PRAGMA temp_store=MEMORY;",
+         PRAGMA temp_store=MEMORY;\
+         PRAGMA recursive_triggers=ON;",
     )?;
     Ok(())
 }

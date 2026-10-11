@@ -629,86 +629,135 @@ pub fn scan_dir<P: AsRef<Path>, Q: AsRef<Path>>(
         .filter(|e| e.file_type().is_file())
         .filter(|e| e.path().extension().map(|x| x == "jsonl").unwrap_or(false))
     {
-        let path: PathBuf = entry.path().to_path_buf();
-        let mtime = match mtime_f64(&path) {
-            Some(m) => m,
-            None => continue,
-        };
-        let size = match file_size(&path) {
-            Some(s) => s,
-            None => continue,
-        };
+        scan_one(&conn, &root, entry.path(), &mut totals)?;
+    }
+    finish(&conn, totals)
+}
 
-        let path_s = path.to_string_lossy().into_owned();
-        let row: Option<(f64, i64)> = conn
-            .query_row(
-                "SELECT mtime, bytes_read FROM files WHERE path=?",
-                [&path_s],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .ok();
+/// Like [`scan_dir`], but only for `paths` (the files a filesystem watcher
+/// saw change). Walking every transcript costs ~1s on a large history even
+/// when nothing changed, and the watcher fires while Claude is working.
+/// Paths outside `projects_root`, missing, or not `.jsonl` are ignored.
+pub fn scan_paths<P: AsRef<Path>, Q: AsRef<Path>>(
+    projects_root: P,
+    db_path: Q,
+    paths: &[PathBuf],
+) -> rusqlite::Result<ScanStats> {
+    let root = projects_root.as_ref();
+    // Watchers may report symlink-resolved paths (macOS FSEvents gives
+    // /private/var/... for /var/...). Map those back under `root` so the
+    // `files` key matches what the full walk stores.
+    let canon_root = root.canonicalize().ok();
+    let conn = crate::db::open(db_path.as_ref())?;
+    let mut totals = TotalsAcc::default();
+    for path in paths {
+        let path = if path.starts_with(root) {
+            path.clone()
+        } else if let Some(rel) = canon_root.as_ref().and_then(|c| path.strip_prefix(c).ok()) {
+            root.join(rel)
+        } else {
+            continue;
+        };
+        if path.extension().is_some_and(|x| x == "jsonl") && path.is_file() {
+            scan_one(&conn, root, &path, &mut totals)?;
+        }
+    }
+    finish(&conn, totals)
+}
 
-        let mut offset: u64 = 0;
-        if let Some((m, b)) = row {
-            // SAFETY: mtime equality and size==bytes_read implies fully
-            // ingested, identical file → skip.
-            if m == mtime && (b as u64) == size {
-                continue;
-            }
-            if size > b as u64 {
-                offset = b as u64;
+/// Ingest whatever `path` gained since its recorded offset.
+fn scan_one(
+    conn: &Connection,
+    root: &Path,
+    path: &Path,
+    totals: &mut TotalsAcc,
+) -> rusqlite::Result<()> {
+    let mtime = match mtime_f64(path) {
+        Some(m) => m,
+        None => return Ok(()),
+    };
+    let size = match file_size(path) {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+
+    let path_s = path.to_string_lossy().into_owned();
+    let row: Option<(f64, i64)> = conn
+        .query_row(
+            "SELECT mtime, bytes_read FROM files WHERE path=?",
+            [&path_s],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
+
+    let mut offset: u64 = 0;
+    if let Some((m, b)) = row {
+        // SAFETY: mtime equality and size==bytes_read implies fully
+        // ingested, identical file → skip.
+        if m == mtime && (b as u64) == size {
+            return Ok(());
+        }
+        if size > b as u64 {
+            offset = b as u64;
+        }
+    }
+
+    let slug = match project_slug(path, root) {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+    let sub = scan_file(path, &slug, conn, offset)?;
+
+    // Persist the byte offset of the last fully-parsed line (not
+    // st_size) so a partial line mid-flush is retried on the next
+    // scan instead of being skipped over.
+    conn.execute(
+        "INSERT OR REPLACE INTO files (path, mtime, bytes_read, scanned_at) VALUES (?, ?, ?, ?)",
+        rusqlite::params![path_s, mtime, sub.end_offset as i64, now_secs_f64()],
+    )?;
+
+    totals.messages += sub.messages;
+    totals.tools += sub.tools;
+    totals.files += 1;
+
+    // Only mark this project as changed if the file produced new rows.
+    if !sub.sessions.is_empty() {
+        for s in sub.sessions {
+            totals.sessions.insert(s);
+        }
+        totals.projects.insert(slug);
+        for d in sub.days {
+            totals.days.insert(d);
+        }
+        for m in sub.models {
+            totals.models.insert(m);
+        }
+        if let Some(t) = sub.min_ts {
+            if totals.min_ts.as_deref().is_none_or(|m| t.as_str() < m) {
+                totals.min_ts = Some(t);
             }
         }
-
-        let slug = match project_slug(&path, &root) {
-            Some(s) => s,
-            None => continue,
-        };
-        let sub = scan_file(&path, &slug, &conn, offset)?;
-
-        // Persist the byte offset of the last fully-parsed line (not
-        // st_size) so a partial line mid-flush is retried on the next
-        // scan instead of being skipped over.
-        conn.execute(
-            "INSERT OR REPLACE INTO files (path, mtime, bytes_read, scanned_at) VALUES (?, ?, ?, ?)",
-            rusqlite::params![path_s, mtime, sub.end_offset as i64, now_secs_f64()],
-        )?;
-
-        totals.messages += sub.messages;
-        totals.tools += sub.tools;
-        totals.files += 1;
-
-        // Only mark this project as changed if the file produced new rows.
-        if !sub.sessions.is_empty() {
-            for s in sub.sessions {
-                totals.sessions.insert(s);
-            }
-            totals.projects.insert(slug);
-            for d in sub.days {
-                totals.days.insert(d);
-            }
-            for m in sub.models {
-                totals.models.insert(m);
-            }
-            if let Some(t) = sub.min_ts {
-                if totals.min_ts.as_deref().is_none_or(|m| t.as_str() < m) {
-                    totals.min_ts = Some(t);
-                }
-            }
-            if let Some(t) = sub.max_ts {
-                if totals.max_ts.as_deref().is_none_or(|m| t.as_str() > m) {
-                    totals.max_ts = Some(t);
-                }
+        if let Some(t) = sub.max_ts {
+            if totals.max_ts.as_deref().is_none_or(|m| t.as_str() > m) {
+                totals.max_ts = Some(t);
             }
         }
     }
+    Ok(())
+}
+
+fn finish(conn: &Connection, totals: TotalsAcc) -> rusqlite::Result<ScanStats> {
     // Backfill auto-tags for any session in `messages` that hasn't been
     // logged yet. SQL-side filter means the first scan stamps every
     // historic git project; subsequent scans skip the already-tagged
     // sessions in a single query. Best-effort — a failure here shouldn't
     // poison the scan stats.
-    if let Err(e) = crate::auto_tags::backfill_all(&conn) {
-        eprintln!("auto-tag: {e}");
+    // Only new rows can bring an untagged session, so a scan that ingested
+    // nothing skips the query (~0.2s on a large history).
+    if totals.messages > 0 {
+        if let Err(e) = crate::auto_tags::backfill_all(conn) {
+            eprintln!("auto-tag: {e}");
+        }
     }
 
     // Refresh query-planner statistics when new rows landed. Stale/absent

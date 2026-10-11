@@ -108,3 +108,13 @@ test("pickStaticEntries returns exactly the 5 static keys when registry has 5", 
     ["planResp", "limitsResp", "budgetResp", "tagsResp", "prefsResp"],
   );
 });
+
+test("minAgeMs entries wait until their last fetch is old enough", () => {
+  const reg = [
+    { key: "slow", trigger: "any", minAgeMs: 1000 },
+    { key: "fast", trigger: "any" },
+  ];
+  assert.deepEqual(pickEntries(reg, {}, null, {}, 5000), ["slow", "fast"]); // never fetched
+  assert.deepEqual(pickEntries(reg, {}, null, { slow: 4500 }, 5000), ["fast"]); // fetched 500ms ago
+  assert.deepEqual(pickEntries(reg, {}, null, { slow: 4000 }, 5000), ["slow", "fast"]); // 1000ms ago
+});
