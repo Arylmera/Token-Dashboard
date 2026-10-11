@@ -432,16 +432,20 @@ pub fn daily_model_breakdown<P: AsRef<Path>>(
     until: Option<&str>,
     provider: Option<&str>,
 ) -> rusqlite::Result<Vec<DailyModelRow>> {
-    let (rng, mut args) = range_clause(since, until, "timestamp");
+    let (src, since, until) = Source::for_range(since, until);
+    let (rng, mut args) = range_clause(since, until, src.ts);
     let (prov, prov_args) = provider_clause(provider);
     args.extend(prov_args);
     let sql = format!(
-        "SELECT substr(timestamp, 1, 10) AS day, COALESCE(model, '(unknown)') AS model, \
+        "SELECT substr({ts}, 1, 10) AS day, COALESCE({model}, '(unknown)') AS model, \
                 COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), \
                 COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_create_5m_tokens),0), \
                 COALESCE(SUM(cache_create_1h_tokens),0) \
-         FROM messages WHERE type = 'assistant' AND timestamp IS NOT NULL {rng}{prov} \
-         GROUP BY day, model ORDER BY day ASC"
+         FROM {table} WHERE type = 'assistant' AND {ts} IS NOT NULL {rng}{prov} \
+         GROUP BY day, {model} ORDER BY day ASC, model ASC",
+        ts = src.ts,
+        model = src.model,
+        table = src.table,
     );
     let c = open_ro(db)?;
     let mut stmt = c.prepare(&sql)?;
@@ -716,7 +720,7 @@ pub fn expensive_prompts<P: AsRef<Path>>(
                 COALESCE(a.cache_create_5m_tokens,0) AS cache_create_5m_tokens, \
                 COALESCE(a.cache_create_1h_tokens,0) AS cache_create_1h_tokens, \
                 COALESCE(a.cache_read_tokens,0) AS cache_read_tokens \
-           FROM messages u \
+           FROM messages u {u_index} \
            JOIN messages a \
              ON a.session_id = u.session_id \
             AND a.type = 'assistant' \

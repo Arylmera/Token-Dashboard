@@ -4,7 +4,7 @@
 use rusqlite::{params, Connection};
 use token_dashboard_core::db::{init_db, open};
 use token_dashboard_core::queries::{
-    daily_token_breakdown, model_breakdown, overview_totals, project_summary,
+    daily_model_breakdown, daily_token_breakdown, model_breakdown, overview_totals, project_summary,
 };
 
 const FRESH: &str =
@@ -269,6 +269,9 @@ fn rollup_queries_match_raw_queries() {
             let a = daily_token_breakdown(&db, s, u, prov).unwrap();
             let b = daily_token_breakdown(&db, rs, ru, prov).unwrap();
             assert_eq!(format!("{a:?}"), format!("{b:?}"), "daily {ctx}");
+            let a = daily_model_breakdown(&db, s, u, prov).unwrap();
+            let b = daily_model_breakdown(&db, rs, ru, prov).unwrap();
+            assert_eq!(format!("{a:?}"), format!("{b:?}"), "daily models {ctx}");
         }
     }
 }
