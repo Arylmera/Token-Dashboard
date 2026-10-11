@@ -4,8 +4,12 @@
 //
 // Hint shape: { sessions, projects, days, models, min_ts, max_ts } (all optional).
 // Range since-ISO is the active currentRange's "since" boundary, or null for "all".
+//
+// Entries with `minAgeMs` are skipped until that long after their last fetch
+// (`fetchedAt[key]`, epoch ms): long-window reports cost seconds on a big
+// history and barely move between scans.
 
-export function pickEntries(registry, hint, rangeSince) {
+export function pickEntries(registry, hint, rangeSince, fetchedAt = {}, now = Date.now()) {
   const out = [];
   const h = hint || {};
   const has = {
@@ -18,6 +22,7 @@ export function pickEntries(registry, hint, rangeSince) {
   };
   for (const e of registry) {
     if (e.trigger === "static") continue;
+    if (e.minAgeMs && now - (fetchedAt[e.key] || 0) < e.minAgeMs) continue;
     if (e.trigger === "any") { out.push(e.key); continue; }
     if (e.trigger === "sessions" && has.sessions) { out.push(e.key); continue; }
     if (e.trigger === "projects" && has.projects) { out.push(e.key); continue; }
