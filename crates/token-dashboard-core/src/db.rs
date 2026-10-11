@@ -168,6 +168,10 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> rusqlite::Result<()> {
         let _ = std::fs::create_dir_all(parent);
     }
     let conn = Connection::open(path)?;
+    // The rollup migration takes a write lock for its backfill; wait out a
+    // closing previous instance (updater relaunch) or a CLI sharing the DB
+    // instead of failing startup on SQLITE_BUSY.
+    conn.busy_timeout(std::time::Duration::from_secs(30))?;
     migrate_add_message_id(&conn)?;
     migrate_add_tool_use_id(&conn)?;
     migrate_add_provider(&conn)?;

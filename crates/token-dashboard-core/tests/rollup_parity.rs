@@ -230,6 +230,33 @@ fn triggers_track_inserts_replaces_deletes_and_updates() {
 }
 
 #[test]
+fn startup_rebuilds_a_rollup_an_older_writer_desynced() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db = tmp.path().join("t.db");
+    init_db(&db).unwrap();
+    seed(&open(&db).unwrap());
+    // An older app version: plain connection, no recursive_triggers, so a
+    // re-ingest REPLACE adds to the rollup without removing the old row.
+    let old = Connection::open(&db).unwrap();
+    put(
+        &old,
+        "a2",
+        "s1",
+        "pa",
+        "assistant",
+        "2026-10-09T22:05:00.000Z",
+        Some("opus"),
+        20,
+        "claude",
+    );
+    assert_ne!(rows(&old, STORED), rows(&old, FRESH));
+    drop(old);
+    init_db(&db).unwrap(); // next launch of the current version
+    let c = open(&db).unwrap();
+    assert_eq!(rows(&c, STORED), rows(&c, FRESH));
+}
+
+#[test]
 fn backfill_matches_existing_history() {
     let tmp = tempfile::TempDir::new().unwrap();
     let db = tmp.path().join("t.db");

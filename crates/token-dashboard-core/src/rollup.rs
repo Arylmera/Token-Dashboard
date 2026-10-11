@@ -119,22 +119,42 @@ fn triggers() -> String {
     )
 }
 
-/// Create the rollup and its triggers; on first creation, fill it from the
-/// existing `messages` rows in the same transaction so no write slips
-/// between the backfill and the triggers.
-pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
-    let exists: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='usage_hourly')",
+/// The rollup as found at startup can be trusted: current schema, and one
+/// rollup row-count per message. Anything else means a writer bypassed the
+/// triggers — an older app version (no `recursive_triggers`, so its
+/// re-ingests double count), a DB restored from before the rollup, or a
+/// table from an earlier schema. ~40ms on a 1M-message DB.
+fn healthy(conn: &Connection) -> rusqlite::Result<bool> {
+    let has_first_ts: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('usage_hourly') WHERE name = 'first_ts')",
         [],
         |r| r.get(0),
     )?;
-    if exists {
+    if !has_first_ts {
+        return Ok(false);
+    }
+    conn.query_row(
+        "SELECT (SELECT IFNULL(SUM(n), 0) FROM usage_hourly) = (SELECT COUNT(*) FROM messages)",
+        [],
+        |r| r.get(0),
+    )
+}
+
+/// Create the rollup and its triggers, or rebuild them when [`healthy`]
+/// says the stored sums can't be trusted. The fill from `messages` runs in
+/// the same transaction as the trigger creation so no write slips between.
+pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    if healthy(conn)? {
         // Triggers are IF NOT EXISTS: cheap to re-assert every start.
         return conn.execute_batch(&triggers());
     }
     let sums: Vec<String> = COLS.iter().map(|c| format!("SUM({c})")).collect();
     conn.execute_batch(&format!(
         "BEGIN IMMEDIATE;\
+         DROP TRIGGER IF EXISTS usage_hourly_ai;\
+         DROP TRIGGER IF EXISTS usage_hourly_ad;\
+         DROP TRIGGER IF EXISTS usage_hourly_au;\
+         DROP TABLE IF EXISTS usage_hourly;\
          {TABLE}\
          INSERT INTO usage_hourly \
            SELECT substr(timestamp, 1, 13), session_id, project_slug, IFNULL(model, ''), \
