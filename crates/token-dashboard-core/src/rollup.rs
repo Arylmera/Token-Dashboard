@@ -1,0 +1,222 @@
+//! Hourly usage rollup (`usage_hourly`).
+//!
+//! The overview, daily, project and model aggregates used to scan every row
+//! of `messages` — about a million wide rows (prompt text, tool JSON) on a
+//! long history, ~1.5s per query and several of them per refresh. This table
+//! holds the same token sums pre-grouped by UTC hour, session, project,
+//! model, type and provider (tens of thousands of slim rows).
+//!
+//! It is maintained by triggers on `messages`, so every write path — scanner
+//! inserts, `INSERT OR REPLACE` re-ingests (needs `recursive_triggers`, set
+//! in `db::tune`), snapshot eviction deletes — keeps it exact without any
+//! scanner changes. Queries read it only when their bounds fall on an hour
+//! boundary (see [`Source::for_range`]); anything finer falls back to
+//! `messages`, so results never differ from the raw aggregate.
+
+use rusqlite::Connection;
+
+const COLS: [&str; 5] = [
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_create_5m_tokens",
+    "cache_create_1h_tokens",
+];
+
+const TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS usage_hourly (
+  hour                    TEXT    NOT NULL,  -- substr(timestamp, 1, 13), UTC
+  session_id              TEXT    NOT NULL,
+  project_slug            TEXT    NOT NULL,
+  model                   TEXT    NOT NULL,  -- '' stands for NULL (PK can't hold NULL)
+  type                    TEXT    NOT NULL,
+  provider                TEXT    NOT NULL,
+  n                       INTEGER NOT NULL,  -- message rows in the bucket
+  input_tokens            INTEGER NOT NULL,
+  output_tokens           INTEGER NOT NULL,
+  cache_read_tokens       INTEGER NOT NULL,
+  cache_create_5m_tokens  INTEGER NOT NULL,
+  cache_create_1h_tokens  INTEGER NOT NULL,
+  last_ts                 TEXT    NOT NULL,  -- MAX(timestamp) in the bucket
+  PRIMARY KEY (hour, session_id, project_slug, model, type, provider)
+) WITHOUT ROWID;
+"#;
+
+/// Bucket key of a `messages` row (`new` or `old`), in PK order.
+fn key(r: &str) -> String {
+    format!(
+        "substr({r}.timestamp, 1, 13), {r}.session_id, {r}.project_slug, \
+         IFNULL({r}.model, ''), {r}.type, {r}.provider"
+    )
+}
+
+fn key_match(r: &str) -> String {
+    format!(
+        "hour = substr({r}.timestamp, 1, 13) AND session_id = {r}.session_id \
+         AND project_slug = {r}.project_slug AND model = IFNULL({r}.model, '') \
+         AND type = {r}.type AND provider = {r}.provider"
+    )
+}
+
+/// Statements adding `new` into its bucket.
+fn add(r: &str) -> String {
+    let vals: Vec<String> = COLS.iter().map(|c| format!("{r}.{c}")).collect();
+    let upd: Vec<String> = COLS
+        .iter()
+        .map(|c| format!("{c} = {c} + excluded.{c}"))
+        .collect();
+    format!(
+        "INSERT INTO usage_hourly VALUES ({k}, 1, {vals}, {r}.timestamp) \
+         ON CONFLICT (hour, session_id, project_slug, model, type, provider) DO UPDATE SET \
+         n = n + 1, {upd}, last_ts = MAX(last_ts, excluded.last_ts);",
+        k = key(r),
+        vals = vals.join(", "),
+        upd = upd.join(", "),
+    )
+}
+
+/// Statements removing `old` from its bucket. `last_ts` is recomputed from
+/// the bucket's remaining rows only when the removed row held the max.
+fn sub(r: &str) -> String {
+    let upd: Vec<String> = COLS
+        .iter()
+        .map(|c| format!("{c} = {c} - {r}.{c}"))
+        .collect();
+    let m = key_match(r);
+    format!(
+        "UPDATE usage_hourly SET n = n - 1, {upd} WHERE {m};\
+         DELETE FROM usage_hourly WHERE {m} AND n <= 0;\
+         UPDATE usage_hourly SET last_ts = (\
+           SELECT MAX(timestamp) FROM messages \
+           WHERE session_id = {r}.session_id AND type = {r}.type \
+             AND substr(timestamp, 1, 13) = substr({r}.timestamp, 1, 13) \
+             AND project_slug = {r}.project_slug AND IFNULL(model, '') = IFNULL({r}.model, '') \
+             AND provider = {r}.provider) \
+         WHERE {m} AND last_ts = {r}.timestamp;",
+        upd = upd.join(", "),
+    )
+}
+
+fn triggers() -> String {
+    format!(
+        "CREATE TRIGGER IF NOT EXISTS usage_hourly_ai AFTER INSERT ON messages BEGIN {ins} END;\
+         CREATE TRIGGER IF NOT EXISTS usage_hourly_ad AFTER DELETE ON messages BEGIN {del} END;\
+         CREATE TRIGGER IF NOT EXISTS usage_hourly_au AFTER UPDATE ON messages BEGIN {del} {ins} END;",
+        ins = add("new"),
+        del = sub("old"),
+    )
+}
+
+/// Create the rollup and its triggers; on first creation, fill it from the
+/// existing `messages` rows in the same transaction so no write slips
+/// between the backfill and the triggers.
+pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='usage_hourly')",
+        [],
+        |r| r.get(0),
+    )?;
+    if exists {
+        // Triggers are IF NOT EXISTS: cheap to re-assert every start.
+        return conn.execute_batch(&triggers());
+    }
+    let sums: Vec<String> = COLS.iter().map(|c| format!("SUM({c})")).collect();
+    conn.execute_batch(&format!(
+        "BEGIN IMMEDIATE;\
+         {TABLE}\
+         INSERT INTO usage_hourly \
+           SELECT substr(timestamp, 1, 13), session_id, project_slug, IFNULL(model, ''), \
+                  type, provider, COUNT(*), {sums}, MAX(timestamp) \
+           FROM messages GROUP BY 1, 2, 3, 4, 5, 6;\
+         {trg}\
+         COMMIT;",
+        sums = sums.join(", "),
+        trg = triggers(),
+    ))
+}
+
+/// Where an aggregate reads from, with the column expressions that differ
+/// between the raw table and the rollup. Both expose the token columns,
+/// `session_id`, `project_slug`, `type` and `provider` under the same names.
+pub(crate) struct Source {
+    /// Table to select from.
+    pub table: &'static str,
+    /// Per-row weight: summing it counts messages.
+    pub n: &'static str,
+    /// Column the since/until bounds compare against.
+    pub ts: &'static str,
+    /// Latest timestamp expression for `MAX(..)`.
+    pub last_ts: &'static str,
+    /// Model column, NULL when unknown.
+    pub model: &'static str,
+}
+
+const RAW: Source = Source {
+    table: "messages",
+    n: "1",
+    ts: "timestamp",
+    last_ts: "timestamp",
+    model: "model",
+};
+
+const ROLLUP: Source = Source {
+    table: "usage_hourly",
+    n: "n",
+    ts: "hour",
+    last_ts: "last_ts",
+    model: "NULLIF(model, '')",
+};
+
+impl Source {
+    /// Pick the rollup when both bounds sit on an hour boundary (or are
+    /// absent), translating them to `hour` keys; otherwise the raw table
+    /// with the bounds unchanged. Bounds compare as strings, as before:
+    /// `timestamp >= '2026-10-09T22:00:00.000Z'` selects exactly the rows
+    /// whose `hour >= '2026-10-09T22'`, and a date-only bound such as
+    /// `'2026-10-09'` orders the same against both columns.
+    pub(crate) fn for_range<'a>(
+        since: Option<&'a str>,
+        until: Option<&'a str>,
+    ) -> (&'static Source, Option<&'a str>, Option<&'a str>) {
+        match (hour_bound(since), hour_bound(until)) {
+            (Some(s), Some(u)) => (&ROLLUP, s, u),
+            _ => (&RAW, since, until),
+        }
+    }
+}
+
+/// `Some(bound as an hour key)` when `b` is absent or hour-aligned, `None`
+/// when it falls inside an hour (the rollup can't split a bucket).
+fn hour_bound(b: Option<&str>) -> Option<Option<&str>> {
+    let Some(s) = b else {
+        return Some(None);
+    };
+    let date_only = s.len() == 10 && s.as_bytes().get(4) == Some(&b'-');
+    if date_only {
+        return Some(Some(s));
+    }
+    let aligned = s.len() > 13
+        && s.as_bytes()[10] == b'T'
+        && s[13..]
+            .bytes()
+            .all(|c| matches!(c, b':' | b'0' | b'.' | b'Z'));
+    aligned.then(|| Some(&s[..13]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hour_bounds() {
+        assert_eq!(hour_bound(None), Some(None));
+        assert_eq!(hour_bound(Some("2026-10-09")), Some(Some("2026-10-09")));
+        assert_eq!(
+            hour_bound(Some("2026-10-09T22:00:00.000Z")),
+            Some(Some("2026-10-09T22"))
+        );
+        assert_eq!(hour_bound(Some("2026-10-09T22:30:00.000Z")), None);
+        assert_eq!(hour_bound(Some("2026-10-09T22:00:00.001Z")), None);
+        assert_eq!(hour_bound(Some("2026-10-09T22:00:00+02:00")), None);
+    }
+}

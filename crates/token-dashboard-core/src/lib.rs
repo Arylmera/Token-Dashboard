@@ -28,6 +28,7 @@ pub mod pricing;
 pub mod providers;
 pub mod queries;
 pub mod remote_sources;
+mod rollup;
 pub mod scanner;
 pub mod skills_catalog;
 pub mod sources;
