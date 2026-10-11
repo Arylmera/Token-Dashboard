@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS usage_hourly (
   cache_create_5m_tokens  INTEGER NOT NULL,
   cache_create_1h_tokens  INTEGER NOT NULL,
   last_ts                 TEXT    NOT NULL,  -- MAX(timestamp) in the bucket
+  first_ts                TEXT    NOT NULL,  -- MIN(timestamp) in the bucket
   PRIMARY KEY (hour, session_id, project_slug, model, type, provider)
 ) WITHOUT ROWID;
 "#;
@@ -66,17 +67,19 @@ fn add(r: &str) -> String {
         .map(|c| format!("{c} = {c} + excluded.{c}"))
         .collect();
     format!(
-        "INSERT INTO usage_hourly VALUES ({k}, 1, {vals}, {r}.timestamp) \
+        "INSERT INTO usage_hourly VALUES ({k}, 1, {vals}, {r}.timestamp, {r}.timestamp) \
          ON CONFLICT (hour, session_id, project_slug, model, type, provider) DO UPDATE SET \
-         n = n + 1, {upd}, last_ts = MAX(last_ts, excluded.last_ts);",
+         n = n + 1, {upd}, last_ts = MAX(last_ts, excluded.last_ts), \
+         first_ts = MIN(first_ts, excluded.first_ts);",
         k = key(r),
         vals = vals.join(", "),
         upd = upd.join(", "),
     )
 }
 
-/// Statements removing `old` from its bucket. `last_ts` is recomputed from
-/// the bucket's remaining rows only when the removed row held the max.
+/// Statements removing `old` from its bucket. `last_ts` / `first_ts` are
+/// recomputed from the bucket's remaining rows only when the removed row
+/// held the max / min.
 fn sub(r: &str) -> String {
     let upd: Vec<String> = COLS
         .iter()
@@ -86,14 +89,23 @@ fn sub(r: &str) -> String {
     format!(
         "UPDATE usage_hourly SET n = n - 1, {upd} WHERE {m};\
          DELETE FROM usage_hourly WHERE {m} AND n <= 0;\
-         UPDATE usage_hourly SET last_ts = (\
-           SELECT MAX(timestamp) FROM messages \
+         {last}{first}",
+        upd = upd.join(", "),
+        last = recompute(r, "last_ts", "MAX"),
+        first = recompute(r, "first_ts", "MIN"),
+    )
+}
+
+fn recompute(r: &str, col: &str, agg: &str) -> String {
+    format!(
+        "UPDATE usage_hourly SET {col} = (\
+           SELECT {agg}(timestamp) FROM messages \
            WHERE session_id = {r}.session_id AND type = {r}.type \
              AND substr(timestamp, 1, 13) = substr({r}.timestamp, 1, 13) \
              AND project_slug = {r}.project_slug AND IFNULL(model, '') = IFNULL({r}.model, '') \
              AND provider = {r}.provider) \
-         WHERE {m} AND last_ts = {r}.timestamp;",
-        upd = upd.join(", "),
+         WHERE {m} AND {col} = {r}.timestamp;",
+        m = key_match(r),
     )
 }
 
@@ -126,7 +138,7 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
          {TABLE}\
          INSERT INTO usage_hourly \
            SELECT substr(timestamp, 1, 13), session_id, project_slug, IFNULL(model, ''), \
-                  type, provider, COUNT(*), {sums}, MAX(timestamp) \
+                  type, provider, COUNT(*), {sums}, MAX(timestamp), MIN(timestamp) \
            FROM messages GROUP BY 1, 2, 3, 4, 5, 6;\
          {trg}\
          COMMIT;",
@@ -147,6 +159,8 @@ pub(crate) struct Source {
     pub ts: &'static str,
     /// Latest timestamp expression for `MAX(..)`.
     pub last_ts: &'static str,
+    /// Earliest timestamp expression for `MIN(..)`.
+    pub first_ts: &'static str,
     /// Model column, NULL when unknown.
     pub model: &'static str,
 }
@@ -156,6 +170,7 @@ const RAW: Source = Source {
     n: "1",
     ts: "timestamp",
     last_ts: "timestamp",
+    first_ts: "timestamp",
     model: "model",
 };
 
@@ -164,6 +179,7 @@ const ROLLUP: Source = Source {
     n: "n",
     ts: "hour",
     last_ts: "last_ts",
+    first_ts: "first_ts",
     model: "NULLIF(model, '')",
 };
 

@@ -4,13 +4,14 @@
 use rusqlite::{params, Connection};
 use token_dashboard_core::db::{init_db, open};
 use token_dashboard_core::queries::{
-    daily_model_breakdown, daily_token_breakdown, model_breakdown, overview_totals, project_summary,
+    daily_model_breakdown, daily_token_breakdown, model_breakdown, overview_totals,
+    project_summary, recent_sessions,
 };
 
 const FRESH: &str =
     "SELECT substr(timestamp,1,13), session_id, project_slug, IFNULL(model,''), type, \
      provider, COUNT(*), SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), \
-     SUM(cache_create_5m_tokens), SUM(cache_create_1h_tokens), MAX(timestamp) \
+     SUM(cache_create_5m_tokens), SUM(cache_create_1h_tokens), MAX(timestamp), MIN(timestamp) \
      FROM messages GROUP BY 1,2,3,4,5,6 ORDER BY 1,2,3,4,5,6";
 const STORED: &str = "SELECT * FROM usage_hourly ORDER BY 1,2,3,4,5,6";
 
@@ -138,6 +139,11 @@ fn seed(c: &Connection) {
         0,
         "claude",
     );
+    c.execute(
+        "INSERT INTO session_tags (session_id, tag, created_at) VALUES ('s1', 't1', 0)",
+        [],
+    )
+    .unwrap();
 }
 
 #[test]
@@ -188,6 +194,32 @@ fn triggers_track_inserts_replaces_deletes_and_updates() {
         "claude",
     );
     c.execute("DELETE FROM messages WHERE uuid = 'a6'", [])
+        .unwrap();
+    // Delete the row holding a bucket's min timestamp (first_ts recompute):
+    // the bucket keeps a2 < a8 < a7, so MIN and MAX of the rest differ.
+    put(
+        &c,
+        "a8",
+        "s1",
+        "pa",
+        "assistant",
+        "2026-10-09T22:40:00.000Z",
+        Some("opus"),
+        2,
+        "claude",
+    );
+    put(
+        &c,
+        "a7",
+        "s1",
+        "pa",
+        "assistant",
+        "2026-10-09T22:50:00.000Z",
+        Some("opus"),
+        3,
+        "claude",
+    );
+    c.execute("DELETE FROM messages WHERE uuid = 'a2'", [])
         .unwrap();
     c.execute(
         "UPDATE messages SET output_tokens = 7, model = 'haiku' WHERE uuid = 'a3'",
@@ -272,6 +304,11 @@ fn rollup_queries_match_raw_queries() {
             let a = daily_model_breakdown(&db, s, u, prov).unwrap();
             let b = daily_model_breakdown(&db, rs, ru, prov).unwrap();
             assert_eq!(format!("{a:?}"), format!("{b:?}"), "daily models {ctx}");
+            for tag in [None, Some("t1")] {
+                let a = recent_sessions(&db, 50, s, u, tag, prov).unwrap();
+                let b = recent_sessions(&db, 50, rs, ru, tag, prov).unwrap();
+                assert_eq!(format!("{a:?}"), format!("{b:?}"), "sessions {tag:?} {ctx}");
+            }
         }
     }
 }

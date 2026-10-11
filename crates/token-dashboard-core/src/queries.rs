@@ -884,7 +884,8 @@ pub fn recent_sessions<P: AsRef<Path>>(
     tag: Option<&str>,
     provider: Option<&str>,
 ) -> rusqlite::Result<Vec<SessionRow>> {
-    let (rng, args) = range_clause(since, until, "timestamp");
+    let (src, since, until) = Source::for_range(since, until);
+    let (rng, args) = range_clause(since, until, src.ts);
     let (prov, prov_args) = provider_clause_on("m.provider", provider);
     let (tag_join, tag_filter) = if tag.is_some() {
         (
@@ -898,18 +899,22 @@ pub fn recent_sessions<P: AsRef<Path>>(
     // base WHERE uses unprefixed `timestamp` to mirror the python query.
     let sql = format!(
         "SELECT m.session_id AS session_id, m.project_slug AS project_slug, \
-                MIN(m.timestamp) AS started, MAX(m.timestamp) AS ended, \
-                SUM(CASE WHEN m.type='user' THEN 1 ELSE 0 END) AS turns, \
+                MIN(m.{first_ts}) AS started, MAX(m.{last_ts}) AS ended, \
+                SUM(CASE WHEN m.type='user' THEN {n} ELSE 0 END) AS turns, \
                 COALESCE(SUM(m.input_tokens),0)+COALESCE(SUM(m.output_tokens),0) \
                 +COALESCE(SUM(m.cache_read_tokens),0) \
                 +COALESCE(SUM(m.cache_create_5m_tokens),0) \
                 +COALESCE(SUM(m.cache_create_1h_tokens),0) AS tokens \
-         FROM messages m \
+         FROM {table} m \
          {tag_join} \
          WHERE 1=1 {rng} {tag_filter}{prov} \
          GROUP BY m.session_id \
          ORDER BY ended DESC \
-         LIMIT ?"
+         LIMIT ?",
+        first_ts = src.first_ts,
+        last_ts = src.last_ts,
+        n = src.n,
+        table = src.table,
     );
 
     // Build a single owned-string param vector. The trailing `limit`
