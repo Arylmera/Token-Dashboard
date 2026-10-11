@@ -8,8 +8,9 @@
 //! `notify` degrades to polling on some filesystems (network shares, WSL
 //! mounts) and can miss events entirely there.
 
-use std::path::Path;
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use notify::{EventKind, RecursiveMode, Watcher};
@@ -45,14 +46,20 @@ pub fn spawn_scan_watcher(state: AppState, debounce: Duration) -> Result<(), Str
     let root = state.projects_dir.as_ref().clone();
     let signal = Arc::new(Notify::new());
     let tx = signal.clone();
+    // Changed transcripts since the last watch scan; that scan reads only
+    // these instead of walking every file (~1s on a large history).
+    let pending: Arc<Mutex<HashSet<PathBuf>>> = Arc::default();
+    let pending_tx = pending.clone();
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(ev) = res {
-            if matches!(ev.kind, EventKind::Modify(_) | EventKind::Create(_))
-                && ev.paths.iter().any(|p| is_transcript(p))
-            {
-                // Sync + non-blocking: safe to call from notify's own thread.
-                tx.notify_one();
+            if matches!(ev.kind, EventKind::Modify(_) | EventKind::Create(_)) {
+                let mut changed = ev.paths.into_iter().filter(|p| is_transcript(p)).peekable();
+                if changed.peek().is_some() {
+                    pending_tx.lock().unwrap().extend(changed);
+                    // Sync + non-blocking: safe to call from notify's own thread.
+                    tx.notify_one();
+                }
             }
         }
     })
@@ -78,7 +85,8 @@ pub fn spawn_scan_watcher(state: AppState, debounce: Duration) -> Result<(), Str
             if state.scan_lock.try_lock().is_err() {
                 continue;
             }
-            if let Err(e) = run_scan_and_broadcast(state.clone()).await {
+            let paths: Vec<PathBuf> = pending.lock().unwrap().drain().collect();
+            if let Err(e) = run_scan_and_broadcast(state.clone(), Some(paths)).await {
                 tracing::warn!(error = %e, "watch-triggered scan failed");
             }
             tokio::time::sleep(WATCH_MIN_GAP).await;

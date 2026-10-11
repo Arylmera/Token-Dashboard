@@ -40,5 +40,5 @@ pub mod verbosity;
 pub use db::{default_db_path, init_db, open};
 pub use limits::{compute_limits, LimitWindow, LimitsSnapshot};
 pub use pricing::{cost_for, CostResult, Pricing, Usage};
-pub use scanner::{scan_dir, scan_file, ScanStats};
+pub use scanner::{scan_dir, scan_file, scan_paths, ScanStats};
 pub use sources::{list_sources, Source};
