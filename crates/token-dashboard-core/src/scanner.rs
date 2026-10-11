@@ -644,14 +644,22 @@ pub fn scan_paths<P: AsRef<Path>, Q: AsRef<Path>>(
     paths: &[PathBuf],
 ) -> rusqlite::Result<ScanStats> {
     let root = projects_root.as_ref();
+    // Watchers may report symlink-resolved paths (macOS FSEvents gives
+    // /private/var/... for /var/...). Map those back under `root` so the
+    // `files` key matches what the full walk stores.
+    let canon_root = root.canonicalize().ok();
     let conn = crate::db::open(db_path.as_ref())?;
     let mut totals = TotalsAcc::default();
     for path in paths {
-        if path.starts_with(root)
-            && path.extension().is_some_and(|x| x == "jsonl")
-            && path.is_file()
-        {
-            scan_one(&conn, root, path, &mut totals)?;
+        let path = if path.starts_with(root) {
+            path.clone()
+        } else if let Some(rel) = canon_root.as_ref().and_then(|c| path.strip_prefix(c).ok()) {
+            root.join(rel)
+        } else {
+            continue;
+        };
+        if path.extension().is_some_and(|x| x == "jsonl") && path.is_file() {
+            scan_one(&conn, root, &path, &mut totals)?;
         }
     }
     finish(&conn, totals)

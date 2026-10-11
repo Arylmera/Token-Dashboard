@@ -54,3 +54,35 @@ fn scans_only_the_given_files() {
     assert_eq!(scan_dir(&root, &db).unwrap().messages, 1);
     assert_eq!(message_count(&db), 2);
 }
+
+/// Watchers can report symlink-resolved paths (macOS FSEvents); they must
+/// land on the same `files` key as the walk, or every file is read twice.
+#[cfg(unix)]
+#[test]
+fn resolved_paths_map_back_under_a_symlinked_root() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db = tmp.path().join("t.db");
+    let real = tmp.path().join("real");
+    fs::create_dir_all(real.join("C--work-sample")).unwrap();
+    let root = tmp.path().join("projects");
+    std::os::unix::fs::symlink(&real, &root).unwrap();
+    init_db(&db).unwrap();
+    write_session(&root.join("C--work-sample").join("a.jsonl"), "a", "ua");
+
+    let resolved = real
+        .canonicalize()
+        .unwrap()
+        .join("C--work-sample")
+        .join("a.jsonl");
+    assert_eq!(scan_paths(&root, &db, &[resolved]).unwrap().messages, 1);
+    assert_eq!(
+        scan_dir(&root, &db).unwrap().files,
+        0,
+        "walk must see it as already read"
+    );
+    let keys: i64 = rusqlite::Connection::open(&db)
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(keys, 1);
+}
