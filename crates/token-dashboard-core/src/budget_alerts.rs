@@ -305,16 +305,18 @@ fn evaluate_window(
 
 fn mtd_cost(conn: &rusqlite::Connection, pricing: &Pricing) -> rusqlite::Result<f64> {
     let mut stmt = conn.prepare(
-        "SELECT model, \
+        // usage_hourly: same sums as messages, a fraction of the rows.
+        // Runs after every ingesting scan.
+        "SELECT NULLIF(model, '') AS m, \
                 COALESCE(SUM(input_tokens), 0), \
                 COALESCE(SUM(output_tokens), 0), \
                 COALESCE(SUM(cache_read_tokens), 0), \
                 COALESCE(SUM(cache_create_5m_tokens), 0), \
                 COALESCE(SUM(cache_create_1h_tokens), 0) \
-         FROM messages \
+         FROM usage_hourly \
          WHERE type = 'assistant' \
-           AND substr(timestamp, 1, 10) >= strftime('%Y-%m-01', 'now') \
-         GROUP BY model",
+           AND substr(hour, 1, 10) >= strftime('%Y-%m-01', 'now') \
+         GROUP BY m",
     )?;
     let mut total = 0.0;
     let rows = stmt.query_map([], |r| {
