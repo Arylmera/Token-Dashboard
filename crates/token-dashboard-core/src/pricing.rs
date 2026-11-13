@@ -348,6 +348,8 @@ mod tests {
         };
         for (model, usd) in [
             ("claude-opus-5-5", 24.0),   // $4 + $20
+            ("claude-fable-5-2", 48.0),  // $8 + $40
+            ("claude-mythos-5-2", 48.0), // no tier in name: must hit the row
             ("claude-fable-5-1", 60.0),  // $10 + $50
             ("claude-mythos-5-1", 60.0), // no tier in name: must hit the row
             ("claude-mythos-5", 60.0),
