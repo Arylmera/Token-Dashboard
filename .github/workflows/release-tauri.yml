@@ -79,7 +79,7 @@ jobs:
             artifact_glob: |
               target/release/bundle/msi/*.msi
               target/release/bundle/msi/*.msi.sig
-          - os: macos-14
+          - os: macos-15
             label: macos-arm64
             rust_target: aarch64-apple-darwin
             # Both macOS legs bundle `Token Dashboard.app.tar.gz`. Release
@@ -90,7 +90,7 @@ jobs:
               target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
               target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
               target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
-          - os: macos-14
+          - os: macos-15
             label: macos-x64
             rust_target: x86_64-apple-darwin
             updater_name: Token.Dashboard_x64.app.tar.gz
